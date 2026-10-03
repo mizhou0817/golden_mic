@@ -344,6 +344,7 @@ def install_v2_guards(stack, root, evidence, ffmpeg, pure_phase):
             super().audit(event, args)
 
     guard = V2Guards()
+    guard.install_file_guards(stack)
     # The pure import contract requires a genuinely cold module table. Audit
     # all IO before that phase, but do not import dotenv/httpx/config to patch
     # them yet. No module removal, fake module table, or weakened assertion.

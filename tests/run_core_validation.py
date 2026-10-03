@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -98,15 +99,48 @@ class Guards:
         self.local = threading.local()
         self.counts: Counter[str] = Counter()
         self.stage = "self_check"
+        self.file_guards_installed = False
 
     def reject(self, reason: str) -> Any:
         self.counts[self.stage + ":denied:" + reason] += 1
         raise SafetyViolation("Validation boundary: " + reason)
 
-    def path(self, value: Any, *, write: bool = False) -> None:
+    def fd_path(self, value: Any, dir_fd: int | None = None) -> Any:
+        """Resolve Linux *at audit paths against a proven owned directory FD."""
+        if not isinstance(value, (str, bytes, os.PathLike)):
+            return value
+        raw = os.fsdecode(value)
+        # Absolute paths ignore dir_fd in the actual OS call. Never let an
+        # owned descriptor confer authority over an absolute external path.
+        if os.path.isabs(raw) or dir_fd is None or dir_fd == -1:
+            return raw
+        if sys.platform != "linux" or type(dir_fd) is not int or dir_fd < 0:
+            self.reject("unsupported directory descriptor")
+        if any(part in {".", ".."} for part in raw.split("/")):
+            self.reject("directory descriptor traversal")
+        try:
+            opened = os.fstat(dir_fd)
+            base = os.readlink(f"/proc/self/fd/{dir_fd}")
+            if (not stat.S_ISDIR(opened.st_mode) or not os.path.isabs(base)
+                    or base.endswith(" (deleted)") or Path(base).resolve() != Path(base).absolute()):
+                self.reject("unsafe directory descriptor")
+            current = os.stat(base, follow_symlinks=False)
+            if not stat.S_ISDIR(current.st_mode) or not os.path.samestat(opened, current):
+                self.reject("directory descriptor identity changed")
+        except (OSError, ValueError):
+            self.reject("unverifiable directory descriptor")
+        if not any(under(normalized(base), prefix) for prefix in self.allowed_write):
+            self.reject("directory descriptor outside owned TEMP/evidence")
+        candidate = Path(base) / raw
+        if candidate.parent.resolve() != candidate.parent.absolute():
+            self.reject("directory descriptor path indirection")
+        self.counts["owned_dir_fd_paths"] += 1
+        return candidate
+
+    def path(self, value: Any, *, write: bool = False, dir_fd: int | None = None) -> None:
         if not isinstance(value, (str, bytes, os.PathLike)):
             return
-        path = normalized(value)
+        path = normalized(self.fd_path(value, dir_fd))
         if path == normalized(os.devnull):
             return
         if any(under(path, prefix) for prefix in self.allowed_write):
@@ -137,12 +171,27 @@ class Guards:
     def audit(self, event: str, arguments: tuple[Any, ...]) -> None:
         if event == "open":
             flags = arguments[2] if len(arguments) > 2 and isinstance(arguments[2], int) else 0
-            self.path(arguments[0], write=bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND)))
-        elif event in {"os.remove", "os.rmdir", "os.mkdir", "os.chmod", "os.utime", "shutil.rmtree"}:
-            self.path(arguments[0], write=True)
-        elif event in {"os.rename", "os.link", "os.symlink"}:
-            self.path(arguments[0], write=True)
-            self.path(arguments[1], write=True)
+            context = getattr(self.local, "dir_fd_open", None)
+            dir_fd = None
+            if context is not None and arguments[1] is None:
+                if arguments[0] != context[0] or flags != context[1]:
+                    self.reject("unapproved directory-relative open audit")
+                dir_fd = context[2]
+            self.path(arguments[0], dir_fd=dir_fd,
+                      write=bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND)))
+        elif event in {"os.remove", "os.rmdir", "shutil.rmtree"}:
+            self.path(arguments[0], write=True, dir_fd=arguments[1])
+        elif event in {"os.mkdir", "os.chmod", "os.utime"}:
+            self.path(arguments[0], write=True, dir_fd=arguments[-1])
+        elif event in {"os.rename", "os.link"}:
+            self.path(arguments[0], write=True, dir_fd=arguments[2])
+            self.path(arguments[1], write=True, dir_fd=arguments[3])
+        elif event == "os.symlink":
+            destination = self.fd_path(arguments[1], arguments[2])
+            self.path(destination, write=True)
+            # Relative link targets are relative to the link's parent, not cwd.
+            # Keep rejecting links to external/private targets as before.
+            self.path(Path(destination).parent / os.fsdecode(arguments[0]), write=True)
         elif event in {"os.listdir", "os.scandir", "sqlite3.connect"}:
             value = arguments[0]
             if event == "sqlite3.connect" and isinstance(value, str) and value.startswith("file:"):
@@ -165,7 +214,32 @@ class Guards:
         elif event in {"os.system", "os.startfile", "os.exec", "os.posix_spawn"}:
             self.reject("unreviewed process launch")
 
+    def install_file_guards(self, stack: ExitStack) -> None:
+        if self.file_guards_installed:
+            return
+        original_open = os.open
+
+        def opened(file, flags, mode=0o777, *, dir_fd=None):
+            if dir_fd is None:
+                return original_open(file, flags, mode)
+            self.path(file, dir_fd=dir_fd,
+                      write=bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND)))
+            previous = getattr(self.local, "dir_fd_open", None)
+            # CPython's open audit omits dir_fd and adds O_CLOEXEC on Linux.
+            # Bind only this exact native call; preserve its actual FD-relative
+            # operation rather than replacing it with a race-prone absolute open.
+            self.local.dir_fd_open = (os.fspath(file), flags | getattr(os, "O_CLOEXEC", 0), dir_fd)
+            try:
+                return original_open(file, flags, mode, dir_fd=dir_fd)
+            finally:
+                self.local.dir_fd_open = previous
+
+        stack.enter_context(patch.object(os, "open", new=opened))
+        self.file_guards_installed = True
+        stack.callback(setattr, self, "file_guards_installed", False)
+
     def install(self, stack: ExitStack) -> None:
+        self.install_file_guards(stack)
         # Import-time platform probing is not an application/media assertion.
         # Windows platform probing shells out to ver; POSIX uses uname instead.
         if sys.platform == "win32":

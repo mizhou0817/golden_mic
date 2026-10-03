@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import builtins
 import io
+import mimetypes
 import os
 from pathlib import Path
 import socket
@@ -84,6 +85,12 @@ class FrontendRouteTests(unittest.IsolatedAsyncioTestCase):
             return original_lookup(path)
 
         self.stack.enter_context(patch.object(self.static, "lookup_path", lookup))
+        # FileResponse lazily initializes the host MIME database on Linux.
+        # Use real stdlib default mappings, but no host files/registry and no
+        # wider IO exception. Patch only this fixture's response resolver.
+        with patch.object(mimetypes, "inited", True):
+            mime = mimetypes.MimeTypes(filenames=())
+        self.stack.enter_context(patch("starlette.responses.guess_type", mime.guess_type))
         original_import = builtins.__import__
 
         def guarded_import(name: str, *args: Any, **kwargs: Any) -> Any:
@@ -202,6 +209,15 @@ class FrontendRouteTests(unittest.IsolatedAsyncioTestCase):
         status, headers, body = await request(self.app, "/assets/app.js")
         self.assertEqual((status, body), (200, SCRIPT))
         self.assertIn("javascript", headers["content-type"])
+
+    async def test_responses_never_initialize_host_mime_database(self) -> None:
+        with patch.object(mimetypes, "init", side_effect=AssertionError("No host MIME reads")) as initialize:
+            await self.shell("/tasks/a")
+            status, headers, body = await request(self.app, "/assets/app.js")
+            self.assertEqual((status, body), (200, SCRIPT))
+            self.assertIn("javascript", headers["content-type"])
+            initialize.assert_not_called()
+        self.assertEqual(set(self.opened), {self.frontend / "index.html", self.frontend / "assets/app.js"})
 
     async def test_head_matches_get_without_body(self) -> None:
         for target in ("/", "/index.html", "/tasks/a", "/tasks/a/", "/samples/default", "/assets/app.js"):
