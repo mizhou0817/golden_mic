@@ -1,0 +1,17 @@
+# Development/compatibility installer only. Production deployment MUST use
+# `uv sync --frozen` with uv.lock. For hash-checking pip workflows, use
+# requirements-production.lock instead of this file.
+fastapi==0.139.2
+starlette==1.3.1
+uvicorn[standard]==0.51.0
+click==8.3.3
+python-multipart==0.0.32
+pydantic-settings==2.14.2
+packaging==26.0
+httpx==0.28.1
+vendor/scenedetect-0.7.1-py3-none-any.whl
+edge-tts==7.2.8
+websockets==16.1.1
+jieba==0.42.1
+opencc-python-reimplemented==0.1.7
+silero-vad-lite==0.2.1

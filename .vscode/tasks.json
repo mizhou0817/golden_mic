@@ -1,0 +1,26 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Golden Mic: Build local frontend",
+			"type": "shell",
+			"command": "npm.cmd",
+			"args": [
+				"--prefix",
+				"frontend",
+				"run",
+				"build"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Golden Mic: Start local server",
+			"type": "shell",
+			"command": "$ErrorActionPreference = 'Stop'; Set-Location '${workspaceFolder}'; if (Get-NetTCPConnection -State Listen -LocalPort 8000 -ErrorAction SilentlyContinue) { throw 'Port 8000 is already in use. Check the existing service before starting another instance.' }; $python = Join-Path (Get-Location).Path '.venv\\Scripts\\python.exe'; if (-not (Test-Path -LiteralPath $python)) { throw 'Project Python environment is missing.' }; $ffmpeg = Get-Command ffmpeg.exe -ErrorAction SilentlyContinue; if ($ffmpeg) { $ffmpegPath = $ffmpeg.Source } else { $ffmpegPath = Get-ChildItem \"$env:LOCALAPPDATA\\Microsoft\\WinGet\\Packages\" -Directory -Filter 'Gyan.FFmpeg*' -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -File -Filter ffmpeg.exe -Recurse -ErrorAction SilentlyContinue } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName }; if (-not $ffmpegPath) { throw 'FFmpeg is not installed.' }; $env:Path = (Split-Path -Parent $ffmpegPath) + ';' + $env:Path; $env:PYTHONIOENCODING = 'utf-8'; $env:PYTHONUNBUFFERED = '1'; & $python -m pip check; if ($LASTEXITCODE -ne 0) { throw 'Python dependency validation failed.' }; & $python -m backend.preflight; if ($LASTEXITCODE -ne 0) { throw 'Application preflight failed.' }; $logDirectory = Join-Path (Get-Location).Path 'data\\service-logs'; if (-not (Test-Path -LiteralPath $logDirectory)) { New-Item -ItemType Directory -Path $logDirectory | Out-Null }; $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $stdout = Join-Path $logDirectory ('local-' + $stamp + '.stdout.log'); $stderr = Join-Path $logDirectory ('local-' + $stamp + '.stderr.log'); $server = Start-Process -FilePath $python -ArgumentList @('-u', '-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', '8000', '--workers', '1', '--no-access-log') -WorkingDirectory (Get-Location).Path -RedirectStandardOutput $stdout -RedirectStandardError $stderr -WindowStyle Hidden -PassThru; Write-Output ('Started launcher PID: ' + $server.Id); Write-Output 'Local URL: http://127.0.0.1:8000'; Write-Output ('stdout: ' + $stdout); Write-Output ('stderr: ' + $stderr)",
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}

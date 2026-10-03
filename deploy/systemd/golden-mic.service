@@ -1,0 +1,55 @@
+[Unit]
+Description=Golden Mic AI news editor
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/srv/golden-mic-data
+ConditionPathIsMountPoint=/srv/golden-mic-data
+
+[Service]
+Type=simple
+User=goldenmic
+Group=goldenmic
+WorkingDirectory=/opt/golden-mic/current
+EnvironmentFile=/etc/golden-mic/golden-mic.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=HOME=/nonexistent
+Environment=TMPDIR=/srv/golden-mic-data/tmp
+ExecStartPre=/opt/golden-mic/current/.venv/bin/python /opt/golden-mic/current/deploy/validate_environment_file.py /etc/golden-mic/golden-mic.env
+ExecStartPre=/opt/golden-mic/current/.venv/bin/python -m backend.preflight
+ExecStart=/opt/golden-mic/current/.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1 --no-access-log --proxy-headers --forwarded-allow-ips 127.0.0.1 --timeout-graceful-shutdown 7100
+Restart=on-failure
+RestartSec=5s
+OOMPolicy=stop
+TimeoutStartSec=180s
+TimeoutStopSec=7200s
+KillSignal=SIGTERM
+KillMode=control-group
+UMask=0027
+LimitNOFILE=65536
+TasksMax=1024
+CPUQuota=750%
+MemoryHigh=80%
+MemoryMax=90%
+
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/srv/golden-mic-data
+
+[Install]
+WantedBy=multi-user.target

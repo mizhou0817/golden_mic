@@ -1,0 +1,15 @@
+.gm-sample-review { min-width: 0; }
+.gm-sample-review * { box-sizing: border-box; }
+.gm-sample-review video { display: block; width: 100%; max-width: 100%; aspect-ratio: 16/9; }
+.gm-sample-panels { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 1rem; }
+.gm-sample-panels > section { min-width: 0; }
+.gm-sample-review :is(p,dd,button) { overflow-wrap: anywhere; }
+.gm-sample-review h2 { font-size: 1.125rem; }
+.gm-sample-storyboard { padding: 0; list-style: none; }
+.gm-sample-storyboard button { display: grid; gap: .375rem; width: 100%; min-height: 2.75rem; text-align: left; font: inherit; color: var(--ink); background: var(--white); border: .125rem solid var(--line); border-radius: .75rem; padding: .75rem; cursor: pointer; }
+.gm-sample-storyboard button[aria-pressed=true] { border-color: var(--teal); background: var(--green); }
+.gm-sample-storyboard button:focus-visible { outline: .1875rem solid var(--gold); outline-offset: .1875rem; }
+.gm-sample-detail { border: .125rem solid var(--line); border-radius: .75rem; padding: 1rem; align-self: start; }
+.gm-sample-detail dt { font-weight: 800; margin-top: .75rem; }
+.gm-sample-detail dd { margin: .25rem 0 0; }
+@media (max-width:640px) { .gm-sample-panels { grid-template-columns: minmax(0,1fr); } }

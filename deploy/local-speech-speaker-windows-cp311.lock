@@ -1,0 +1,12 @@
+# TEST-ONLY independent Windows AMD64 / CPython 3.11.9 runtime freeze.
+# Not an application lock, installer, license approval, or activation instruction.
+# Existing local wheel bytes rehashed 2026-10-03; no network or downloads used.
+# Official PyPI verification was reported previously by the operator; this run
+# independently reconfirms LOCAL bytes, not current upstream provenance.
+# Application-base dependency compatibility is NOT certified by this freeze.
+# Installed NumPy has one differing .pyc: the probe separately pins its observed
+# hash; source/native payloads remain byte-exact to these local wheels.
+# Existing bootstrap tooling: pip 24.0, setuptools 65.5.0 (not inference deps).
+numpy==2.4.2 --hash=sha256:b9c618d56a29c9cb1c4da979e9899be7578d2e0b3c24d52079c166324c9e8695
+sherpa-onnx==1.13.8 --hash=sha256:171e6fac715bae20e11829e8dbfc70ed990ede1b35e6332f8121b27691a002de
+sherpa-onnx-core==1.13.8 --hash=sha256:5579e80196d516e6dae23c8f629292ce3142ab8869925d32b94612fd86f93733

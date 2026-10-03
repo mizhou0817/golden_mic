@@ -1,0 +1,116 @@
+{
+  "rules_version": 2,
+  "terminal": [
+    {"script": "标题\n甲，乙,丙；丁;戊。己.庚！辛!壬？癸?末行", "mode": "voiceover", "expected": [["甲", "，"], ["乙", ","], ["丙", "；"], ["丁", ";"], ["戊", "。"], ["己", "."], ["庚", "！"], ["辛", "!"], ["壬", "？"], ["癸", "?"], ["末行", ""]]},
+    {"script": "标题\n活动叫“高新，年味”，票价3.14元。\n说明（保留句号。）\n清单[甲，乙]，说明{丙；丁}；末句。", "mode": "voiceover", "expected": [["活动叫“高新，年味”", "，"], ["票价3.14元", "。"], ["说明（保留句号。）", "。"], ["清单[甲，乙]", "，"], ["说明{丙；丁}", "；"], ["末句", "。"]]},
+    {"script": "标题\n同期 王红（主办方）：“你好。谢谢！”\n同期：我们来了，欢迎大家；请进。\n旁白：售价3.14元，结束", "mode": "mixed", "expected": [["你好", "。"], ["谢谢", "！"], ["我们来了，欢迎大家；请进", "。"], ["售价3.14元", "，"], ["结束", ""]]},
+    {"script": "标题\n买了点腊肉，还有礼盒\n同期：欢迎，\n谢谢；", "mode": "original", "expected": [["买了点腊肉，还有礼盒", ""], ["欢迎，", "，"], ["谢谢；", "；"]]},
+    {"script": "标题\n重复，重复。重复\n他说“欢迎！”\n说明【甲？】\n作品《乙。》", "mode": "voiceover", "expected": [["重复", "，"], ["重复", "。"], ["重复", ""], ["他说“欢迎！”", "！"], ["说明【甲？】", "？"], ["作品《乙。》", "。"]]},
+    {"script": "标题\n甲？！乙…\n丙\n丁，。\n他说“未结束”\n小数3.14", "mode": "voiceover", "expected": [["甲", "！"], ["乙…", ""], ["丙", ""], ["丁", "。"], ["他说“未结束”", ""], ["小数3.14", ""]]},
+    {"script": "标题\n甲，乙。\n同期：丙，丁。", "mode": "mixed", "overrides": {"0": "quote", "2": "narration"}, "expected": [["甲", "，"], ["乙", "。"], ["丙，丁", "。"]]}
+  ],
+  "sample_terminal": {
+    "voiceover": ["，", "，", "。", "，", "。", "，", "，", "。", "，", "，", "。", "，", "，", "，", "。", "。"],
+    "mixed": ["，", "，", "。", "。", "，", "，", "。", "。", "。", "，", "，", "。", "。", "，", "。", "。"],
+    "original": ["", "", "", "", "", "", "", ""]
+  },
+  "normalization": [
+    {"input": "ＡＢＣ１２３，欢迎！", "expected": "abc123欢迎"},
+    {"input": "嗯…就是希望大家过年都能吃上一口家乡味", "expected": "希望大家过年都能吃上1口家乡味"},
+    {"input": "一月三十一号", "expected": "1月31日"},
+    {"input": "二〇二六年九月二十九日", "expected": "2026年9月29日"},
+    {"input": "负三点五度与＋３.５度", "expected": "-3.5度与+3.5度"},
+    {"input": "两百多斤，三十多家企业", "expected": "200多斤30多家企业"},
+    {"input": "那个人然后果呃逆，一起一直一样，千万别", "expected": "那个人然后果呃逆一起一直一样千万别"},
+    {"input": "Straße Σς Ｋ é 가", "expected": "strasseσσké가"},
+    {"input": "三十\n一", "expected": "31"},
+    {"input": "鲁班路９５号", "expected": "鲁班路95号"}
+  ],
+  "similarity": [
+    {"left": "", "right": "abc", "expected": 0},
+    {"left": "a", "right": "ab", "expected": 1},
+    {"left": "z", "right": "ab", "expected": 0},
+    {"left": "abcd", "right": "cdab", "expected": 0.6666666666666666},
+    {"left": "abcd", "right": "xxabcdyy", "expected": 1},
+    {"left": "aaaa", "right": "aaba", "expected": 0.3333333333333333},
+    {"left": "ＡＢＣ", "right": "abc", "expected": 1},
+    {"left": "一月三十一号", "right": "1月31日", "expected": 1},
+    {"left": "𠮷甲乙", "right": "𠮷甲丙", "expected": 0.5},
+    {"left": "abcdefgh", "right": "abcdefxy", "expected": 0.7142857142857143},
+    {"left": "a", "right": "", "expected": 0}
+  ],
+  "split": [
+    {"text": "活动叫“高新，年味”，票价3.14元。", "kind": "narration", "expected": ["活动叫“高新，年味”", "票价3.14元"]},
+    {"text": "活动叫\"高新，年味\"，欢迎大家。", "kind": "narration", "expected": ["活动叫\"高新，年味\"", "欢迎大家"]},
+    {"text": "清单[甲，乙]，说明{丙；丁}；末句。", "kind": "narration", "expected": ["清单[甲，乙]", "说明{丙；丁}", "末句"]},
+    {"text": "我们来了，欢迎大家；请进。谢谢！", "kind": "quote", "expected": ["我们来了，欢迎大家；请进", "谢谢"]},
+    {"text": "“你好。谢谢！”", "kind": "quote", "expected": ["你好", "谢谢"]},
+    {"text": "苹果、梨、桃，结束。", "kind": "narration", "expected": ["苹果、梨、桃", "结束"]}
+  ],
+  "parseLine": [
+    {"input": "同期 王红（主办方）：大家好。", "expected": {"kind": "quote", "content": "大家好。", "hint": "王红（主办方）"}},
+    {"input": "【同期】欢迎大家", "expected": {"kind": "quote", "content": "欢迎大家", "hint": ""}},
+    {"input": "旁白：活动开始", "expected": {"kind": "narration", "content": "活动开始", "hint": ""}},
+    {"input": "李大姐（摊主）：欢迎", "expected": {"kind": "quote", "content": "欢迎", "hint": "李大姐（摊主）"}},
+    {"input": "活动时间：上午九点", "expected": {"kind": "narration", "content": "活动时间：上午九点", "hint": ""}},
+    {"input": "同期增长很快", "expected": {"kind": "narration", "content": "同期增长很快", "hint": ""}}
+  ],
+  "fillers": [
+    {"input": "嗯…就是希望大家过年都能吃上一口家乡味", "expected": "希望大家过年都能吃上一口家乡味"},
+    {"input": "那个人来了", "expected": "那个人来了"},
+    {"input": "我们来了，然后我们走了", "expected": "我们来了，然后我们走了"},
+    {"input": "呃逆不是口头禅", "expected": "呃逆不是口头禅"},
+    {"input": "嗯，啊，就是，我们欢迎大家", "expected": "我们欢迎大家"}
+  ],
+  "facts": [
+    {"input": "昨天一天卖了两百多斤", "expected": ["数字"]},
+    {"input": "三十多家企业，基本上都是园区里的", "expected": ["地点", "数字"]},
+    {"input": "持续到一月三十一号", "expected": ["时间", "数字"]},
+    {"input": "鲁班路９５号的南宁信息港广场", "expected": ["地点", "数字"]},
+    {"input": "本次活动由信息港主办，王先生介绍", "expected": ["地点", "主办方", "称谓"]},
+    {"input": "挺热闹的，感觉年味一下就来了", "expected": []},
+    {"input": "一起欢迎大家", "expected": []}
+  ],
+  "status": [
+    {"score": 0.599999999999, "expected": "missing"},
+    {"score": 0.6, "expected": "low"},
+    {"score": 0.849999999999, "expected": "low"},
+    {"score": 0.85, "expected": "ok"},
+    {"score": 1, "has_source": false, "expected": "missing"}
+  ],
+  "caption": [{"input": "asr", "expected": "spoken"}, {"input": "spoken", "expected": "spoken"}, {"input": "none", "expected": "none"}],
+  "plan": [
+    {"operations": ["initial"], "mode": "voiceover", "expected": {"rules_version": 2, "run": [1,2,3,4,5,6,7,8,9,10]}},
+    {"operations": ["edit", "delete", "speakers"], "mode": "mixed", "expected": {"rules_version": 2, "run": [7,8,9,10]}},
+    {"operations": ["speakers"], "mode": "original", "expected": {"rules_version": 2, "run": [8,9,10]}},
+    {"operations": ["replace_shot"], "mode": "mixed", "expected": {"rules_version": 2, "run": [6,9,10]}},
+    {"operations": ["render"], "mode": "original", "expected": {"rules_version": 2, "run": [9,10]}},
+    {"operations": [], "mode": "original", "expected": {"rules_version": 2, "run": []}},
+    {"operations": ["pacing"], "mode": "original", "error": true},
+    {"operations": ["to_narration"], "mode": "voiceover", "error": true}
+  ],
+  "checks": [
+    {"code": "MATCH_FALLBACK", "level": 0, "action": "去看", "action_kind": "view"},
+    {"code": "EXPLICIT_ENTITY_NOT_COVERED", "level": 0, "action": "去改字", "action_kind": "edit"},
+    {"code": "FREEZE_PAD_EXCESSIVE", "level": 0, "action": "去看", "action_kind": "view"},
+    {"code": "generated_media", "level": 0, "action": "去看", "action_kind": "view"},
+    {"code": "QUOTE_NOT_FOUND", "level": 0, "action": "去看", "action_kind": "view"},
+    {"code": "QUOTE_TOO_LONG", "level": 1, "action": "去剪短", "action_kind": "trim"},
+    {"code": "LOW_MATCH_CONFIDENCE", "level": 1, "action": "去看", "action_kind": "view"},
+    {"code": "VISUAL_CLIP_TOO_LONG", "level": 1, "action": "去改字", "action_kind": "edit"},
+    {"code": "NARRATION_SPEAKING_RATE", "level": 1, "action": "去改字", "action_kind": "edit"},
+    {"code": "QUOTE_MATCH_LOW", "level": 1, "action": "去听", "action_kind": "listen"},
+    {"code": "QUOTE_AUDIO_NOISY", "level": 1, "action": "去换", "action_kind": "take"},
+    {"code": "QUOTE_TEXT_DIFFERS", "level": 1, "action": "去看", "action_kind": "view"},
+    {"code": "SPEAKER_UNNAMED", "level": 1, "action": "去填", "action_kind": "speaker"},
+    {"code": "JUMP_CUT_UNCOVERED", "level": 1, "action": "去看", "action_kind": "view"},
+    {"code": "FACT_CHECK", "level": 1, "action": "", "action_kind": "none"},
+    {"code": "CONTEXTUAL_BROLL_OVERLAY", "level": 2, "action": "", "action_kind": "none"},
+    {"code": "MIXED_NO_NARRATION", "level": 2, "action": "", "action_kind": "none"}
+  ],
+  "samples": [
+    {"mode": "voiceover", "script": "数十家企业汇聚南宁信息港 迎春市集开张备年货\n马年新春将至，位于南宁市西乡塘区鲁班路95号的南宁信息港广场1月30日举办了“金马贺岁，高新同驰”迎春市集，吸引众多市民前来赶集购年货、品年味。\n活动现场汇聚几十家参展企业，展品丰富多样。近20款新能源汽车科技感十足，各类传统年货如腊肉、糕点、酒类、礼盒等一应俱全，灌阳油茶、现做寿司等特色小吃引来众多品尝者。市集现场人流涌动，欢声不断，洋溢着一派喜庆祥和的新春气氛。\n本次活动由南宁信息港主办、悦和物业公司协办，活动以市集为纽带，融合高新科技与传统节庆，为市民打造了一个集购物、体验、娱乐于一体的迎春平台。本次活动将持续到1月31日。", "expected": {"narration": 16, "quotes": 0, "list_extra": 5, "needed_shots": 21}},
+    {"mode": "mixed", "script": "数十家企业汇聚南宁信息港 迎春市集开张备年货\n马年新春将至，位于南宁市西乡塘区鲁班路95号的南宁信息港广场1月30日举办了“金马贺岁，高新同驰”迎春市集，吸引众多市民前来赶集购年货、品年味。\n同期 王红（市集主办方）：今年我们特意把新能源汽车和传统年货放在一起，就是想让大家感受高新和年味的结合。\n活动现场汇聚几十家参展企业，近20款新能源汽车科技感十足，各类传统年货如腊肉、酒类、礼盒等一应俱全。\n同期 李大姐（腊味摊摊主）：我们家的腊肠是自己熏的，用的是广西本地的猪肉。这两天人特别多，昨天一天卖了两百多斤。\n灌阳油茶、现做寿司等特色小吃引来众多品尝者，市集现场人流涌动，欢声不断。\n同期 张先生（市民）：挺热闹的，感觉年味一下就来了。\n本次活动由南宁信息港主办、悦和物业公司协办，将持续到1月31日。\n同期 王红（市集主办方）：我们这个市集会一直持续到1月31号，欢迎大家来。", "expected": {"narration": 11, "quotes": 5, "list_extra": 4, "needed_shots": 15}},
+    {"mode": "original", "script": "年味从一口腊肠开始：市集上的三个人\n买了点腊肉，还有礼盒，准备给老人送去\n我们家的腊肠是自己熏的，用的是广西本地的猪肉\n这两天人特别多，昨天一天卖了两百多斤\n今年我们特意把新能源汽车和传统年货放在一起，就是想让大家感受高新和年味的结合\n三十多家企业，基本上都是园区里的\n就是希望大家过年都能吃上一口家乡味\n挺热闹的，感觉年味一下就来了\n我们这个市集会一直持续到1月31号，欢迎大家来", "expected": {"narration": 0, "quotes": 8, "list_extra": 0, "needed_shots": 0}}
+  ]
+}

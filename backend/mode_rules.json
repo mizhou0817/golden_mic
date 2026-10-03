@@ -1,0 +1,133 @@
+{
+  "schema_version": 2,
+  "rules_version": 2,
+  "quote_caption": {"canonical": "spoken", "legacy_alias": "asr"},
+  "limits": {
+    "sentence_max_chars": 2000,
+    "script_soft_chars": 3000,
+    "script_max_chars": 8000,
+    "title_max_chars": 40,
+    "match_ok": 0.85,
+    "match_low": 0.6,
+    "quote_min_seconds": 1.0,
+    "quote_warn_seconds": 20.0,
+    "quote_max_seconds": 30.0,
+    "quote_snr_min_db": 18.0,
+    "quote_text_difference": 0.1,
+    "source_hint_radius_seconds": 5.0,
+    "cross_segment_max_gap_seconds": 2.0,
+    "cut_head_seconds": 0.12,
+    "cut_tail_seconds": 0.2,
+    "cut_snap_seconds": 0.3,
+    "quote_gap_seconds": 0.15,
+    "jump_continuity_seconds": 0.5,
+    "original_hard_cuts_warn_above": 3,
+    "alternative_takes": 5,
+    "alternative_match_min": 0.5,
+    "lower_third_seconds": 2.5,
+    "lower_third_repeat_gap_seconds": 60.0
+  },
+  "pacing_cpm": {"slow": 230, "normal": 265, "fast": 290},
+  "stage_weights_raw": {
+    "voiceover": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    "mixed": [1, 2, 1, 1, 1, 2, 1, 1, 1.5, 1],
+    "original": [1, 3, 1, 0.5, 1, 2.5, 1, 1, 2.5, 1]
+  },
+  "modes": {
+    "voiceover": {
+      "name": "AI 配音",
+      "description": "稿子全由 AI 读，素材只出画面",
+      "allowed_kinds": ["narration"],
+      "default_kind": "narration",
+      "stages": [
+        {"n": 1, "name": "检查素材", "description": "看看每个视频能不能打开、格式对不对。"},
+        {"n": 2, "name": "听素材里的声音", "description": "找出有人说话的片段。"},
+        {"n": 3, "name": "切分镜头", "description": "把每段视频切成一个个镜头。"},
+        {"n": 4, "name": "看懂每个画面", "description": "给每个镜头写一句「画面里有什么」。"},
+        {"n": 5, "name": "给稿子分句", "description": "把稿子切成一句一句，方便配画面。"},
+        {"n": 6, "name": "给每句话找画面", "description": "比较句子和画面的意思，挑最合适、不重复的镜头。"},
+        {"n": 7, "name": "配音", "description": "朗读稿子；有现场原声或你录的音的地方用原声。"},
+        {"n": 8, "name": "做字幕", "description": "按读到的字，一句句打上字幕。"},
+        {"n": 9, "name": "合成视频", "description": "把画面、配音、字幕和音乐拼成一条片子。"},
+        {"n": 10, "name": "质量检查", "description": "检查有没有画面不合适、读得太快的地方。"}
+      ]
+    },
+    "mixed": {
+      "name": "旁白 + 原声",
+      "description": "旁白 AI 读，人说话的地方直接用现场原声",
+      "allowed_kinds": ["narration", "quote"],
+      "default_kind": "narration",
+      "stages": [
+        {"n": 1, "name": "检查素材", "description": "看看每个视频能不能打开、格式对不对。"},
+        {"n": 2, "name": "听采访", "description": "把每段话转成文字，分清谁在说。"},
+        {"n": 3, "name": "切分空镜", "description": "把没人说话的画面切成一个个镜头。"},
+        {"n": 4, "name": "看懂每个画面", "description": "给每个镜头写一句「画面里有什么」。"},
+        {"n": 5, "name": "分旁白和原声", "description": "把稿子切成一句句，标出哪些是人说的话。"},
+        {"n": 6, "name": "配画面、对原话", "description": "旁白找空镜；原话在采访里找到它说的那几秒。"},
+        {"n": 7, "name": "配音", "description": "朗读旁白；原声段降噪、调音量。"},
+        {"n": 8, "name": "做字幕", "description": "旁白按读的字，原声按实际说的话；加人名条。"},
+        {"n": 9, "name": "合成视频", "description": "把空镜、原声、配音、字幕拼成一条片子。"},
+        {"n": 10, "name": "质量检查", "description": "检查画面、原声和字幕对不对得上。"}
+      ]
+    },
+    "original": {
+      "name": "只用原声",
+      "description": "稿子就是采访原话，直接剪出来",
+      "allowed_kinds": ["quote"],
+      "default_kind": "quote",
+      "stages": [
+        {"n": 1, "name": "检查素材", "description": "看看每个视频能不能打开、格式对不对。"},
+        {"n": 2, "name": "听采访", "description": "把每段话转成文字，分清谁在说。"},
+        {"n": 3, "name": "找空镜", "description": "把没人说话的画面留下来，等会儿遮跳切。"},
+        {"n": 4, "name": "看懂每个画面", "description": "给每个镜头写一句「画面里有什么」。"},
+        {"n": 5, "name": "对稿子", "description": "把稿子每句和转写对上。"},
+        {"n": 6, "name": "找原话", "description": "在采访里找到每句话说的那几秒，定好剪切点。"},
+        {"n": 7, "name": "整理原声", "description": "不用配音；把每段原声剪出来，降噪、调音量。"},
+        {"n": 8, "name": "做字幕", "description": "按实际说的话打字幕，加人名条。"},
+        {"n": 9, "name": "合成视频", "description": "按稿子顺序拼接原声，遮住跳切。"},
+        {"n": 10, "name": "质量检查", "description": "检查每段原声剪得干不干净。"}
+      ]
+    }
+  },
+  "checks": {
+    "MATCH_FALLBACK": {"severity": "error", "level": 0, "message": "第 {sentence} 句没找到合适画面，用了凑数画面——换个画面或删掉", "action": "去看", "action_kind": "view"},
+    "EXPLICIT_ENTITY_NOT_COVERED": {"severity": "error", "level": 0, "message": "第 {sentence} 句提到“{entity}”，素材里没拍到它——去掉这个词，或换成拍到它的画面", "action": "去改字", "action_kind": "edit"},
+    "FREEZE_PAD_EXCESSIVE": {"severity": "error", "level": 0, "message": "第 {sentence} 句的画面只有 {available} 秒，句子 {seconds} 秒——画面会定格 {freeze} 秒。换个更长的画面，或拆成两句", "action": "去看", "action_kind": "view"},
+    "generated_media": {"severity": "error", "level": 0, "message": "第 {sentence} 句是 AI 画的示意画面，我知道它不是现场", "action": "去看", "action_kind": "view", "acknowledgeable": true},
+    "QUOTE_NOT_FOUND": {"severity": "error", "level": 0, "message": "第 {sentence} 句是原话，但素材里没找到——{advice}删掉，或回去传含这句话的素材", "action": "去看", "action_kind": "view"},
+    "QUOTE_MATCH_LOW": {"severity": "warning", "level": 1, "message": "第 {sentence} 句对上的原话不太像，听一下是不是这句", "action": "去听", "action_kind": "listen"},
+    "QUOTE_TOO_LONG": {"severity": "warning", "level": 1, "message": "第 {sentence} 句原声 {seconds} 秒，太长了——剪短或断成两句", "action": "去剪短", "action_kind": "trim"},
+    "QUOTE_AUDIO_NOISY": {"severity": "warning", "level": 1, "message": "第 {sentence} 句原声有杂音，建议换一段", "action": "去换", "action_kind": "take"},
+    "QUOTE_TEXT_DIFFERS": {"severity": "warning", "level": 1, "message": "第 {sentence} 句字幕按实际说的话显示，和稿子有出入——确认没问题", "action": "去看", "action_kind": "view"},
+    "SPEAKER_UNNAMED": {"severity": "warning", "level": 1, "message": "说话人 {speaker} 还没填名字，人名条会显示“受访者”", "action": "去填", "action_kind": "speaker"},
+    "JUMP_CUT_UNCOVERED": {"severity": "warning", "level": 1, "message": "有 {count} 处跳切没用空镜遮盖，画面会跳一下——可以回去多传空镜", "action": "去看", "action_kind": "view"},
+    "LOW_MATCH_CONFIDENCE": {"severity": "warning", "level": 1, "message": "第 {sentence} 句的画面我看过了，是对的", "action": "去看", "action_kind": "view"},
+    "VISUAL_CLIP_TOO_LONG": {"severity": "warning", "level": 1, "message": "第 {sentence} 句太长了（{seconds} 秒），一个画面撑不住——拆成两句", "action": "去改字", "action_kind": "edit"},
+    "NARRATION_SPEAKING_RATE": {"severity": "warning", "level": 1, "message": "有 {count} 句读得偏快/偏慢（目标 {minimum}–{maximum} 字/分）——拆句或换个速度重新配音", "action": "去改字", "action_kind": "edit", "modes": ["voiceover", "mixed"]},
+    "FACT_CHECK": {"severity": "warning", "level": 1, "message": "稿子里的数字、人名、日期我核对过（问过当事人 / 看过公告）——第 {sentences} 句", "action": "", "action_kind": "none"},
+    "CONTEXTUAL_BROLL_OVERLAY": {"severity": "warning", "level": 2, "message": "{count} 句的日期或机构名会做成字幕条，我确认拼写没错", "action": "", "action_kind": "none"},
+    "MIXED_NO_NARRATION": {"severity": "warning", "level": 2, "message": "这条全是原声，其实可以用「只用原声」模式", "action": "", "action_kind": "none"}
+  },
+  "safety_checks": {
+    "QUOTE_TOO_SHORT": {"severity": "error", "level": 0, "message": "第 {sentence} 句原声只有 {seconds} 秒，不能短于 1 秒。", "action": "去看", "action_kind": "view"},
+    "QUOTE_INVALID_RANGE": {"severity": "error", "level": 0, "message": "第 {sentence} 句的原声时间范围无效，必须重新选择真实素材片段。", "action": "去看", "action_kind": "view"},
+    "QUOTE_NONCONTIGUOUS": {"severity": "error", "level": 0, "message": "第 {sentence} 句不是来源转写中的连续原话；禁止新增、替换或删除中间词，请恢复原话。", "action": "去看", "action_kind": "view"}
+  },
+  "plan_stages": {
+    "initial": [1,2,3,4,5,6,7,8,9,10],
+    "delete": [7,8,9,10], "edit": [7,8,9,10], "voice": [7,8,9,10],
+    "pacing": [7,8,9,10], "trim": [7,8,9,10], "take": [7,8,9,10],
+    "to_narration": [7,8,9,10], "speakers": [8,9,10],
+    "render": [9,10], "replace_shot": [6,9,10]
+  },
+  "notes": {
+    "quality_shape": "severity 保持现有 warning/error 合同；level=2 是纯提示，不应计入待确认项。gate_mode 不会把真实性错误降级。",
+    "timing": "仅接受上游提供的真实词时间。precision=segment 时禁止词级裁剪，不能均分或推算词时间。",
+    "score": "§10.3：NFKC/数字归一后 max(bigram 多重集 Dice, 交集数/min(bigram数))；单字使用包含判定。保留完整精度，不使用原型 weighted substring。仅对 matched_text 评分，禁止用整段最佳值抬高候选分数；asr_text 保留实际转写，连续性另行验证。",
+    "quote_ranking": "B/C 共用候选排序：显式说话人、来源提示范围、原始匹配分数、实际 asr_text 完整连续覆盖稿句、已知 SNR、词时间精度及既有确定性决胜顺序。连续覆盖保留语气词，不以模糊分数或子序列代替；不修改分数、词边界、手选 take 或 C 模式真实性门禁。前端保留服务端候选顺序，不按 SNR/分数重新排序。",
+    "versioning": "新任务及新渲染产物记录 rules_version=2；历史报告保持原样，不能读时重算或改写。",
+    "broll": "calculate_jumpcuts 只使用后一行显式提供的 cover_shot；没有已分配空镜时保守降级 zoom，绝不编造镜头。",
+    "lower_third": "本模块不生成或定时渲染人名条。交接文档约定首次显示 2.5 秒、间隔至少 60 秒重显；其他规格若要求 30 秒，应由集成方先统一，不能宣称二者同时满足。",
+    "performance": "阶段权重是相对工作权重，不是耗时预测。纯文本测试不证明真实转写速度、声学对齐精度或真实人名身份。"
+  }
+}

@@ -1,0 +1,174 @@
+name: linux-production-validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      VISION_PROVIDER: openai-compatible
+      VISION_BASE_URL: https://api.openai.com/v1
+      VISION_API_KEY: ci-placeholder
+      VISION_MODEL: ci-vision
+      EMBEDDING_PROVIDER: openai-compatible
+      EMBED_BASE_URL: https://api.openai.com/v1
+      EMBED_API_KEY: ci-placeholder
+      EMBED_MODEL: ci-embedding
+      LLM_PROVIDER: openai-compatible
+      LLM_BASE_URL: https://api.openai.com/v1
+      LLM_API_KEY: ci-placeholder
+      LLM_MODEL: ci-llm
+      VOLCENGINE_LLM_API_KEYS: ci-placeholder
+      # Core script segmentation still needs Kimi configuration, even when
+      # other provider selections use test adapters. This is not a real key.
+      KIMI_API_KEY: ci-test-secret
+      TTS_PROVIDER: edge
+      SYNC_SOUND_ENABLED: "false"
+      MIN_FREE_DISK_GB: "1"
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: "0.11.11"
+          enable-cache: true
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg nginx openssl minisign shellcheck
+
+      - name: Validate Linux deployment assets
+        run: |
+          bash -n deploy/install_host.sh deploy/deploy_release.sh deploy/rollback_release.sh deploy/validate_target_host.sh
+          shellcheck deploy/install_host.sh deploy/deploy_release.sh deploy/rollback_release.sh deploy/validate_target_host.sh
+          getent group goldenmic >/dev/null || sudo groupadd --system goldenmic
+          id goldenmic >/dev/null 2>&1 || sudo useradd --system --gid goldenmic --home-dir /nonexistent --shell /usr/sbin/nologin goldenmic
+          sudo mkdir -p /opt/golden-mic/current/.venv/bin /srv/golden-mic-data /etc/golden-mic
+          sudo mount --bind /srv/golden-mic-data /srv/golden-mic-data
+          sudo ln -sfn "$(command -v python3)" /opt/golden-mic/current/.venv/bin/python
+          sudo touch /etc/golden-mic/golden-mic.env
+          systemd-analyze verify deploy/systemd/golden-mic.service
+
+      - name: Render and validate Nginx configuration
+        run: |
+          sudo install -d -o www-data -g www-data -m 0700 /srv/golden-mic-data/nginx-body
+          sudo install -o root -g root -m 0644 deploy/nginx/golden-mic-proxy.conf /etc/nginx/golden-mic-proxy.conf
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj '/CN=ci.example.test' \
+            -keyout /tmp/golden-mic-ci.key -out /tmp/golden-mic-ci.crt
+          sed \
+            -e 's|__DOMAIN__|ci.example.test|g' \
+            -e 's|__TLS_CERTIFICATE__|/tmp/golden-mic-ci.crt|g' \
+            -e 's|__TLS_CERTIFICATE_KEY__|/tmp/golden-mic-ci.key|g' \
+            deploy/nginx/golden-mic.conf.template > /tmp/golden-mic-site.conf
+          cat > /tmp/golden-mic-nginx.conf <<'EOF'
+          pid /tmp/golden-mic-nginx.pid;
+          error_log stderr;
+          events {}
+          http {
+              include /etc/nginx/mime.types;
+              include /tmp/golden-mic-site.conf;
+          }
+          EOF
+          sudo nginx -t -c /tmp/golden-mic-nginx.conf
+
+      - name: Sync frozen Python environment
+        run: |
+          uv sync --frozen --no-dev
+          uv export --frozen --no-dev --no-emit-project --no-header --output-file /tmp/requirements-production.lock
+          diff -u requirements-production.lock /tmp/requirements-production.lock
+          uv run python deploy/generate_sbom.py --output /tmp/sbom.cdx.json
+          diff -u sbom.cdx.json /tmp/sbom.cdx.json
+
+      - name: Assert one headless OpenCV distribution
+        run: uv run python deploy/verify_python_environment.py
+
+      - name: Verify prebuilt frontend artifact
+        run: |
+          test -s frontend/dist/index.html
+          test -s frontend/dist/ASSET_MANIFEST.sha256
+          (cd frontend/dist && sha256sum --check ASSET_MANIFEST.sha256)
+          test -n "$(find frontend/dist/assets -maxdepth 1 -type f -name '*.js' -print -quit)"
+          test -n "$(find frontend/dist/assets -maxdepth 1 -type f -name '*.css' -print -quit)"
+
+      - name: Run backend validation
+        run: |
+          uv run python -m compileall -q backend tests
+          uv run python -m unittest discover -s tests -v
+          uv run python -m backend.preflight
+
+      - name: Run strict production preflight
+        env:
+          APP_ENV: production
+          ENABLE_API_DOCS: "false"
+          ENFORCE_ORIGIN_CHECK: "true"
+          ALLOWED_HOSTS: ci.example.test,127.0.0.1,localhost
+          FRONTEND_ORIGINS: https://ci.example.test
+          DATA_DIR: /tmp/golden-mic-production/tasks
+          ASR_CACHE_DIR: /tmp/golden-mic-production/cache/asr
+          TMPDIR: /tmp/golden-mic-production/tmp
+          TASK_TTL_HOURS: "72"
+          MIN_FREE_DISK_GB: "50"
+          TASK_DISK_RESERVATION_MULTIPLIER: "8"
+          QUALITY_GATE_MODE: block
+          MAX_FILES: "20"
+          MAX_CONCURRENT_UPLOADS: "1"
+          MAX_CONCURRENT_TASKS: "1"
+          MAX_PENDING_TASKS: "5"
+          SHUTDOWN_GRACE_SECONDS: "6900"
+          MEDIA_COMMAND_TIMEOUT_SECONDS: "6800"
+          VISION_API_KEY: ci-test-secret
+          VOLCENGINE_VISION_API_KEYS: ci-test-secret
+          EMBED_API_KEY: ci-test-secret
+          LLM_API_KEY: ci-test-secret
+          VOLCENGINE_LLM_API_KEYS: ci-test-secret
+          VOLCENGINE_TTS_API_KEYS: ci-test-secret
+        run: |
+          uv run python - <<'PY'
+          import asyncio
+          import os
+          import secrets
+          import shutil
+          from unittest.mock import patch
+
+          # Production always requires signed anonymous sessions. This ephemeral
+          # CI-only key is never printed or reused as a deployment credential.
+          os.environ["ANONYMOUS_SESSION_SECRET"] = secrets.token_urlsafe(48)
+          from backend.config import get_settings
+          from backend.readiness import run_full_preflight
+
+          simulated_disk = shutil._ntuple_diskusage(
+              500 * 1024**3,
+              100 * 1024**3,
+              400 * 1024**3,
+          )
+          with patch("backend.operations.shutil.disk_usage", return_value=simulated_disk):
+              report = asyncio.run(run_full_preflight(get_settings()))
+          assert report.ready, report.errors
+          print(report.as_dict())
+          PY
+
+      - name: Build minimal release
+        run: |
+          uv run python deploy/build_release.py --output dist/golden-mic-ci.tar.gz
+          uv run python deploy/verify_release_archive.py dist/golden-mic-ci.tar.gz
+          minisign -G -W -p /tmp/golden-mic-release.pub -s /tmp/golden-mic-release.key
+          minisign -Sm dist/golden-mic-ci.tar.gz \
+            -s /tmp/golden-mic-release.key \
+            -x dist/golden-mic-ci.tar.gz.minisig \
+            -t 'Golden Mic CI release'
+          minisign -Vm dist/golden-mic-ci.tar.gz \
+            -p /tmp/golden-mic-release.pub \
+            -x dist/golden-mic-ci.tar.gz.minisig

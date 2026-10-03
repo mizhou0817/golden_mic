@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "note": "Royalty-free (CC0) news underscore beds. Replace files and update this manifest to use your own CC0 tracks.",
+  "duration_seconds": 150,
+  "tracks": [
+    {
+      "file": "solemn_underscore.m4a",
+      "mood": "solemn",
+      "title": "Solemn Underscore",
+      "description": "Low, still A-minor pad for grave or memorial news.",
+      "tempo_bpm": 0,
+      "tags": [
+        "solemn",
+        "serious",
+        "memorial",
+        "grave"
+      ],
+      "license": "CC0-1.0",
+      "source": "Procedurally synthesized with FFmpeg (no third-party audio)."
+    },
+    {
+      "file": "neutral_underscore.m4a",
+      "mood": "neutral",
+      "title": "Neutral Underscore",
+      "description": "Calm C-major pad for general daily news.",
+      "tempo_bpm": 0,
+      "tags": [
+        "neutral",
+        "calm",
+        "general",
+        "daily"
+      ],
+      "license": "CC0-1.0",
+      "source": "Procedurally synthesized with FFmpeg (no third-party audio)."
+    },
+    {
+      "file": "uplifting_underscore.m4a",
+      "mood": "uplifting",
+      "title": "Uplifting Underscore",
+      "description": "Brighter D-major pad for positive or human-interest news.",
+      "tempo_bpm": 0,
+      "tags": [
+        "uplifting",
+        "positive",
+        "bright",
+        "feature"
+      ],
+      "license": "CC0-1.0",
+      "source": "Procedurally synthesized with FFmpeg (no third-party audio)."
+    },
+    {
+      "file": "tense_underscore.m4a",
+      "mood": "tense",
+      "title": "Tense Underscore",
+      "description": "Restless D-minor pulse for developing or urgent news.",
+      "tempo_bpm": 0,
+      "tags": [
+        "tense",
+        "urgent",
+        "developing",
+        "breaking"
+      ],
+      "license": "CC0-1.0",
+      "source": "Procedurally synthesized with FFmpeg (no third-party audio)."
+    }
+  ]
+}

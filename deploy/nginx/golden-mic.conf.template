@@ -1,0 +1,120 @@
+# Render __DOMAIN__, __TLS_CERTIFICATE__, and __TLS_CERTIFICATE_KEY__ during host installation.
+# Access logs deliberately use $uri, never $request or $request_uri, so task tokens
+# in media query strings cannot enter Nginx logs.
+
+limit_req_zone $binary_remote_addr zone=golden_mic_create:10m rate=10r/m;
+limit_conn_zone $binary_remote_addr zone=golden_mic_connection:10m;
+limit_conn_zone $binary_remote_addr zone=golden_mic_upload:10m;
+
+log_format golden_mic '$remote_addr [$time_local] '
+                      '"$request_method $uri $server_protocol" $status $body_bytes_sent '
+                      'rt=$request_time';
+
+upstream golden_mic_backend {
+    server 127.0.0.1:8000;
+    keepalive 16;
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name "";
+    return 444;
+}
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name "";
+    ssl_reject_handshake on;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __DOMAIN__;
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+    location / {
+        return 301 https://$host$uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name __DOMAIN__;
+
+    ssl_certificate __TLS_CERTIFICATE__;
+    ssl_certificate_key __TLS_CERTIFICATE_KEY__;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:GoldenMicTLS:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    client_max_body_size 5128m;
+    client_body_timeout 1800s;
+    client_body_temp_path /srv/golden-mic-data/nginx-body 1 2;
+    large_client_header_buffers 4 16k;
+    server_tokens off;
+
+    access_log /var/log/nginx/golden-mic.access.log golden_mic;
+    error_log /var/log/nginx/golden-mic.error.log crit;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    # No login layer: the app always enforces anonymous CSRF/Origin and task tokens.
+    limit_conn golden_mic_connection 20;
+    limit_req_status 429;
+    limit_conn_status 429;
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/css application/javascript application/json;
+
+    location ^~ /assets/ {
+        root /opt/golden-mic/current/frontend/dist;
+        try_files $uri =404;
+        expires 1y;
+    }
+
+    # Minimal public liveness signal for a CLB probe.
+    location = /health/live {
+        access_log off;
+        proxy_pass http://golden_mic_backend;
+        include /etc/nginx/golden-mic-proxy.conf;
+    }
+
+    # Readiness contains operational details and is only reachable locally.
+    location = /health/ready {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        access_log off;
+        proxy_pass http://golden_mic_backend;
+        include /etc/nginx/golden-mic-proxy.conf;
+    }
+
+    location ^~ /api/admin/ {
+        return 404;
+    }
+
+    location = /api/tasks {
+        limit_req zone=golden_mic_create burst=2 nodelay;
+        limit_conn golden_mic_upload 1;
+        proxy_request_buffering off;
+        proxy_pass http://golden_mic_backend;
+        include /etc/nginx/golden-mic-proxy.conf;
+    }
+
+    location / {
+        proxy_pass http://golden_mic_backend;
+        proxy_force_ranges on;
+        include /etc/nginx/golden-mic-proxy.conf;
+    }
+}

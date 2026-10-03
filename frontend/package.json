@@ -1,0 +1,39 @@
+{
+  "name": "ai-news-editor-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "typecheck": "tsc --noEmit",
+    "typecheck:e2e": "tsc --noEmit -p e2e/workspace/tsconfig.json",
+    "test": "node --test --test-concurrency=1 scripts/test-*.mjs",
+    "test:api": "node scripts/test-app-api.mjs",
+    "test:timeline": "node scripts/test-timeline-editing.mjs",
+    "test:preferences": "node scripts/test-workbench-preferences.mjs",
+    "test:compositions": "node scripts/test-studio-compositions.mjs",
+    "test:assets": "node scripts/test-studio-assets.mjs",
+    "test:proxy": "node scripts/test-studio-proxy.mjs",
+    "test:sequences": "node scripts/test-studio-sequences.mjs",
+    "test:e2e": "playwright test --config playwright.workspace.config.ts",
+    "build": "npm run typecheck && node scripts/write-manifest.mjs --build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173"
+  },
+  "dependencies": {
+    "lucide-react": "1.24.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "6.0.3",
+    "autoprefixer": "10.5.2",
+    "postcss": "8.5.28",
+    "tailwindcss": "3.4.19",
+    "typescript": "5.9.3",
+    "vite": "8.1.4"
+  }
+}

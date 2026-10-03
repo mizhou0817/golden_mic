@@ -1,0 +1,895 @@
+{
+  "bomFormat": "CycloneDX",
+  "components": [
+    {
+      "bom-ref": "aiohappyeyeballs-2@2.7.1",
+      "name": "aiohappyeyeballs",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/aiohappyeyeballs@2.7.1",
+      "type": "library",
+      "version": "2.7.1"
+    },
+    {
+      "bom-ref": "aiohttp-3@3.14.3",
+      "name": "aiohttp",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/aiohttp@3.14.3",
+      "type": "library",
+      "version": "3.14.3"
+    },
+    {
+      "bom-ref": "aiosignal-4@1.4.0",
+      "name": "aiosignal",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/aiosignal@1.4.0",
+      "type": "library",
+      "version": "1.4.0"
+    },
+    {
+      "bom-ref": "annotated-doc-5@0.0.4",
+      "name": "annotated-doc",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/annotated-doc@0.0.4",
+      "type": "library",
+      "version": "0.0.4"
+    },
+    {
+      "bom-ref": "annotated-types-6@0.8.0",
+      "name": "annotated-types",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/annotated-types@0.8.0",
+      "type": "library",
+      "version": "0.8.0"
+    },
+    {
+      "bom-ref": "anyio-7@4.14.2",
+      "name": "anyio",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/anyio@4.14.2",
+      "type": "library",
+      "version": "4.14.2"
+    },
+    {
+      "bom-ref": "attrs-8@26.1.0",
+      "name": "attrs",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/attrs@26.1.0",
+      "type": "library",
+      "version": "26.1.0"
+    },
+    {
+      "bom-ref": "certifi-9@2026.7.22",
+      "name": "certifi",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/certifi@2026.7.22",
+      "type": "library",
+      "version": "2026.7.22"
+    },
+    {
+      "bom-ref": "click-10@8.3.3",
+      "name": "click",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/click@8.3.3",
+      "type": "library",
+      "version": "8.3.3"
+    },
+    {
+      "bom-ref": "colorama-11@0.4.6",
+      "name": "colorama",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "platform_machine == 'AMD64' and sys_platform == 'win32'"
+        }
+      ],
+      "purl": "pkg:pypi/colorama@0.4.6",
+      "type": "library",
+      "version": "0.4.6"
+    },
+    {
+      "bom-ref": "edge-tts-12@7.2.8",
+      "name": "edge-tts",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/edge-tts@7.2.8",
+      "type": "library",
+      "version": "7.2.8"
+    },
+    {
+      "bom-ref": "fastapi-13@0.139.2",
+      "name": "fastapi",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/fastapi@0.139.2",
+      "type": "library",
+      "version": "0.139.2"
+    },
+    {
+      "bom-ref": "frozenlist-14@1.8.0",
+      "name": "frozenlist",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/frozenlist@1.8.0",
+      "type": "library",
+      "version": "1.8.0"
+    },
+    {
+      "bom-ref": "h11-15@0.16.0",
+      "name": "h11",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/h11@0.16.0",
+      "type": "library",
+      "version": "0.16.0"
+    },
+    {
+      "bom-ref": "httpcore-16@1.0.9",
+      "name": "httpcore",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/httpcore@1.0.9",
+      "type": "library",
+      "version": "1.0.9"
+    },
+    {
+      "bom-ref": "httptools-17@0.8.0",
+      "name": "httptools",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/httptools@0.8.0",
+      "type": "library",
+      "version": "0.8.0"
+    },
+    {
+      "bom-ref": "httpx-18@0.28.1",
+      "name": "httpx",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/httpx@0.28.1",
+      "type": "library",
+      "version": "0.28.1"
+    },
+    {
+      "bom-ref": "idna-19@3.18",
+      "name": "idna",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/idna@3.18",
+      "type": "library",
+      "version": "3.18"
+    },
+    {
+      "bom-ref": "jieba-20@0.42.1",
+      "name": "jieba",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/jieba@0.42.1",
+      "type": "library",
+      "version": "0.42.1"
+    },
+    {
+      "bom-ref": "multidict-21@6.7.1",
+      "name": "multidict",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/multidict@6.7.1",
+      "type": "library",
+      "version": "6.7.1"
+    },
+    {
+      "bom-ref": "numpy-22@2.4.6",
+      "name": "numpy",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/numpy@2.4.6",
+      "type": "library",
+      "version": "2.4.6"
+    },
+    {
+      "bom-ref": "numpy-23@2.5.1",
+      "name": "numpy",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform == 'linux') or (python_full_version >= '3.12' and platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/numpy@2.5.1",
+      "type": "library",
+      "version": "2.5.1"
+    },
+    {
+      "bom-ref": "opencc-python-reimplemented-24@0.1.7",
+      "name": "opencc-python-reimplemented",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/opencc-python-reimplemented@0.1.7",
+      "type": "library",
+      "version": "0.1.7"
+    },
+    {
+      "bom-ref": "opencv-python-headless-25@5.0.0.93",
+      "name": "opencv-python-headless",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/opencv-python-headless@5.0.0.93",
+      "type": "library",
+      "version": "5.0.0.93"
+    },
+    {
+      "bom-ref": "packaging-26@26.0",
+      "name": "packaging",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/packaging@26.0",
+      "type": "library",
+      "version": "26.0"
+    },
+    {
+      "bom-ref": "platformdirs-27@4.11.0",
+      "name": "platformdirs",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/platformdirs@4.11.0",
+      "type": "library",
+      "version": "4.11.0"
+    },
+    {
+      "bom-ref": "propcache-28@0.5.2",
+      "name": "propcache",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/propcache@0.5.2",
+      "type": "library",
+      "version": "0.5.2"
+    },
+    {
+      "bom-ref": "pydantic-29@2.13.4",
+      "name": "pydantic",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/pydantic@2.13.4",
+      "type": "library",
+      "version": "2.13.4"
+    },
+    {
+      "bom-ref": "pydantic-core-30@2.46.4",
+      "name": "pydantic-core",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/pydantic-core@2.46.4",
+      "type": "library",
+      "version": "2.46.4"
+    },
+    {
+      "bom-ref": "pydantic-settings-31@2.14.2",
+      "name": "pydantic-settings",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/pydantic-settings@2.14.2",
+      "type": "library",
+      "version": "2.14.2"
+    },
+    {
+      "bom-ref": "python-dotenv-32@1.2.2",
+      "name": "python-dotenv",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/python-dotenv@1.2.2",
+      "type": "library",
+      "version": "1.2.2"
+    },
+    {
+      "bom-ref": "python-multipart-33@0.0.32",
+      "name": "python-multipart",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/python-multipart@0.0.32",
+      "type": "library",
+      "version": "0.0.32"
+    },
+    {
+      "bom-ref": "pyyaml-34@6.0.3",
+      "name": "pyyaml",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/pyyaml@6.0.3",
+      "type": "library",
+      "version": "6.0.3"
+    },
+    {
+      "bom-ref": "scenedetect-35@0.7.1",
+      "name": "scenedetect",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "type": "library",
+      "version": "0.7.1"
+    },
+    {
+      "bom-ref": "silero-vad-lite-36@0.2.1",
+      "name": "silero-vad-lite",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/silero-vad-lite@0.2.1",
+      "type": "library",
+      "version": "0.2.1"
+    },
+    {
+      "bom-ref": "starlette-37@1.3.1",
+      "name": "starlette",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/starlette@1.3.1",
+      "type": "library",
+      "version": "1.3.1"
+    },
+    {
+      "bom-ref": "tabulate-38@0.10.0",
+      "name": "tabulate",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/tabulate@0.10.0",
+      "type": "library",
+      "version": "0.10.0"
+    },
+    {
+      "bom-ref": "tqdm-39@4.70.0",
+      "name": "tqdm",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/tqdm@4.70.0",
+      "type": "library",
+      "version": "4.70.0"
+    },
+    {
+      "bom-ref": "typing-extensions-40@4.16.0",
+      "name": "typing-extensions",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/typing-extensions@4.16.0",
+      "type": "library",
+      "version": "4.16.0"
+    },
+    {
+      "bom-ref": "typing-inspection-41@0.4.2",
+      "name": "typing-inspection",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/typing-inspection@0.4.2",
+      "type": "library",
+      "version": "0.4.2"
+    },
+    {
+      "bom-ref": "uvicorn-42@0.51.0",
+      "name": "uvicorn",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/uvicorn@0.51.0",
+      "type": "library",
+      "version": "0.51.0"
+    },
+    {
+      "bom-ref": "uvloop-43@0.22.1",
+      "name": "uvloop",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "platform_machine == 'x86_64' and platform_python_implementation != 'PyPy' and sys_platform == 'linux'"
+        }
+      ],
+      "purl": "pkg:pypi/uvloop@0.22.1",
+      "type": "library",
+      "version": "0.22.1"
+    },
+    {
+      "bom-ref": "watchfiles-44@1.2.0",
+      "name": "watchfiles",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/watchfiles@1.2.0",
+      "type": "library",
+      "version": "1.2.0"
+    },
+    {
+      "bom-ref": "websockets-45@16.1.1",
+      "name": "websockets",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/websockets@16.1.1",
+      "type": "library",
+      "version": "16.1.1"
+    },
+    {
+      "bom-ref": "yarl-46@1.24.5",
+      "name": "yarl",
+      "properties": [
+        {
+          "name": "uv:package:marker",
+          "value": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+        }
+      ],
+      "purl": "pkg:pypi/yarl@1.24.5",
+      "type": "library",
+      "version": "1.24.5"
+    }
+  ],
+  "dependencies": [
+    {
+      "dependsOn": [],
+      "ref": "aiohappyeyeballs-2@2.7.1"
+    },
+    {
+      "dependsOn": [
+        "aiohappyeyeballs-2@2.7.1",
+        "aiosignal-4@1.4.0",
+        "attrs-8@26.1.0",
+        "frozenlist-14@1.8.0",
+        "multidict-21@6.7.1",
+        "propcache-28@0.5.2",
+        "typing-extensions-40@4.16.0",
+        "yarl-46@1.24.5"
+      ],
+      "ref": "aiohttp-3@3.14.3"
+    },
+    {
+      "dependsOn": [
+        "frozenlist-14@1.8.0",
+        "typing-extensions-40@4.16.0"
+      ],
+      "ref": "aiosignal-4@1.4.0"
+    },
+    {
+      "dependsOn": [],
+      "ref": "annotated-doc-5@0.0.4"
+    },
+    {
+      "dependsOn": [],
+      "ref": "annotated-types-6@0.8.0"
+    },
+    {
+      "dependsOn": [
+        "idna-19@3.18",
+        "typing-extensions-40@4.16.0"
+      ],
+      "ref": "anyio-7@4.14.2"
+    },
+    {
+      "dependsOn": [],
+      "ref": "attrs-8@26.1.0"
+    },
+    {
+      "dependsOn": [],
+      "ref": "certifi-9@2026.7.22"
+    },
+    {
+      "dependsOn": [
+        "colorama-11@0.4.6"
+      ],
+      "ref": "click-10@8.3.3"
+    },
+    {
+      "dependsOn": [],
+      "ref": "colorama-11@0.4.6"
+    },
+    {
+      "dependsOn": [
+        "aiohttp-3@3.14.3",
+        "certifi-9@2026.7.22",
+        "tabulate-38@0.10.0",
+        "typing-extensions-40@4.16.0"
+      ],
+      "ref": "edge-tts-12@7.2.8"
+    },
+    {
+      "dependsOn": [
+        "annotated-doc-5@0.0.4",
+        "pydantic-29@2.13.4",
+        "starlette-37@1.3.1",
+        "typing-extensions-40@4.16.0",
+        "typing-inspection-41@0.4.2"
+      ],
+      "ref": "fastapi-13@0.139.2"
+    },
+    {
+      "dependsOn": [],
+      "ref": "frozenlist-14@1.8.0"
+    },
+    {
+      "dependsOn": [
+        "click-10@8.3.3",
+        "edge-tts-12@7.2.8",
+        "fastapi-13@0.139.2",
+        "httpx-18@0.28.1",
+        "jieba-20@0.42.1",
+        "opencc-python-reimplemented-24@0.1.7",
+        "opencv-python-headless-25@5.0.0.93",
+        "packaging-26@26.0",
+        "pydantic-settings-31@2.14.2",
+        "python-multipart-33@0.0.32",
+        "scenedetect-35@0.7.1",
+        "silero-vad-lite-36@0.2.1",
+        "starlette-37@1.3.1",
+        "uvicorn-42@0.51.0",
+        "websockets-45@16.1.1"
+      ],
+      "ref": "golden-mic-1@1.0.0"
+    },
+    {
+      "dependsOn": [],
+      "ref": "h11-15@0.16.0"
+    },
+    {
+      "dependsOn": [
+        "certifi-9@2026.7.22",
+        "h11-15@0.16.0"
+      ],
+      "ref": "httpcore-16@1.0.9"
+    },
+    {
+      "dependsOn": [],
+      "ref": "httptools-17@0.8.0"
+    },
+    {
+      "dependsOn": [
+        "anyio-7@4.14.2",
+        "certifi-9@2026.7.22",
+        "httpcore-16@1.0.9",
+        "idna-19@3.18"
+      ],
+      "ref": "httpx-18@0.28.1"
+    },
+    {
+      "dependsOn": [],
+      "ref": "idna-19@3.18"
+    },
+    {
+      "dependsOn": [],
+      "ref": "jieba-20@0.42.1"
+    },
+    {
+      "dependsOn": [],
+      "ref": "multidict-21@6.7.1"
+    },
+    {
+      "dependsOn": [],
+      "ref": "numpy-22@2.4.6"
+    },
+    {
+      "dependsOn": [],
+      "ref": "numpy-23@2.5.1"
+    },
+    {
+      "dependsOn": [],
+      "ref": "opencc-python-reimplemented-24@0.1.7"
+    },
+    {
+      "dependsOn": [
+        "numpy-22@2.4.6",
+        "numpy-23@2.5.1"
+      ],
+      "ref": "opencv-python-headless-25@5.0.0.93"
+    },
+    {
+      "dependsOn": [],
+      "ref": "packaging-26@26.0"
+    },
+    {
+      "dependsOn": [],
+      "ref": "platformdirs-27@4.11.0"
+    },
+    {
+      "dependsOn": [],
+      "ref": "propcache-28@0.5.2"
+    },
+    {
+      "dependsOn": [
+        "annotated-types-6@0.8.0",
+        "pydantic-core-30@2.46.4",
+        "typing-extensions-40@4.16.0",
+        "typing-inspection-41@0.4.2"
+      ],
+      "ref": "pydantic-29@2.13.4"
+    },
+    {
+      "dependsOn": [
+        "typing-extensions-40@4.16.0"
+      ],
+      "ref": "pydantic-core-30@2.46.4"
+    },
+    {
+      "dependsOn": [
+        "pydantic-29@2.13.4",
+        "python-dotenv-32@1.2.2",
+        "typing-inspection-41@0.4.2"
+      ],
+      "ref": "pydantic-settings-31@2.14.2"
+    },
+    {
+      "dependsOn": [],
+      "ref": "python-dotenv-32@1.2.2"
+    },
+    {
+      "dependsOn": [],
+      "ref": "python-multipart-33@0.0.32"
+    },
+    {
+      "dependsOn": [],
+      "ref": "pyyaml-34@6.0.3"
+    },
+    {
+      "dependsOn": [
+        "click-10@8.3.3",
+        "numpy-22@2.4.6",
+        "numpy-23@2.5.1",
+        "opencv-python-headless-25@5.0.0.93",
+        "platformdirs-27@4.11.0",
+        "tqdm-39@4.70.0"
+      ],
+      "ref": "scenedetect-35@0.7.1"
+    },
+    {
+      "dependsOn": [],
+      "ref": "silero-vad-lite-36@0.2.1"
+    },
+    {
+      "dependsOn": [
+        "anyio-7@4.14.2",
+        "typing-extensions-40@4.16.0"
+      ],
+      "ref": "starlette-37@1.3.1"
+    },
+    {
+      "dependsOn": [],
+      "ref": "tabulate-38@0.10.0"
+    },
+    {
+      "dependsOn": [
+        "colorama-11@0.4.6"
+      ],
+      "ref": "tqdm-39@4.70.0"
+    },
+    {
+      "dependsOn": [],
+      "ref": "typing-extensions-40@4.16.0"
+    },
+    {
+      "dependsOn": [
+        "typing-extensions-40@4.16.0"
+      ],
+      "ref": "typing-inspection-41@0.4.2"
+    },
+    {
+      "dependsOn": [
+        "click-10@8.3.3",
+        "h11-15@0.16.0",
+        "httptools-17@0.8.0",
+        "python-dotenv-32@1.2.2",
+        "pyyaml-34@6.0.3",
+        "uvloop-43@0.22.1",
+        "watchfiles-44@1.2.0",
+        "websockets-45@16.1.1"
+      ],
+      "ref": "uvicorn-42@0.51.0"
+    },
+    {
+      "dependsOn": [],
+      "ref": "uvloop-43@0.22.1"
+    },
+    {
+      "dependsOn": [
+        "anyio-7@4.14.2"
+      ],
+      "ref": "watchfiles-44@1.2.0"
+    },
+    {
+      "dependsOn": [],
+      "ref": "websockets-45@16.1.1"
+    },
+    {
+      "dependsOn": [
+        "idna-19@3.18",
+        "multidict-21@6.7.1",
+        "propcache-28@0.5.2"
+      ],
+      "ref": "yarl-46@1.24.5"
+    }
+  ],
+  "metadata": {
+    "component": {
+      "bom-ref": "golden-mic-1@1.0.0",
+      "name": "golden-mic",
+      "properties": [
+        {
+          "name": "uv:package:is_project_root",
+          "value": "true"
+        }
+      ],
+      "type": "library",
+      "version": "1.0.0"
+    },
+    "timestamp": "2026-07-28T00:00:00Z",
+    "tools": [
+      {
+        "name": "uv",
+        "vendor": "Astral Software Inc.",
+        "version": "0.11.11"
+      }
+    ]
+  },
+  "serialNumber": "urn:uuid:ffc3363b-799f-5c82-994c-4b84144cfe03",
+  "specVersion": "1.5",
+  "version": 1
+}

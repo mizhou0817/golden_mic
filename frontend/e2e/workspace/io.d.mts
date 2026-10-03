@@ -1,0 +1,22 @@
+/** Exact narrow runtime boundary, not ambient shims for all of Node. */
+export const env: Record<string, string | undefined>;
+export const ROOT: string;
+export function tempRoot(): string;
+export function joinPath(...parts: string[]): string;
+export function resolvePath(...parts: string[]): string;
+export function parentPath(file: string): string;
+export function basename(file: string): string;
+export function absolute(file: string): boolean;
+export function samePath(left: string, right: string): boolean;
+export function exists(file: string): boolean;
+export function size(file: string): number;
+export function readText(file: string): string;
+export function readBytes(file: string): Uint8Array;
+export function makeDirectory(directory: string): void;
+export function newInstance(): string;
+export function say(text: string): void;
+export function bytesHash(bytes: Uint8Array): string;
+export function hashFile(file: string): string;
+export function writeJSON(file: string, value: unknown): void;
+export function inside(parent: string, child: string): boolean;
+export function unlinked(file: string): string;
