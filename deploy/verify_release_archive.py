@@ -58,7 +58,19 @@ REQUIRED_MEMBERS = {
     "golden-mic/uv.lock",
     "golden-mic/vendor/scenedetect-0.7.1-py3-none-any.whl",
 }
-FORBIDDEN_PARTS = {".env", ".venv", "data", "eval_sample", "node_modules"}
+FORBIDDEN_PARTS = {".env", ".venv", "data", "eval_sample", "node_modules", "private-models"}
+
+
+def forbidden_payload(name: str) -> bool:
+    """Git ignore is not a packaging boundary: reject private payloads too."""
+    path = PurePosixPath(name.lower())
+    leaf = path.name
+    parts = path.parts[1:] if path.parts and path.parts[0] == "golden-mic" else path.parts
+    return (any(part.casefold() in FORBIDDEN_PARTS for part in path.parts)
+            or (leaf.startswith(".env") and leaf != ".env.example")
+            or leaf.endswith((".env", ".pem", ".key", ".pfx", ".p12", ".onnx", ".safetensors", ".pt", ".pth"))
+            or parts[:3] == ("backend", "assets", "samples")
+            or "/artifacts/" in "/" + path.as_posix() + "/")
 
 
 def main() -> int:
@@ -150,7 +162,7 @@ def _validate_member(member: tarfile.TarInfo) -> None:
         raise RuntimeError(f"Non-canonical release archive path: {name}")
     if len(pure_path.parts) < 2 or pure_path.parts[0] != "golden-mic":
         raise RuntimeError(f"Release archive member is outside golden-mic/: {name}")
-    if any(part in FORBIDDEN_PARTS for part in pure_path.parts[1:]):
+    if forbidden_payload(name):
         raise RuntimeError(f"Forbidden release archive path: {name}")
     if not (member.isfile() or member.isdir()):
         raise RuntimeError(f"Release archive links/devices are forbidden: {name}")

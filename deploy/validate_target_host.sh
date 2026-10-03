@@ -29,11 +29,11 @@ runuser -u goldenmic -- \
   "${CURRENT}/.venv/bin/python" "${CURRENT}/deploy/validate_environment_file.py" \
   /etc/golden-mic/golden-mic.env
 runuser -u goldenmic -- python3 "${CURRENT}/deploy/run_with_environment.py" \
-  /etc/golden-mic/golden-mic.env \
   --cwd /srv/golden-mic-data/tmp \
   --set PYTHONPATH="${CURRENT}" \
   --set HOME=/nonexistent \
   --set TMPDIR=/srv/golden-mic-data/tmp \
+  /etc/golden-mic/golden-mic.env \
   -- "${CURRENT}/.venv/bin/python" -m backend.preflight
 
 curl --fail --silent http://127.0.0.1:8000/health/live >/dev/null

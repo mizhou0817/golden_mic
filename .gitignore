@@ -11,6 +11,9 @@ venv/
 *.env.local
 data/
 eval_sample/
+# Operator-supplied, potentially private/licensed models and sample media.
+/private-models/
+/backend/assets/samples/
 canary_test/artifacts/
 frontend/node_modules/
 frontend/dist/

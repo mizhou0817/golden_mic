@@ -2,11 +2,13 @@
 
 本页按当前源码说明部署流程，**不是当前在线版本或生产验收报告**。[2026-10-03 本地开发交付记录](../docs/V2_PRODUCT_DELIVERY_20261003.md)仅证明该日期、该源码与受限环境中的结果；其中 TEMP 未签名包不是可直接上线的生产制品，后写文档也不属于那个包。不得从历史测试数量、构建模块数或本机服务记录推断目标机状态。
 
-当前入口是 V2 A/B/C 创建、处理、结果工作台和作品历史；不新增 Studio UI，不恢复课堂、账号登录或独立云作业。开发防护基线见 [DEVELOPMENT.md](../docs/DEVELOPMENT.md)，配置与故障处理见 [CONFIGURATION.md](../docs/CONFIGURATION.md)、[TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)、[RUNBOOK.md](../docs/RUNBOOK.md)。这些链接面向同版源码；最小发布包不保证包含全部入门文档。
+当前入口是 V2 A/B/C 创建、处理、结果工作台和作品历史；不新增 Studio UI，不恢复课堂、账号登录或独立云作业。开发防护基线见 [DEVELOPMENT.md](../docs/DEVELOPMENT.md)，配置与故障处理见 [CONFIGURATION.md](../docs/CONFIGURATION.md)、[TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)、[RUNBOOK.md](../docs/RUNBOOK.md)。新发布包按显式白名单包含当前全部 docs Markdown 和模型决策 JSON，包括索引、六篇入门/维护指南与最新交付页；不追补旧包。
 
-**上线暂停条件：环境包装器的现有调用顺序已通过合成参数解析复现为错误，详见第 7 节；先完成独立代码修复与 Linux 验证，再执行发布/目标机检查命令。** 此外，必需本地语音包和真实生产验收仍未完成。下面展示脚本的设计流程，不是可忽略阻塞直接复制运行的批准。
+**上线前仍须完成独立验证：** 环境包装器的调用协议见第 7 节：选项在环境文件之前，显式 `--` 后才是目标命令及其参数。修复后的回归和 Linux CI 必须重跑、单独报告，静态/参数回归不等于目标机发布验收。必需本地语音包和真实生产验收仍未完成。下面展示脚本的设计流程，不是可忽略阻塞直接复制运行的批准。
 
-**本文命令均为后续授权操作说明。** 本次核对仅涉及文档/源码、命令语法及无环境访问的合成参数解析；未执行安装、应用构建、产品回归、预检、服务、网络请求或部署，未读取实际环境、数据库、模型或媒体。Linux 隔离 CI 仍是上线必需条件，但当前未实现可在此直接照搬的 Linux 安全测试执行器；Windows 受保护 V2 基线不能被改名当成 Linux 验收，也不能用无防护全量 discovery 代替。
+**本文命令均为后续授权操作说明。** 本次文档修订只读取文档与相关源码，未执行命令、安装、应用构建、产品回归、预检、服务、网络请求或部署，未读取实际环境、数据库、模型、媒体或本地验收产物。Linux/Windows 受保护 V2 入口的前提与逐项平台排除见开发指南；Windows 结果不能被改名当成 Linux 验收，也不能用无防护全量 discovery 代替。
+
+GitHub `blob/main` / `tree/main` 链接指向**完整公开源码**，不是最小包内文件，也不证明已部署版本；`main` 会变化。包内 README/docs/deploy/backend/vendor/冻结依赖等保持相对链接。源码 commit、构建绑定和实际归档成员需在每次新发布时核验。
 
 ## 1. 架构、权限与持久状态
 
@@ -23,7 +25,7 @@
 由操作者完成 CVM、独立 CBS 挂载、DNS、TLS、密钥轮换、预算、合规和监控审批。建议容量起点为 8 vCPU / 16 GiB / 200 GiB，但这不是压测承诺。安全组仅向目标用户开放 80/443，22 仅固定运维 IP；设置磁盘/inode、CPU/内存、服务重启、5xx 和费用告警，独立备份数据与受限配置。
 
 - Linux 锁目标是 **x86_64、CPython 3.11 或 3.12**；不是 ARM 或任意 Python 的兼容声明。[pyproject.toml](../pyproject.toml)要求 uv `>=0.11.11,<0.12`；重现当前导出/SBOM 的逐字节比较应使用 **uv 0.11.11** 和相同 `SOURCE_DATE_EPOCH` 策略，不要把可接受的版本范围误当作输出字节稳定保证。
-- 目标机预先安装 Python/venv、FFmpeg/ffprobe、Nginx、Minisign、uv、curl、tar 和脚本所列 Linux 工具；安装器只配置主机，不安装这些依赖。Ubuntu 24.04/Python 3.12 是可选部署基线，不是已验收结论。构建机另外需要与 [frontend/package-lock.json](../frontend/package-lock.json)兼容的 Node/npm。
+- 目标机预先安装 Python/venv、同一套真实 FFmpeg/ffprobe、Nginx、Minisign、uv、curl、tar 和脚本所列 Linux 工具；安装器只配置主机，不安装这些依赖。Ubuntu 24.04/Python 3.12 是可选部署基线，不是已验收结论。构建机另外需要与 [frontend/package-lock.json](https://github.com/mizhou0817/golden_mic/blob/main/frontend/package-lock.json)兼容的 Node/npm。
 - 基础环境只使用 [uv.lock](../uv.lock)冻结安装：`uv sync --frozen --no-dev`。[requirements-production.lock](../requirements-production.lock)是同锁的带哈希备用导出；[requirements.txt](../requirements.txt)不是生产部署脚本的安装输入。不得重写锁、生产导出或 [sbom.cdx.json](../sbom.cdx.json)只为让比较变绿。
 - [环境验证器](verify_python_environment.py)使用安装元数据逐项检查依赖，并检查 `opencv-python-headless==5.0.0.93`、SceneDetect 0.7.1 与 `cv2` 版本，拒绝 GUI OpenCV。**uv 新建 venv 不保证含 pip**，不要在未确认安装 pip 时附加 `python -m pip check`；脚本实际执行的是此验证器，不以 pip 为前提。
 - FFmpeg 必需 `libx264`、AAC、`ass`、`loudnorm`、`ebur128`、`silencedetect`、`perspective`；字体及 OFL 摘要同样会校验。缺能力必须修复供应链/环境，不能跳过预检。
@@ -45,6 +47,8 @@
 ## 4. 在独立干净 checkout 构建
 
 使用可追溯、经审批的不可变版本，**自己拥有的独立干净 checkout**，不借用正在编辑/运行服务的工作树或旧构建。工作树和构建进程中不得有实际 dotenv、Provider 凭证、用户数据/媒体或生产挂载；临时目录、缓存和出站规则在隔离构建环境中预先配置。构建期间所有输入必须冻结，包括本页等会打包的文档。
+
+使用含本轮 Git 属性换行规则的干净克隆：shell、[uv.lock](../uv.lock)、[requirements-production.lock](../requirements-production.lock)、[sbom.cdx.json](../sbom.cdx.json)固定 LF，其余源码及前端绑定输入保留提交原始字节，不自动转换已有 CRLF。不要在旧工作树批量 renormalize 或重新签署历史绑定来“修复”CRLF 差异；在新副本重建并比较，详见[开发指南](../docs/DEVELOPMENT.md)。
 
 以下 Bash 示例要求操作者先设置 `GM_SOURCE`（可信 checkout 的规范绝对路径）、`GM_OUTPUT_ROOT`（已存在且在源码树之外的自有绝对输出目录）和唯一 `GM_RELEASE_ID`（字母/数字/点/下划线/连字符）。未设置会停止；不要把示例域名或尖括号字串当真实参数。不覆盖旧输出、失败证据或 release ID。
 
@@ -79,9 +83,9 @@ cd "$GM_SOURCE"
 .venv/bin/python deploy/build_release.py --output "$GM_ARCHIVE"
 ```
 
-这不是测试命令清单。先完成 [DEVELOPMENT.md](../docs/DEVELOPMENT.md)说明的受保护 Windows 基线，以及另行实现并审核的 Linux 隔离 CI，再批准生产构建。不要在真实工作树运行无防护全套测试或导入启动钩子。
+这不是测试命令清单。先完成 [DEVELOPMENT.md](../docs/DEVELOPMENT.md)说明的受保护 V2 回归及经审核的 Linux 隔离 CI，再批准生产构建。Linux 回归要求已安装的真实配对 ffmpeg/ffprobe，不下载模型；平台限定排除逐项另列，不隐式跳过。新修复的实际结果另行报告，不在本文宣称 CI 绿色。不要在真实工作树运行无防护全套测试或导入启动钩子。
 
-构建细节以 [build_release.py](build_release.py)、[前端构建入口](../frontend/scripts/write-manifest.mjs)和[绑定校验器](frontend_binding.py)为准：
+构建细节以 [build_release.py](build_release.py)、完整源码中的[前端构建入口](https://github.com/mizhou0817/golden_mic/blob/main/frontend/scripts/write-manifest.mjs)和[绑定校验器](frontend_binding.py)为准：
 
 - 必须在 frontend 工作目录执行 `npm ci` 后 `npm run build`。它先类型检查，再在同进程 Vite 构建前后绑定源码/锁/配置/模式规则和资产；禁用 Vite dotenv/public 复制。不要单独跑 Vite 后补签资产摘要，也不要用 manifest-only 调用给陈旧源码重新签绑定。
 - `--frontend-dir` 可选；默认选择标准 dist。只接受已有的规范直接子目录 `frontend/dist` 或 `frontend/dist-canary-安全标签`（标签首位字母/数字，后续仅字母/数字/下划线/连字符，总长不超过 64），也可用对应规范绝对路径；不接受别名、点路径、链接、任意外部目录或尾斜杠。独立构建可在 frontend 中用 `npm run build -- --out-dir "$GM_FRONTEND_LEAF"`，其中变量须预设为新的合法 `dist-canary-` 叶名；打包时加 `--frontend-dir "frontend/$GM_FRONTEND_LEAF"`。这是替代标准 dist 的分支，不要复用旧标签。
@@ -91,9 +95,11 @@ cd "$GM_SOURCE"
 
 ### 包内边界
 
-[build_release.py](build_release.py)的 `INCLUDED_FILES` / `INCLUDED_DIRECTORIES` 是唯一打包范围权威，不能由本页扩大白名单。当前递归包含 backend、选定前端资产（映射为标准 dist）、vendor、deploy；另外显式包含根 README、冻结依赖/SBOM 和选定契约/日期文档。不是递归打包整个 docs。
+[build_release.py](build_release.py)的 `INCLUDED_FILES` / `INCLUDED_DIRECTORIES` 是唯一打包范围权威，不能由本页扩大白名单。新包递归包含 backend、选定前端资产（映射为标准 dist）、vendor、deploy；另外显式包含根 README、冻结依赖/SBOM、**当前全部 docs/*.md** 和 [docs/v2-model-selection-20261002.json](../docs/v2-model-selection-20261002.json)。文档按文件名逐项列入，不是递归打包整个 docs 或在打包时通配吸收任意新文件。
 
-不包含完整 docs、tests、前端源码/开发配置、node_modules、开发 venv、实际 dotenv、任务数据、评测媒体或外置模型包；根开发 dotenv 示例也不在白名单。部署生产示例模板则随 deploy 目录打包，不能与实际秘密混淆。新入门文档与最新日期交付页**不保证在包内**，不要声称最新文档已随旧包发布。最小归档不是可直接重新构建前端的完整源码 checkout；发布时保留独立同版源码与审计材料，不复制真实数据填补文档链接。
+显式新增文档包含 [docs/README.md](../docs/README.md)、[docs/QUICKSTART.md](../docs/QUICKSTART.md)、[docs/USER_GUIDE.md](../docs/USER_GUIDE.md)、[docs/CONFIGURATION.md](../docs/CONFIGURATION.md)、[docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)、[docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md)及[最新交付页](../docs/V2_PRODUCT_DELIVERY_20261003.md)；[docs/RUNBOOK.md](../docs/RUNBOOK.md)继续包含。后续新增文件仍须同步审核白名单与归档验证，不以本页代替实际 tar 成员核验。
+
+不包含 tests、前端源码/开发配置/e2e、VS Code 配置、node_modules、开发 venv、实际 dotenv、任务数据、评测媒体、canary 本地证据或外置模型包；根开发 dotenv 示例也不在白名单。部署生产示例模板则随 deploy 目录打包，不能与实际秘密混淆。所有新增指南和最新交付页只随**重新构建的新包**发布，不追补旧日期报告中的归档、计数或哈希。最小归档不是可直接重新构建前端的完整源码 checkout；发布时保留独立同版源码与审计材料，不复制真实数据填补文档链接。
 
 ## 5. 独立签名与可信引导
 
@@ -184,7 +190,7 @@ sudo bash "$GM_BOOTSTRAP_SOURCE/deploy/deploy_release.sh" \
   --drain-timeout 7200
 ```
 
-[deploy_release.sh](deploy_release.sh)当前安排的顺序如下，不应缩写成“先停旧服务再安装”；完整可执行性仍须经过 Linux 隔离验证，尤其注意下述参数顺序风险：
+[deploy_release.sh](deploy_release.sh)当前安排的顺序如下，不应缩写成“先停旧服务再安装”；完整可执行性仍须经过 Linux 隔离验证，并遵循下述包装器调用协议：
 
 1. 校验参数/工具/CBS 挂载；把归档复制到 root-only 临时文件；先校验 SHA-256，再用已安装公钥验证 Minisign。
 2. 检查系统环境文件占位符/权限和公钥属主/权限；拒绝已存在目标，创建新 release 目录；使用**调用脚本旁的可信归档验证器**检查 tar，之后才解压，检查必要文件。
@@ -194,7 +200,7 @@ sudo bash "$GM_BOOTSTRAP_SOURCE/deploy/deploy_release.sh" \
 6. 用 `ln -sfn` 更新 current，daemon-reload、restart；systemd 的 `ExecStartPre` 再验证环境与完整 preflight。最多 60 次、间隔 2 秒检查 readiness，成功后 reload Nginx，才提交发布成功。脚本未实现整个发布/数据的事务原子性，不能把链接切换描述为断电安全事务。
 7. 排空超时会尝试 DELETE drain 并中止，不主动强杀任务。失败/中断 trap 尝试恢复旧链接/服务、取消未切换旧服务的 drain，并清理本次新 release；首次发布无旧版本时停止服务并移除 current。自动恢复中的部分命令是 best-effort，**脚本报“restored”不证明旧服务已健康**，须再次验证。不会以删除真实任务数据解决失败。
 
-**已复现的参数解析阻塞：** [run_with_environment.py](run_with_environment.py)将 `command` 声明为 `argparse.REMAINDER`，而[部署调用](deploy_release.sh#L179-L185)和[目标机检查调用](validate_target_host.sh#L31-L37)把环境文件位置参数放在 `--cwd` / `--set` 之前。本轮仅提取实际源码中的 ArgumentParser 构造与 parse_args 语句，在内存传入合成路径验证：现顺序得到 `cwd=None`、`overrides=[]`、待执行命令首项为 `--cwd`；选项前置时才得到预期工作目录、覆盖项和目标命令。没有读取环境文件、执行 os.exec 或启动子命令，也不是实际 Linux 部署测试。应将包装器选项移到环境文件位置参数之前，再跟 `--` 与目标命令，并独立修复/验证调用脚本；本轮未改部署代码，不绕过包装器或完整 preflight 来放行。
+**环境包装器调用协议：** [run_with_environment.py](run_with_environment.py)的选项 `--cwd` / `--set` 必须放在环境文件位置参数**之前**；环境文件后必须有显式 `--`，其后是目标可执行程序及全部目标参数。目标参数即使名为 `--cwd` 或 `--set` 也属于目标命令，不能再被包装器解释。[部署调用](deploy_release.sh)与[目标机检查调用](validate_target_host.sh)应使用同一协议。缺少分隔符或旧顺序应修正调用，不绕过包装器、环境 schema 或完整 preflight。此规则的静态/合成参数回归只验证解析、转发与拒绝边界；不代表已读取真实 EnvironmentFile、运行目标 preflight 或完成 Linux 发布/回滚。修复后的实际验证另行报告，本文不新增通过计数。
 
 ### 手工排空、停止与取消排空
 

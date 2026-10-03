@@ -12,8 +12,12 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHON_DOTENV_DISABLED: "1"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
       VISION_PROVIDER: openai-compatible
       VISION_BASE_URL: https://api.openai.com/v1
       VISION_API_KEY: ci-placeholder
@@ -45,6 +49,12 @@ jobs:
         with:
           version: "0.11.11"
           enable-cache: true
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.18.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install --yes ffmpeg nginx openssl minisign shellcheck
@@ -89,27 +99,48 @@ jobs:
           uv sync --frozen --no-dev
           uv export --frozen --no-dev --no-emit-project --no-header --output-file /tmp/requirements-production.lock
           diff -u requirements-production.lock /tmp/requirements-production.lock
-          uv run python deploy/generate_sbom.py --output /tmp/sbom.cdx.json
+          uv run --frozen --no-sync python -B deploy/generate_sbom.py --output /tmp/sbom.cdx.json
           diff -u sbom.cdx.json /tmp/sbom.cdx.json
 
       - name: Assert one headless OpenCV distribution
-        run: uv run python deploy/verify_python_environment.py
+        run: uv run --frozen --no-sync python -B deploy/verify_python_environment.py
 
-      - name: Verify prebuilt frontend artifact
+      - name: Install locked frontend dependencies
+        run: npm --prefix frontend ci --ignore-scripts --no-audit --no-fund
+
+      - name: Build source-bound frontend and typecheck E2E contracts
+        run: |
+          npm --prefix frontend run build
+          npm --prefix frontend run typecheck:e2e
+          node frontend/node_modules/typescript/bin/tsc --noEmit -p frontend/e2e/modes/tsconfig.json
+          node frontend/node_modules/typescript/bin/tsc --noEmit -p frontend/e2e/v2/tsconfig.json
+
+      - name: Verify source-bound frontend artifact
         run: |
           test -s frontend/dist/index.html
           test -s frontend/dist/ASSET_MANIFEST.sha256
+          test -s frontend/dist/MODE_BUILD_BINDING.json
           (cd frontend/dist && sha256sum --check ASSET_MANIFEST.sha256)
+          (cd frontend && node scripts/write-manifest.mjs)
           test -n "$(find frontend/dist/assets -maxdepth 1 -type f -name '*.js' -print -quit)"
           test -n "$(find frontend/dist/assets -maxdepth 1 -type f -name '*.css' -print -quit)"
 
-      - name: Run backend validation
-        run: |
-          uv run python -m compileall -q backend tests
-          uv run python -m unittest discover -s tests -v
-          uv run python -m backend.preflight
+      - name: Install isolated browser prerequisite
+        working-directory: frontend
+        run: node node_modules/playwright/cli.js install --with-deps msedge
 
-      - name: Run strict production preflight
+      - name: Run frontend regressions and publication checks
+        run: |
+          npm --prefix frontend test
+          node --test --test-concurrency=1 scripts/test-v2-result.mjs
+          node --test scripts/test-publication.mjs
+          node scripts/verify-publication.mjs
+
+      - name: Run guarded V2 and selected legacy validation
+        run: |
+          uv run --frozen --no-sync python -I -B tests/run_v2_validation.py --compile-ast --legacy
+
+      - name: Check production prerequisites without provider traffic
         env:
           APP_ENV: production
           ENABLE_API_DOCS: "false"
@@ -136,16 +167,24 @@ jobs:
           VOLCENGINE_LLM_API_KEYS: ci-test-secret
           VOLCENGINE_TTS_API_KEYS: ci-test-secret
         run: |
-          uv run python - <<'PY'
+          uv run --frozen --no-sync python -B - <<'PY'
           import asyncio
           import os
           import secrets
           import shutil
+          import socket
           from unittest.mock import patch
 
           # Production always requires signed anonymous sessions. This ephemeral
           # CI-only key is never printed or reused as a deployment credential.
           os.environ["ANONYMOUS_SESSION_SECRET"] = secrets.token_urlsafe(48)
+          def deny_network(*args, **kwargs):
+              raise RuntimeError("CI preflight must not contact a provider")
+          # asyncio's private local wakeup socketpair is allowed; DNS and
+          # connect are not. Install before importing any application modules.
+          socket.getaddrinfo = deny_network
+          socket.socket.connect = deny_network
+          socket.socket.connect_ex = deny_network
           from backend.config import get_settings
           from backend.readiness import run_full_preflight
 
@@ -157,18 +196,36 @@ jobs:
           with patch("backend.operations.shutil.disk_usage", return_value=simulated_disk):
               report = asyncio.run(run_full_preflight(get_settings()))
           assert report.ready, report.errors
-          print(report.as_dict())
+          # Existing configurations may make local speech optional. The actual
+          # production template requires it: prove missing models fail closed,
+          # never fabricate license acknowledgements or install weights here.
+          settings = get_settings().model_copy(update={"local_speech_required": True})
+          with patch("backend.operations.shutil.disk_usage", return_value=simulated_disk):
+              required = asyncio.run(run_full_preflight(settings))
+          assert not required.ready
+          assert required.checks["local_speech_bundle_integrity"] is False
+          assert all(value for name, value in required.checks.items() if not name.startswith("local_speech_"))
+          assert any(error.startswith("local_speech_bundle_integrity:") for error in required.errors)
+          print({"base_preflight": report.ready, "required_models_fail_closed": not required.ready,
+                 "production_model_acceptance": "not_performed"})
           PY
 
       - name: Build minimal release
         run: |
-          uv run python deploy/build_release.py --output dist/golden-mic-ci.tar.gz
-          uv run python deploy/verify_release_archive.py dist/golden-mic-ci.tar.gz
-          minisign -G -W -p /tmp/golden-mic-release.pub -s /tmp/golden-mic-release.key
-          minisign -Sm dist/golden-mic-ci.tar.gz \
-            -s /tmp/golden-mic-release.key \
-            -x dist/golden-mic-ci.tar.gz.minisig \
+          release_dir=$(mktemp -d /tmp/golden-mic-ci-release-XXXXXX)
+          archive="$release_dir/golden-mic-ci.tar.gz"
+          uv run --frozen --no-sync python -B deploy/build_release.py --output "$archive"
+          uv run --frozen --no-sync python -B deploy/verify_release_archive.py "$archive"
+          minisign -G -W -p "$release_dir/release.pub" -s "$release_dir/release.key"
+          minisign -Sm "$archive" \
+            -s "$release_dir/release.key" \
+            -x "$archive.minisig" \
             -t 'Golden Mic CI release'
-          minisign -Vm dist/golden-mic-ci.tar.gz \
-            -p /tmp/golden-mic-release.pub \
-            -x dist/golden-mic-ci.tar.gz.minisig
+          minisign -Vm "$archive" \
+            -p "$release_dir/release.pub" \
+            -x "$archive.minisig"
+          # Ephemeral CI key only; this is not a production-signed release.
+          rm -- "$release_dir/release.key"
+
+      - name: Verify committed sources were not changed
+        run: git diff --exit-code

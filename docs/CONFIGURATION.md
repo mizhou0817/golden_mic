@@ -2,13 +2,13 @@
 
 [项目首页](../README.md) · [文档目录](README.md) · [快速开始](QUICKSTART.md) · [使用指南](USER_GUIDE.md) · [运行维护](RUNBOOK.md) · [故障排查](TROUBLESHOOTING.md)
 
-面向首次配置的使用者。**模板不是可直接上线的配置，填入凭证也不等于已获调用授权。** 本文依据当前源码说明规则，不读取你的实际配置、不验证真实密钥。
+面向首次配置的使用者。**模板不是可直接上线的配置，填入凭证也不等于已获调用授权。** 本文依据当前源码说明规则，不读取你的实际配置、不验证真实密钥。GitHub `blob/main` 链接指向完整源码，不是包内文件或部署版本证明；开发模板不随最小包发布，生产模板使用包内相对链接。
 
 ## 1. 先选环境，再填配置
 
 | 场景 | 从哪里开始 | 注意事项 |
 |---|---|---|
-| 单机开发、界面体验 | [开发模板](../.env.example)和[快速开始](QUICKSTART.md) | 从项目根目录启动；默认 `APP_ENV=development`，只监听本机回环地址 |
+| 单机开发、界面体验 | [开发模板](https://github.com/mizhou0817/golden_mic/blob/main/.env.example)和[快速开始](QUICKSTART.md) | 从项目根目录启动；默认 `APP_ENV=development`，只监听本机回环地址 |
 | 正式服务器 | [生产模板](../deploy/golden-mic.env.production.example)和[部署说明](../deploy/README.md) | 使用受权限保护的服务环境文件、HTTPS、独立数据盘；不能原样复制模板后宣布就绪 |
 
 [Settings](../backend/config.py)及两份模板目前覆盖 **138 个配置字段**。无需逐项调参：先保留模板的非凭证值，再填写实际使用的服务配置。生产环境校验要求字段齐全；“不用”通常指保留字段并留空其值，而不是删掉字段。

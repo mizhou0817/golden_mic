@@ -1,0 +1,14 @@
+# Preserve byte-bound source inputs across OSes without rewriting old history.
+# Existing frontend/Python/doc files include CRLF; -text prevents automatic
+# checkout conversion, but still permits ordinary text diffs.
+* -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+# Executed shell scripts and reproducible generated metadata require LF.
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+uv.lock text eol=lf
+requirements-production.lock text eol=lf
+sbom.cdx.json text eol=lf

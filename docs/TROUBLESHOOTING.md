@@ -4,6 +4,8 @@
 
 **先停止重复提交，再定位错误。** 页面刷新、重启服务、重新生成不是同一种操作。不要为了验证修复反复调用付费模型；不要清空浏览器存储、删除任务目录或关闭安全校验。
 
+本页 GitHub `blob/main` 链接是完整源码参考，不是最小包内文件或当前部署版本证明。
+
 ## 1. 页面能开，但显示未就绪
 
 先区分三种情况：
@@ -37,7 +39,7 @@
 
 ### 找不到 FFmpeg，或升级后旧路径失效
 
-WinGet 的安装目录带版本，不能照抄旧报告中的 bin 路径。已有[VS Code 启动任务](../.vscode/tasks.json)会先查当前 PATH，再在当前用户 WinGet 的 Gyan.FFmpeg 包目录动态寻找编码器。手动启动时也应使用实际安装位置，并确保 FFmpeg/ffprobe 在**该服务进程**的 PATH 中。
+WinGet 的安装目录带版本，不能照抄旧报告中的 bin 路径。完整源码中的[VS Code 启动任务](https://github.com/mizhou0817/golden_mic/blob/main/.vscode/tasks.json)会先查当前 PATH，再在当前用户 WinGet 的 Gyan.FFmpeg 包目录动态寻找编码器。手动启动时也应使用实际安装位置，并确保 FFmpeg/ffprobe 在**该服务进程**的 PATH 中。
 
 仅在另一个终端能执行不够。FFmpeg 还需支持 libx264、AAC 和 ass、loudnorm、ebur128、silencedetect、perspective 等能力。不要下载来源不明的替代程序或略过能力检查。
 
@@ -52,7 +54,7 @@ WinGet 的安装目录带版本，不能照抄旧报告中的 bin 路径。已�
 ## 3. Vite 页面正常，API 或历史列表不正常
 
 - 普通使用优先用后端同源页面，通常是本机 8000 端口，避免混用不同 Origin 的浏览器缓存。
-- [Vite 开发配置](../frontend/vite.config.ts)把 `/api` 和 `/health` 代理到本机 8000；浏览器同源只说明请求入口一致，**不保证后端授予 `local_history`**。后端还核验直接回环客户端、回环 Host、非生产模式、无转发头；代理附加 `Forwarded` 或 `X-Forwarded-*` 等头会使本地特权不可用。
+- [Vite 开发配置](https://github.com/mizhou0817/golden_mic/blob/main/frontend/vite.config.ts)把 `/api` 和 `/health` 代理到本机 8000；浏览器同源只说明请求入口一致，**不保证后端授予 `local_history`**。后端还核验直接回环客户端、回环 Host、非生产模式、无转发头；代理附加 `Forwarded` 或 `X-Forwarded-*` 等头会使本地特权不可用。
 - 不要删安全头、伪造身份或关闭 Origin 校验来恢复列表。回到原来的页面 Origin/浏览器会话，保留任务访问凭证；生产无全局任务索引是正常边界。
 - `vite preview` 默认 4173 预览构建页面；当前 Vite 8 默认继承 `server.proxy`，`/api`、`/health` 仍代理到 8000，**但不会启动后端**。4173 不在开发模板默认 Origin 中，也有独立站点存储，不作为正常制作入口；不要关闭 Origin 检查来绕过写入失败。开发入口见[开发指南](DEVELOPMENT.md)。
 

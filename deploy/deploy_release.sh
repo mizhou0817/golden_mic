@@ -177,11 +177,11 @@ runuser -u goldenmic -- \
   "${TARGET}/.venv/bin/python" "${TARGET}/deploy/validate_environment_file.py" \
   "${ENV_FILE}"
 runuser -u goldenmic -- python3 "${TARGET}/deploy/run_with_environment.py" \
-  "${ENV_FILE}" \
   --cwd /srv/golden-mic-data/tmp \
   --set PYTHONPATH="${TARGET}" \
   --set HOME=/nonexistent \
   --set TMPDIR=/srv/golden-mic-data/tmp \
+  "${ENV_FILE}" \
   -- "${TARGET}/.venv/bin/python" -m backend.preflight
 chown -R root:root "${TARGET}"
 chmod -R go-w "${TARGET}"

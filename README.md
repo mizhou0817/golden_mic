@@ -110,7 +110,7 @@ if ($LASTEXITCODE -ne 0) { throw '服务异常退出，请查看故障排查。'
 - 完整 `/health/ready` 属于受限运维检查，不能公开暴露。`ready` 不证明第三方权限、额度或真实成片质量已验收。
 - 手动开发服务可以在部分 `not_ready` 状态下启动以查看界面，**不等于可以制作**；上述正常制作流程仍在预检失败时停止，查看方式另见快速开始。
 
-**VS Code 可选方式：** 完成安装与配置后，可依次运行 **Golden Mic: Build local frontend**、**Golden Mic: Start local server**，替代手动构建/启动，不要两种方式同时开服务。[.vscode/tasks.json](.vscode/tasks.json)中的启动任务检查端口、查找 FFmpeg、验证依赖和 preflight；空凭证不会因此通过。它在后台启动，停止方式见 [docs/RUNBOOK.md](docs/RUNBOOK.md)，不能把关闭终端当成已经停机。
+**VS Code 可选方式：** 完成安装与配置后，可依次运行 **Golden Mic: Build local frontend**、**Golden Mic: Start local server**，替代手动构建/启动，不要两种方式同时开服务。[.vscode/tasks.json](https://github.com/mizhou0817/golden_mic/blob/main/.vscode/tasks.json)中的启动任务检查端口、查找 FFmpeg、验证依赖和 preflight；空凭证不会因此通过。它在后台启动，停止方式见 [docs/RUNBOOK.md](docs/RUNBOOK.md)，不能把关闭终端当成已经停机。
 
 ## 第一条视频：建议从 A 模式开始
 
@@ -146,7 +146,7 @@ if ($LASTEXITCODE -ne 0) { throw '服务异常退出，请查看故障排查。'
 - 上述合成素材、模拟 Provider 与真实 FFmpeg 的验证不代表真实语音质量、事实正确性或固定处理速度；不承诺旧作品已被修复或任意输入都能成功。
 - **CTC 模型尚未交付**；开发默认可选本地语音能力不阻塞普通 A 云配音路径，但不能据此宣布本地声纹/对齐已可用，更不能伪造许可确认或绕过生产模型门禁。
 - **只读范例需要已批准且安装的范例包**；缺包时 503/不可用是正常边界，不承诺开箱即有样片，也不拿用户作品充当公开范例。
-- **公网生产尚未批准/验收。** Linux、TLS、负载、签名、排空/回滚等仍需独立验证；部署脚本环境包装器的参数解析顺序也有待解除的阻塞风险，见 [deploy/README.md](deploy/README.md)。存在脚本或未签名包不等于可直接上线。
+- **公网生产尚未批准/验收。** Linux、TLS、负载、签名、排空/回滚等仍需独立验证。环境包装器须将选项放在环境文件之前，并以显式 `--` 分隔目标命令及其参数，见 [deploy/README.md](deploy/README.md)。本轮修复后的回归/CI 需要重跑并单独报告；存在脚本或未签名包不等于可直接上线。
 
 ## 文档导航
 
@@ -163,13 +163,15 @@ if ($LASTEXITCODE -ne 0) { throw '服务异常退出，请查看故障排查。'
 
 ## 仓库速览
 
+GitHub `blob/main` / `tree/main` 链接指向**完整源码**，不是最小包内文件，也不是部署版本证明；`main` 会变化。新发布包按显式白名单包含当前全部 docs Markdown 与模型决策 JSON，旧包不追补。干净克隆的换行与构建要求见[开发指南](docs/DEVELOPMENT.md)。
+
 | 目录 | 内容 |
 | --- | --- |
-| [frontend/](frontend/) | React / TypeScript 工作区界面 |
+| [frontend/](https://github.com/mizhou0817/golden_mic/tree/main/frontend) | 完整源码中的 React / TypeScript 工作区界面；最小包仅含已构建资产 |
 | [backend/](backend/) | Python / FastAPI、任务与媒体处理 |
-| [tests/](tests/) | 测试与受保护验证入口；先读开发指南，勿直接对真实数据运行 |
+| [tests/](https://github.com/mizhou0817/golden_mic/tree/main/tests) | 完整源码中的测试与受保护验证入口；先读开发指南，勿直接对真实数据运行 |
 | [docs/](docs/) | 使用文档、接口与日期交付记录 |
 | [deploy/](deploy/) | 发布、校验和运维脚本，不代表生产已就绪 |
-| [canary_test/](canary_test/) | 历史验收与证据，保留原始失败和边界，不作为当前在线状态 |
+| [canary_test/](https://github.com/mizhou0817/golden_mic/tree/main/canary_test) | 完整源码中的历史验收记录；本地 artifacts 未发布，不作为当前在线状态 |
 
 旧报告按日期保留；当前使用方式以本页和文档导航为起点，不把历史课堂、Studio 或旧测试数量当作 V2 的当前承诺。

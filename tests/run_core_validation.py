@@ -60,15 +60,10 @@ def under(path: str, root: str) -> bool:
 
 
 def synthetic_environment(root: Path) -> tuple[dict[str, str], Path]:
+    from tests.validation_environment import media_tools
+
     environment = {key: value for key, value in os.environ.items() if key.upper() in OS_KEYS}
-    local = environment.get("LOCALAPPDATA") or environment.get("LocalAppData")
-    if not local:
-        raise SafetyViolation("LOCALAPPDATA required for dynamic WinGet FFmpeg discovery")
-    candidates = [file for package in (Path(local) / "Microsoft/WinGet/Packages").glob("Gyan.FFmpeg*")
-                  for file in package.rglob("ffmpeg.exe") if (file.parent / "ffprobe.exe").is_file()]
-    if not candidates:
-        raise SafetyViolation("WinGet FFmpeg and ffprobe are required; media tests will not be skipped")
-    ffmpeg = max(candidates, key=lambda file: file.stat().st_mtime_ns)
+    ffmpeg, _ = media_tools(environment)
     inherited_path = next((value for key, value in environment.items() if key.upper() == "PATH"), "")
     environment = {key.upper(): value for key, value in environment.items()}
     environment.update({
@@ -172,7 +167,9 @@ class Guards:
 
     def install(self, stack: ExitStack) -> None:
         # Import-time platform probing is not an application/media assertion.
-        stack.enter_context(patch("platform._syscmd_ver", return_value=("", "", "")))
+        # Windows platform probing shells out to ver; POSIX uses uname instead.
+        if sys.platform == "win32":
+            stack.enter_context(patch("platform._syscmd_ver", return_value=("", "", "")))
         sys.addaudithook(self.audit)
         from pydantic_settings.sources.providers.dotenv import DotEnvSettingsSource
         stack.enter_context(patch.object(DotEnvSettingsSource, "_read_env_files", return_value={}))

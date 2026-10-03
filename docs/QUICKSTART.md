@@ -13,7 +13,9 @@
 | 已有本地环境或已有任务 | 不重复创建环境、不覆盖配置，先看[已有工作区](#existing-workspace) |
 | 只有最小生产发布包 | 不按源码安装；包不含完整前端源码和测试，交给操作者按[部署指南](../deploy/README.md)处理 |
 
-先从维护者取得**可信的完整源码**并解压到自己的本地目录，例如非同步的短路径。仓库地址未在此假定；没有 Git 元数据的 ZIP 也可用于本地开发，但不满足可追溯生产发布要求。确保 [pyproject.toml](../pyproject.toml)、[requirements.txt](../requirements.txt)、[frontend/package.json](../frontend/package.json)、[vendor/](../vendor/)和[字体目录](../backend/assets/fonts/)完整，不只复制单个 Python 文件。
+先从维护者取得**可信的完整源码**并解压到自己的本地目录，例如非同步的短路径。公开源码为 [golden_mic](https://github.com/mizhou0817/golden_mic)；没有 Git 元数据的 ZIP 也可用于本地开发，但不满足可追溯生产发布要求。确保 [pyproject.toml](../pyproject.toml)、[requirements.txt](../requirements.txt)、[frontend/package.json](https://github.com/mizhou0817/golden_mic/blob/main/frontend/package.json)、[vendor/](../vendor/)和[字体目录](../backend/assets/fonts/)完整，不只复制单个 Python 文件。
+
+GitHub 源码链接指向可变化的 `main`，不是最小包内文件或版本证明。建议从含换行规则的新版本做干净克隆；shell、冻结锁/SBOM 固定 LF，其余源码及前端绑定输入保留提交的原始字节。不要对旧工作树批量重新规范化换行；复现要求见[开发指南](DEVELOPMENT.md)。
 
 建议使用桌面版 Edge/Chrome。浏览器端录音需要 HTTPS 或受信任的 localhost 上下文和真实麦克风权限；普通 MP4 制作不需要麦克风。无需注册应用账户。
 
@@ -83,7 +85,7 @@ ffmpeg -version
 ffprobe -version
 ```
 
-macOS/ARM 的依赖和原生模型兼容尚未验收；不要把 `brew install` 或 WSL 能启动当作本项目全部测试通过。当前受保护后端回归入口另有 Windows 前提，见[开发指南](DEVELOPMENT.md)。
+macOS/ARM 的依赖和原生模型兼容尚未验收；不要把 `brew install` 或 WSL 能启动当作本项目全部测试通过。受保护 V2 回归面向 Linux/Windows，须具备已安装的真实配对 FFmpeg/ffprobe，不下载模型；平台限定排除与重跑要求见[开发指南](DEVELOPMENT.md)。
 
 ## 3. 在新源码副本安装依赖
 
@@ -127,7 +129,7 @@ if [ ! -e .env ]; then cp .env.example .env; fi
 
 ### 填配置
 
-在 VS Code 文件树中打开刚复制的本地配置，由你自己填写服务凭证。模板是[.env.example](../.env.example)，**不要直接把凭证填进模板、聊天、前端变量或提交到版本库**。
+在 VS Code 文件树中打开刚复制的本地配置，由你自己填写服务凭证。模板是完整源码中的[.env.example](https://github.com/mizhou0817/golden_mic/blob/main/.env.example)，不在最小生产包内；**不要直接把凭证填进模板、聊天、前端变量或提交到版本库**。
 
 默认需要 `KIMI_API_KEY`、`VOLCENGINE_VISION_API_KEYS`（Embedding 共用）、`VOLCENGINE_APP_ID` + `VOLCENGINE_ACCESS_TOKEN`（ASR），以及 TTS 凭证/获授权的后备组合。服务开通、资源权限和计费账户彼此独立；完整说明见[配置指南](CONFIGURATION.md)。
 

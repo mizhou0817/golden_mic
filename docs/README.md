@@ -22,7 +22,9 @@
 | Linux 冻结依赖、签名包、TLS/服务、排空回滚及阻塞项 | [部署指南](../deploy/README.md) |
 | 了解本地声纹/CTC 模型选择与供应链约束 | [模型决策（2026-10-02）](V2_MODEL_SELECTION_20261002.md)，实际后续状态以[交付记录](V2_PRODUCT_DELIVERY_20261003.md)为准 |
 
-安装指南针对**完整源码副本**。最小发布包只有显式白名单文档、后端和已构建前端，不是完整源码：没有完整测试/前端开发配置，也不保证包含所有新指南。不要在包内执行源码构建步骤；不要把未签名 TEMP 包当可发布制品。
+安装指南针对**完整源码副本**。新最小发布包按显式白名单包含当前全部 docs Markdown 和 [v2-model-selection-20261002.json](v2-model-selection-20261002.json)，包括本索引、六篇入门/维护指南与最新交付页；不是递归收集任意新文件，也不追补旧包。它包含后端和已构建前端，没有完整测试/前端开发配置。不要在包内执行源码构建步骤；不要把未签名 TEMP 包当可发布制品。
+
+本页 GitHub `blob/main` / `tree/main` 链接指向完整公开源码，不是包内文件或已部署版本证明；`main` 会变化。同包 README/docs/deploy/backend/vendor 等仍使用相对链接。
 
 ## API 与架构参考
 
@@ -34,7 +36,7 @@
 |---|---|
 | 会话、配置/健康、草稿创建、访问鉴权、路由挂载 | [main.py](../backend/main.py) |
 | 任务草稿、task-scoped 文件分块/状态、align、start、恢复 | [drafts.py](../backend/drafts.py) |
-| 前端实际请求/响应解析 | [appApi.ts](../frontend/src/lib/appApi.ts)、[workbenchApi.ts](../frontend/src/lib/workbenchApi.ts) |
+| 前端实际请求/响应解析 | [appApi.ts](https://github.com/mizhou0817/golden_mic/blob/main/frontend/src/lib/appApi.ts)、[workbenchApi.ts](https://github.com/mizhou0817/golden_mic/blob/main/frontend/src/lib/workbenchApi.ts) |
 | 批量应用、版本与导出 | [v2_editing.py](../backend/v2_editing.py)、[workbench.py](../backend/workbench.py)、[revisions.py](../backend/revisions.py) |
 | V2 准入与生命周期 | [admission.py](../backend/admission.py)、[task_manager.py](../backend/task_manager.py) |
 | 名称、模式、时序与质量规则 | [mode_rules.json](../backend/mode_rules.json)、[production_modes.py](../backend/production_modes.py) |
@@ -56,9 +58,9 @@
 ### 最近一次本地交付记录
 
 - [V2_PRODUCT_DELIVERY_20261003.md](V2_PRODUCT_DELIVERY_20261003.md)：合成回归/浏览器、独立声纹技术验证、未签名发布包和外部阻塞。
-- [脱敏机器摘要](../canary_test/artifacts/v2-product-delivery-20261003/summary.json)与[核验回执](../canary_test/artifacts/v2-product-delivery-20261003/verification-receipt.json)：已生成证据，不因本次文档重写而重新签署。
+- **本地证据，未公开/不随包发布（非下载链接）**：脱敏机器摘要位于 canary_test/artifacts/v2-product-delivery-20261003/summary.json；核验回执位于 canary_test/artifacts/v2-product-delivery-20261003/verification-receipt.json。仅原证据持有者可核验，不因本次文档修改而重新签署。
 
-这次记录不等于当前机器已配置服务、不等于真实语音质量或生产上线。CTC、授权范例、真实语音评估和 Linux/TLS/负载/回滚仍需各自完成；部署指南还列出本轮文档核对发现的参数解析阻塞，不应盲目执行生产步骤。
+这次记录不等于当前机器已配置服务、不等于真实语音质量或生产上线。CTC、授权范例、真实语音评估和 Linux/TLS/负载/回滚仍需各自完成。包装器调用协议和跨平台受保护回归见部署/开发指南；本轮修复后的验证需重跑、单独报告，不沿用日期记录宣称当前 CI 通过。
 
 ### 按日期保留，不作为快速启动
 
@@ -69,6 +71,6 @@
 | [V2_IMPLEMENTATION_20260929.md](V2_IMPLEMENTATION_20260929.md)、[V2_DESIGN_REVIEW_20260930.md](V2_DESIGN_REVIEW_20260930.md) | 实现、设计差异与阶段性范围 |
 | [THREE_MODE_IMPLEMENTATION_20260928.md](THREE_MODE_IMPLEMENTATION_20260928.md)、[THREE_MODE_VALIDATION_20260928.md](THREE_MODE_VALIDATION_20260928.md) | 更早三模式阶段，不拿其计数当当前回归 |
 | [CORE_WORKSPACE_20260927.md](CORE_WORKSPACE_20260927.md)、[CORE_WORKSPACE_VALIDATION_20260927.md](CORE_WORKSPACE_VALIDATION_20260927.md) | 旧核心工作区与当时本地部署背景 |
-| [历史 Canary 索引](../canary_test/README.md) | 保留 C24–C26、旧课堂/云阶段和失败证据；旧主机/命令不自动适用于 V2 |
+| [历史 Canary 索引](https://github.com/mizhou0817/golden_mic/blob/main/canary_test/README.md) | 完整源码中的历史索引，不随最小包发布；本地证据不公开，旧主机/命令不自动适用于 V2 |
 
 课堂、队列、云作业和旧原型审计没有删除，但已不是当前新用户操作入口。不要据它们恢复登录流程、旧公共服务、付费调用或退役字段。

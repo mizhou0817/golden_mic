@@ -18,11 +18,18 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from deploy.frontend_binding import canonical_name, manifest_hashes, read_regular, regular_file, validate_frontend_binding
-from deploy.verify_release_archive import FORBIDDEN_PARTS, REQUIRED_MEMBERS, validate_release_archive
+from deploy.verify_release_archive import FORBIDDEN_PARTS, REQUIRED_MEMBERS, forbidden_payload, validate_release_archive
 
 INCLUDED_FILES = (
     "README.md",
+    "docs/README.md",
+    "docs/QUICKSTART.md",
+    "docs/USER_GUIDE.md",
+    "docs/CONFIGURATION.md",
+    "docs/TROUBLESHOOTING.md",
+    "docs/DEVELOPMENT.md",
     "docs/CORE_WORKSPACE_20260927.md",
+    "docs/CORE_WORKSPACE_VALIDATION_20260927.md",
     "docs/RUNBOOK.md",
     "docs/V2_IMPLEMENTATION_20260929.md",
     # Current source builds ship the latest validation record. Dated evidence
@@ -30,12 +37,28 @@ INCLUDED_FILES = (
     "docs/V2_VALIDATION_20260930.md",
     "docs/V2_MODEL_SELECTION_20261002.md",
     "docs/V2_PRODUCT_PROGRESS_20261002.md",
+    "docs/V2_PRODUCT_DELIVERY_20261003.md",
+    "docs/V2_DESIGN_REVIEW_20260930.md",
     "docs/v2-model-selection-20261002.json",
     "docs/V2_CURRENT_CLOSURE_20260930.md",
     "docs/DESIGN-MAP.md",
     "docs/WORKBENCH_API.md",
     "docs/STUDIO_API.md",
     "docs/MEDIA_INPUT_API.md",
+    # Explicit historical documentation only, never recursive evidence/media.
+    "docs/CLASSROOM_API.md",
+    "docs/CLASSROOM_QUEUE_API.md",
+    "docs/CLOUD_ACCEPTANCE_20260923.md",
+    "docs/CLOUD_API.md",
+    "docs/CLOUD_CAPABILITY_PLAN_20260923.md",
+    "docs/MOTION_JITTER_FIX_20260927.md",
+    "docs/PROTOTYPE_CAPABILITY_MATRIX_20260925.md",
+    "docs/PROTOTYPE_IMPLEMENTATION_20260925.md",
+    "docs/PROTOTYPE_REFACTOR_20260923.md",
+    "docs/REFACTOR_CLEANUP_20260923.md",
+    "docs/THREE_MODE_API_20260928.md",
+    "docs/THREE_MODE_IMPLEMENTATION_20260928.md",
+    "docs/THREE_MODE_VALIDATION_20260928.md",
     "requirements.txt",
     "requirements-production.lock",
     "sbom.cdx.json",
@@ -162,6 +185,8 @@ def _release_entries(frontend_dir: Path | None = None) -> list[tuple[Path, Path]
         if (not canonical_name(relative.as_posix())
                 or any(part.casefold() in FORBIDDEN_PARTS for part in relative.parts)):
             raise RuntimeError("Forbidden release input path.")
+        if forbidden_payload(relative.as_posix()):
+            raise RuntimeError("Private configuration/model/sample is not a release input.")
         regular_file(path)
         entries.append((path, relative))
 

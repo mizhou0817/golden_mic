@@ -35,6 +35,17 @@ LEGACY_MODULES = (
     "test_quality", "test_publication", "test_public_media",
     "test_anonymous_access", "test_headline_contract",
 )
+# Explicit platform selection, NOT successful skips or cross-platform coverage.
+# New/renamed platform-specific cases must be reviewed rather than auto-filtered.
+LINUX_EXCLUSIONS = frozenset({
+    "tests.test_v2_windows_asyncio.WindowsTests.test_layout_fail_closed_before_loop_construction",
+    "tests.test_v2_windows_asyncio.WindowsTests.test_stock_classes_and_policy_unchanged",
+    "tests.test_v2_windows_asyncio.WindowsTests.test_notification_cleanup_failure_matrix",
+    "tests.test_v2_windows_asyncio.WindowsTests.test_real_stock_and_corrected_30_cases_each",
+    "tests.test_v2_windows_asyncio.WindowsTests.test_socketpair_bytes_and_pending_write_cancellation",
+    "tests.test_v2_windows_asyncio.WindowsTests.test_tls_direct_and_start_tls_bytes",
+    "tests.test_v2_sample_bundle.SampleBundleTests.test_native_windows_short_ancestor_aliases_before_content_or_creation",
+})
 # These are inventories, not claims that the modules have passed on current source.
 SOURCE_PATTERNS = (
     "backend/**/*.py", "backend/**/*.json", "tests/**/*.py", "tests/**/*.cjs",
@@ -44,6 +55,8 @@ SOURCE_PATTERNS = (
     "docs/DESIGN-MAP.md", "docs/RUNBOOK.md", "docs/V2_IMPLEMENTATION_20260929.md",
     ".env.example", "deploy/golden-mic.env.production.example", "pyproject.toml",
     "requirements*.txt", "requirements*.lock", "uv.lock", "*GPT-6 Astra*.md",
+    ".github/workflows/*", ".gitignore", ".gitattributes", "deploy/**/*.sh",
+    "scripts/verify-publication.mjs", "scripts/test-publication.mjs",
 )
 
 # TypeScript parses the supplied handoff as JavaScript AST; it is NEVER evaluated.
@@ -144,6 +157,22 @@ process.stdout.write(JSON.stringify(result).replace(/[\u007f-\uffff]/g,c=>'\\u'+
 
 class SetupFailure(RuntimeError):
     """Only static error codes; never include exception messages or secrets."""
+
+
+def platform_suite(suite, *, platform=sys.platform):
+    def leaves(items):
+        for item in items:
+            if isinstance(item, unittest.TestSuite):
+                yield from leaves(item)
+            else:
+                yield item
+
+    tests = list(leaves(suite))
+    exclusions = LINUX_EXCLUSIONS if platform == "linux" else frozenset()
+    excluded = sorted(test.id() for test in tests if test.id() in exclusions)
+    if set(excluded) != exclusions:
+        raise SetupFailure("platform_test_inventory_changed")
+    return unittest.TestSuite(test for test in tests if test.id() not in exclusions), excluded
 
 
 class Sink(io.TextIOBase):
@@ -323,7 +352,8 @@ def install_v2_guards(stack, root, evidence, ffmpeg, pure_phase):
         if early_active:
             guard.audit(event, arguments)
     sys.addaudithook(early_audit)
-    stack.enter_context(patch("platform._syscmd_ver", return_value=("", "", "")))
+    if sys.platform == "win32":
+        stack.enter_context(patch("platform._syscmd_ver", return_value=("", "", "")))
     guard.stage = "suite"
     pure_phase()
     guard.install(stack)
@@ -342,7 +372,8 @@ def install_v2_guards(stack, root, evidence, ffmpeg, pure_phase):
     guard.stage = "suite"
 
     shared_init = subprocess.Popen.__init__
-    approved_tools = {normalized(ffmpeg), normalized(ffmpeg.with_name("ffprobe.exe"))}
+    ffprobe = ffmpeg.with_name("ffprobe.exe" if os.name == "nt" else "ffprobe")
+    approved_tools = {normalized(ffmpeg), normalized(ffprobe)}
 
     def media_init(process, command, *args, **kwargs):
         if (not isinstance(command, (list, tuple)) or not command or args
@@ -380,7 +411,7 @@ def install_v2_guards(stack, root, evidence, ffmpeg, pure_phase):
         else:
             raise SetupFailure("native_self_check_failed")
     # Real sync AND asyncio launches exercise the actual Windows audit shape.
-    for tool in (ffmpeg, ffmpeg.with_name("ffprobe.exe")):
+    for tool in (ffmpeg, ffprobe):
         completed = subprocess.run([str(tool), "-version"], capture_output=True, timeout=15, check=True)
         if not completed.stdout.startswith(tool.stem.encode("ascii") + b" version "):
             raise SetupFailure("native_version_check_failed")
@@ -470,15 +501,19 @@ def main(argv=None):
         return 2
     os.chdir(PROJECT)
     sys.path.insert(0, str(PROJECT))
-    # Refuse indirection before creating the one new direct evidence child.
-    parent = PROJECT / "canary_test/artifacts"
-    if parent.resolve() != parent.absolute() or not parent.is_dir():
+    from tests.validation_environment import evidence_parent, temporary_base
+
+    # Clean clones need an empty parent, never historical evidence. Validate
+    # every ancestor before creating it; each actual run remains exclusive.
+    try:
+        parent = evidence_parent(PROJECT)
+    except (OSError, RuntimeError):
         print('{"status":"unsafe_evidence_parent"}')
         return 2
     label = "v2-validation-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-") + uuid4().hex
     evidence = parent / label
     evidence.mkdir(exist_ok=False)
-    summary = {"schema_version": 1, "status": "setup_failed", "run": label,
+    summary = {"schema_version": 1, "status": "setup_failed", "run": label, "platform": sys.platform,
                "scope": "static" if args.static_only else "v2_plus_selected_legacy" if args.legacy else "v2",
                "acceptance": "pending_integration", "frontend_tests": "not_run"}
     initial, guard = {}, None
@@ -510,9 +545,7 @@ def main(argv=None):
                 exit_code = 0
             else:
                 from tests.run_core_validation import synthetic_environment
-                temp_base = Path(os.environ.get("LOCALAPPDATA", "")) / "Temp"
-                if not temp_base.is_absolute() or not temp_base.is_dir():
-                    raise SetupFailure("windows_temp_required")
+                temp_base = temporary_base(os.environ)
                 root = Path(tempfile.mkdtemp(prefix="gm-v2-validation-", dir=temp_base))
                 for name in ("tmp", "tasks", "cache/asr", "cache/hf", "cache/matplotlib", "cache/numba"):
                     (root / name).mkdir(parents=True, exist_ok=True)
@@ -538,6 +571,10 @@ def main(argv=None):
                 if args.legacy:
                     suite.addTests(loader.loadTestsFromName("tests." + name) for name in LEGACY_MODULES)
                 summary["discovered"] = module_counts["test_v2_text_rules.py"] + suite.countTestCases()
+                suite, excluded = platform_suite(suite)
+                summary["platform_exclusions_not_run"] = excluded
+                summary["platform_exclusion_reason"] = "Windows-native transport/8.3 coverage requires Windows" if excluded else None
+                summary["selected"] = module_counts["test_v2_text_rules.py"] + suite.countTestCases()
                 summary["discovered_by_module"] = module_counts
                 summary["pure_import_phase"] = "cold_before_shared_dependency_imports"
                 summary["import_failure_diagnostics"] = loader.import_failures

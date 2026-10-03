@@ -4,26 +4,39 @@ import argparse
 import os
 import re
 import shlex
+import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 
 KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def main() -> int:
+def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Execute a command with a systemd-style EnvironmentFile without shell evaluation."
+        description="Execute a command with a systemd-style EnvironmentFile without shell evaluation.",
+        usage="%(prog)s [--cwd DIRECTORY] [--set KEY=VALUE] environment_file -- command [args ...]",
     )
     parser.add_argument("environment_file", type=Path)
     parser.add_argument("--cwd", type=Path)
     parser.add_argument("--set", action="append", default=[], dest="overrides")
-    parser.add_argument("command", nargs=argparse.REMAINDER)
-    arguments = parser.parse_args()
-    command = list(arguments.command)
-    if command and command[0] == "--":
-        command.pop(0)
-    if not command:
-        raise SystemExit("A command is required after --.")
+    values = list(sys.argv[1:] if argv is None else argv)
+    if "--" not in values:
+        # Preserve ordinary --help/argument errors, but never guess where a
+        # wrapper option ends and a child command begins.
+        parser.parse_args(values)
+        parser.error("A command is required after an explicit -- separator.")
+    separator = values.index("--")
+    arguments = parser.parse_args(values[:separator])
+    arguments.command = values[separator + 1:]
+    if not arguments.command:
+        parser.error("A command is required after --.")
+    return arguments
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    arguments = parse_arguments(argv)
+    command = arguments.command
 
     environment = os.environ.copy()
     environment.update(parse_environment_file(arguments.environment_file))

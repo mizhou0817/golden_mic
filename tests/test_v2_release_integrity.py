@@ -12,6 +12,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tarfile
@@ -20,6 +21,7 @@ import unittest
 from pathlib import Path
 from typing import Any, BinaryIO
 from unittest.mock import patch
+from urllib.parse import unquote, urlsplit
 
 from deploy import build_release as builder
 from deploy.frontend_binding import (
@@ -355,6 +357,71 @@ class ReleaseIntegrityTests(unittest.TestCase):
                 self.assertRaisesRegex(SystemExit, r"Missing release inputs: .*V2_VALIDATION_20260930\.md"):
             builder.main()
         self.assertFalse(output.exists())
+
+    def test_current_newcomer_guides_and_delivery_are_shipped(self):
+        names = ("docs/README.md", "docs/QUICKSTART.md", "docs/USER_GUIDE.md", "docs/CONFIGURATION.md",
+                 "docs/TROUBLESHOOTING.md", "docs/DEVELOPMENT.md", "docs/V2_PRODUCT_DELIVERY_20261003.md")
+        entries = self.archive_entries()
+        for name in names:
+            self.assertIn(name, builder.INCLUDED_FILES)
+            self.assertIn("golden-mic/" + name, entries)
+            self.assertNotIn("golden-mic/" + name, REQUIRED_MEMBERS)
+
+    def test_current_packaged_navigation_resolves_inside_release(self):
+        project = Path(__file__).resolve().parents[1]
+        documents = ("README.md", "deploy/README.md", "docs/README.md", "docs/QUICKSTART.md",
+                     "docs/USER_GUIDE.md", "docs/CONFIGURATION.md", "docs/TROUBLESHOOTING.md",
+                     "docs/DEVELOPMENT.md", "docs/RUNBOOK.md", "docs/V2_PRODUCT_DELIVERY_20261003.md")
+        included = set(builder.INCLUDED_FILES)
+        for document in documents:
+            self.assertIn(document, included if document != "deploy/README.md" else {document})
+            text = (project / document).read_text(encoding="utf-8")
+            text = re.sub(r"^```[^\n]*\n[\s\S]*?^```[^\n]*$", "", text, flags=re.M)
+            for link in re.findall(r"\[[^\]\n]+\]\(([^)\n]+)\)", text):
+                target = urlsplit(link)
+                if target.scheme or target.netloc or not target.path:
+                    continue
+                destination = (project / document).parent / unquote(target.path)
+                relative = destination.resolve().relative_to(project).as_posix()
+                self.assertTrue(destination.exists(), (document, relative))
+                self.assertTrue(relative in included or any(name.startswith(relative + "/") for name in included)
+                                or any(relative == name or relative.startswith(name + "/")
+                                for name in builder.INCLUDED_DIRECTORIES), (document, relative))
+
+    def test_current_builder_rejects_missing_newcomer_guide_before_writing(self):
+        (self.root / "docs/QUICKSTART.md").unlink()
+        output = self.root.parent / "missing-guide.tar.gz"
+        with patch.object(sys, "argv", ["build_release", "--output", str(output)]), \
+                self.assertRaisesRegex(SystemExit, "Missing release inputs"):
+            builder.main()
+        self.assertFalse(output.exists())
+
+    def test_repository_internal_output_stays_forbidden(self):
+        output = self.root / "dist/release.tar.gz"
+        with patch.object(sys, "argv", ["build_release", "--output", str(output)]), \
+                self.assertRaisesRegex(SystemExit, "inside the input tree"):
+            builder.main()
+        self.assertFalse(output.exists())
+
+    def test_private_payloads_rejected_by_builder_and_archive_independently(self):
+        for name in ("backend/.env.local", "deploy/service.env", "backend/assets/samples/final.mp4",
+                     "backend/private-models/config.json", "backend/model.onnx", "backend/model.safetensors",
+                     "deploy/signing.key", "deploy/signing.pem"):
+            with self.subTest(name=name):
+                entries = self.archive_entries()
+                entries["golden-mic/" + name] = b"synthetic private sentinel"
+                with self.assertRaisesRegex(RuntimeError, "Forbidden release archive path"):
+                    validate_release_archive(self.archive(entries))
+                self.put(name, b"synthetic private sentinel")
+                try:
+                    with self.assertRaises(RuntimeError):
+                        self.archive_entries()
+                finally:
+                    (self.root / name).unlink()
+                    # Remove only this test's otherwise empty forbidden parents.
+                    parent = (self.root / name).parent
+                    if parent.name in {"private-models", "samples"}:
+                        parent.rmdir()
 
     def test_required_files_cannot_be_directories(self):
         for name in V2_REQUIRED:
