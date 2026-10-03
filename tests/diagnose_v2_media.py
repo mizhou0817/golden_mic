@@ -1,7 +1,6 @@
 """One guarded synthetic ambient-clock probe; numeric diagnostics, no providers."""
 from __future__ import annotations
 
-import asyncio
 import json
 import math
 import os
@@ -70,28 +69,13 @@ def main():
 
         stack.enter_context(patch.object(mode_pipeline, "_ambient_narration", measured))
         result = SafeResult(before)
-        unittest.TestSuite([PipelineFocusedTests("test_real_ambient_derivative_preserves_narration_and_clock")]).run(result)
-        original_observations = observations
-        observations = {}
-        original_command = mode_pipeline.run_logged_command
-
-        async def sample_clock_command(command, *args, **kwargs):
-            # In-memory candidate only: preserve every sample/filter/codec and
-            # regenerate timestamps after the final resampler. No trim/pad.
-            if command[-1].endswith("ambient_narration.m4a") and "-af" in command:
-                command = list(command)
-                index = command.index("-af") + 1
-                command[index] += ",asetpts=N/SR/TB"
-            return await original_command(command, *args, **kwargs)
-
-        with patch.object(mode_pipeline, "run_logged_command", sample_clock_command):
-            candidate = SafeResult(before)
-            unittest.TestSuite([PipelineFocusedTests("test_real_ambient_derivative_preserves_narration_and_clock")]).run(candidate)
+        unittest.TestSuite(PipelineFocusedTests(name) for name in (
+            "test_real_ambient_derivative_preserves_narration_and_clock",
+            "test_real_ambient_non_aac_frame_aligned_clock_preserves_samples",
+        )).run(result)
         drift = before != snapshot()
         denied = {key: value for key, value in guard.counts.items() if key.startswith("suite:denied:")}
-        report = {"diagnostic": "synthetic_ambient_clock", "observations": original_observations,
-              "sample_clock_candidate": {"observations": observations, "tests": candidate.testsRun,
-                             "passed": candidate.passed, "failure_source": candidate.events},
+        report = {"diagnostic": "synthetic_ambient_clock", "observations": observations,
                   "tests": result.testsRun, "passed": result.passed, "failures": len(result.failures),
                   "errors": len(result.errors), "skipped": len(result.skipped), "source_drift": drift,
                   "denials": denied, "listeners": len(guard.ports), "failure_source": result.events}

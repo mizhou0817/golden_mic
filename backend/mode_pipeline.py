@@ -1438,8 +1438,11 @@ async def _ambient_narration(root: Path, edl: Sequence[EDLItem], snapshots: list
             mixed = output
         normalization = await _two_pass_loudnorm_filter(root, mixed, target_lufs=-20, target_lra=5, true_peak_dbfs=-3.5, strict=True)
         result = root / "ambient_narration.m4a"
+        # FFmpeg 6 loudnorm/resampling can leave a stretched final timestamp
+        # despite unchanged PCM samples. Rebuild PTS from the emitted samples;
+        # never trim/pad narration or reinterpret AAC padding as speech.
         await run_logged_command(["ffmpeg", "-y", "-i", str(mixed), "-af",
-                                  f"{NARRATION_AUDIO_FORMAT},{normalization},aresample=48000",
+                      f"{NARRATION_AUDIO_FORMAT},{normalization},aresample=48000,asetpts=N/SR/TB",
                                   "-c:a", "aac", "-b:a", "192k", str(result)], root, "实测环境声合成音轨归一")
     manifest["ambient"].update(applied=True, intervals=receipts, sha256=_sha(result))
     return result

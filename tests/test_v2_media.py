@@ -11,6 +11,7 @@ import unittest
 import wave
 from pathlib import Path
 from contextlib import ExitStack
+from unittest.mock import patch
 
 import numpy as np
 
@@ -142,32 +143,59 @@ class PipelineFocusedTests(unittest.IsolatedAsyncioTestCase):
             ModeMediaIntegration.tearDownClass()
 
     async def test_real_ambient_derivative_preserves_narration_and_clock(self):
+        await self._ambient_clock(144000)
+
+    async def test_real_ambient_non_aac_frame_aligned_clock_preserves_samples(self):
+        await self._ambient_clock(144037)
+
+    async def _ambient_clock(self, sample_count):
+        from backend import mode_pipeline
         from backend.mode_pipeline import _ambient_narration, _sha
         from backend.models import EDLItem, EDLClip
         from backend.quality import _media_quality_metrics
         from backend.tts_pipeline import probe_audio_duration
+        duration = sample_count / 48000
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name, frequency in [('raw.wav', 320), ('narration.m4a', 880)]:
                 result = subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i',
-                        f'sine=frequency={frequency}:sample_rate=48000:duration=3',
+                        f'sine=frequency={frequency}:sample_rate=48000:duration={duration:.9f}',
                         '-af', 'loudnorm=I=-20:TP=-3.5:LRA=5,aresample=48000', str(root/name)], capture_output=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stderr)
             before = _sha(root/'narration.m4a')
+            raw_before = _sha(root/'raw.wav')
             manifest = {'source_clocks': {'u': {'norm_path': 'norm.mp4', 'has_audio': True,
-                        'prepared_start': 0., 'prepared_end': 3., 'norm_source_offset': 0.,
+                        'prepared_start': 0., 'prepared_end': duration, 'norm_source_offset': 0.,
                         'audio_offset_seconds': 0., 'raw_path': 'raw.wav'}}}
-            edl = [EDLItem(sentence_id=0, timeline_start=0., timeline_end=3., clips=[
-                EDLClip(shot_id=0, src='norm.mp4', in_time=0., out_time=3.)])]
-            result = await _ambient_narration(root, edl, [{'id': 'u', 'sec': 3., 'has_speech': False, 'transcript': [], 'silences': []}], manifest)
+            edl = [EDLItem(sentence_id=0, timeline_start=0., timeline_end=duration, clips=[
+                EDLClip(shot_id=0, src='norm.mp4', in_time=0., out_time=duration)])]
+            with patch.object(mode_pipeline, 'run_logged_command', wraps=mode_pipeline.run_logged_command) as commands:
+                result = await _ambient_narration(root, edl, [{'id': 'u', 'sec': duration, 'has_speech': False, 'transcript': [], 'silences': []}], manifest)
             self.assertIsNotNone(result)
             self.assertEqual(_sha(root/'narration.m4a'), before)
+            self.assertEqual(_sha(root/'raw.wav'), raw_before)
             self.assertTrue(manifest['ambient']['applied'])
             self.assertEqual(manifest['ambient']['target_lufs'], -24)
-            self.assertAlmostEqual(await probe_audio_duration(result, root), 3., delta=.03)
+            self.assertAlmostEqual(await probe_audio_duration(result, root), duration, delta=.03)
             metrics = _media_quality_metrics(result)
             self.assertLessEqual(abs(metrics['integrated_lufs'] + 20), 1.)
             self.assertLessEqual(metrics['true_peak_dbfs'], -3.)
+            final = next(call.args[0] for call in commands.call_args_list if call.args[0][-1] == str(result))
+            audio_filter = final[final.index('-af') + 1]
+            self.assertTrue(audio_filter.endswith(',aresample=48000,asetpts=N/SR/TB'))
+            self.assertNotIn('atrim', audio_filter)
+            self.assertNotIn('apad', audio_filter)
+            decoded = []
+            for source in (root/'narration.m4a', result):
+                pcm = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(source), '-map', '0:a:0',
+                                      '-ar', '48000', '-ac', '1', '-f', 's16le', 'pipe:1'],
+                                     capture_output=True, check=True, timeout=30)
+                decoded.append(len(pcm.stdout) // 2)
+            self.assertEqual(decoded[0], decoded[1])
+            # Old/new AAC decoders differ only in handling the final frame's
+            # padding. Neither the derivative nor this test deletes samples.
+            self.assertGreaterEqual(decoded[0], sample_count)
+            self.assertLess(decoded[0] - sample_count, 1024)
 
     async def test_real_original_resume_reuses_completed_provider_stages(self):
         from tests.test_mode_pipeline import ModeMediaIntegration, Reporter
