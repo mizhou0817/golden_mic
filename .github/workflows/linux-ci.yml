@@ -140,6 +140,10 @@ jobs:
         run: |
           uv run --frozen --no-sync python -I -B tests/run_v2_validation.py --compile-ast --legacy
 
+      - name: Diagnose synthetic ambient clock on failure
+        if: failure()
+        run: uv run --frozen --no-sync python -I -B tests/diagnose_v2_media.py
+
       - name: Check production prerequisites without provider traffic
         env:
           APP_ENV: production
