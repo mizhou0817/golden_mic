@@ -341,7 +341,7 @@ test('upload failures are explained in plain words by status; nothing raw is ech
   const sandbox = {}; vm.runInNewContext(compile(wizardConsts('errorMessage', 'errorStatus', 'isCapacityFailure') + '\n' + declaration('uploadErrorText')
     + '\nthis.text = uploadErrorText; this.capacity = isCapacityFailure; this.generic = errorMessage;'), sandbox);
   const err = (status, message = '') => Object.assign(new Error(message), { status });
-  assert.match(sandbox.text(err(429, '当前会话最多保留 20 个文件，合计不超过 5 GiB。')), /当前会话最多保留 20 个文件.*请先移除不需要的素材.*我的作品/s);
+  assert.match(sandbox.text(err(429, '你保存的素材已达上限（最多 100 个文件，合计不超过 20 GiB）。')), /你保存的素材已达上限.*请先移除不需要的素材.*我的作品/s);
   assert.match(sandbox.text(err(413, 'Task upload budget exceeded')), /素材总量超过了服务器允许的上限/);
   assert.doesNotMatch(sandbox.text(err(413, 'Task upload budget exceeded')), /Task upload budget/);
   assert.match(sandbox.text(err(507, 'Insufficient shared upload/task storage')), /服务器磁盘空间不足/);

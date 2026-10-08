@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from backend import mode_pipeline as mp, rendering
-from backend.models import AnnotatedShot, BeatMatch, EDLItem, MatchCandidate, MatchPlanItem, SentenceTiming, VisionQuality
+from backend.models import AnnotatedShot, BeatMatch, EDLClip, EDLItem, MatchCandidate, MatchPlanItem, SentenceTiming, VisionQuality
 from tests.test_mode_exports import media
 
 
@@ -48,9 +48,10 @@ class FootageChainTests(unittest.IsolatedAsyncioTestCase):
         return mp.build_mode_edl(plan, self.timings(durations), shots, [], manifest, mp.EditingPreferences())
 
     async def test_chain_covers_each_sentence_with_distinct_real_windows_and_the_encoder_renders_it(self):
-        # Three 5.5 s sentences on a 3 s clip: 3 s + 2.62 s each, wrapping around the same footage.
-        shots = [self.shot(10, 0.0, 3.0), self.shot(11, 0.0, 2.62), self.shot(12, 0.0, 3.0), self.shot(13, 0.0, 2.62),
-                 self.shot(14, 0.0, 3.0), self.shot(15, 0.0, 2.62)]
+        # Three 5.5 s sentences on a 3 s clip: 3 s + 2.66 s each, wrapping around the same footage (each window
+        # but the last keeps one frame back, so a chain carries a frame of slack per joint).
+        shots = [self.shot(10, 0.0, 3.0), self.shot(11, 0.0, 2.66), self.shot(12, 0.0, 3.0), self.shot(13, 0.0, 2.66),
+                 self.shot(14, 0.0, 3.0), self.shot(15, 0.0, 2.66)]
         chains = {"0": [10, 11], "1": [12, 13], "2": [14, 15]}
         durations = [5.5, 5.5, 5.5]
         edl, options = self.edl_for([self.item(0, 10), self.item(1, 12), self.item(2, 14)], shots, chains, durations)
@@ -86,8 +87,6 @@ class FootageChainTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("画面仍差", str(caught.exception))
 
 
-if __name__ == "__main__":
-    unittest.main()
 
     async def extend(self, plan, shots, durations, context=None):
         manifest = {"media_contract": mp.V2_MEDIA_CONTRACT, "mode": "voiceover", "broll_shot_ids": [s.shot_id for s in shots],
@@ -126,3 +125,17 @@ if __name__ == "__main__":
         self.assertEqual(count, 0)
         with self.assertRaises(mp.MatchingError):
             mp.build_mode_edl(plan, self.timings([5.5]), shots, [], manifest, mp.EditingPreferences())
+
+    async def test_a_clip_that_ends_on_the_sources_last_frame_renders_without_inventing_frames(self):
+        # The failing production: out_time = 7.866667 on a 7.8666... s video, i.e. 236.00001 frames; the optional
+        # tail frame then pointed past the end and the render refused ("源媒体真实帧不足").
+        clip = EDLClip(shot_id=1, src="clip.mp4", in_time=1.0, out_time=3.0 + 1e-6, media_origin="source")
+        edl = [EDLItem(sentence_id=0, clips=[clip], timeline_start=0.01, timeline_end=0.01 + 2.0 + 1e-6)]
+        with patch.object(rendering, "_mix_subtitles_and_narration", new=AsyncMock()), patch.object(rendering, "validate_final_video", new=AsyncMock()):
+            result = await rendering.render_mode_video(self.root, edl, lambda *_: None, clip_options={},
+                                                       source_hashes={"clip.mp4": digest(self.root / "clip.mp4")}, finish_options=rendering.FinishOptions())
+        self.assertEqual(sum(value["frames"] for value in result["frames"]), 60, "exactly the real frames up to the end, none invented")
+
+
+if __name__ == "__main__":
+    unittest.main()

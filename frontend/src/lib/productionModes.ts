@@ -515,7 +515,7 @@ export function quoteGate(sentences: readonly SentenceInput[], matches: readonly
   const missing = quotes.filter(sentence => matchState(byId.get(sentence.idx)) === "missing");
   if (missing.length) return `有 ${missing.length} 句原话没找到，请${mode === "mixed" ? "改成旁白、" : ""}删除或补传含这句话的素材。`;
   if (mode === "original" && quotes.some(sentence => quoteTextEvidence(sentence.text, byId.get(sentence.idx)!.source!.asr_text).unverified)) {
-    return "原话有未核实的增改或中间删词；请重新选取连续原话，不能拼出素材里没有说过的话。";
+    return "原话有未核实的增改或中间删词；可点“改成素材里的原话”一键改成实际说的话，或重新选取连续原话，不能拼出素材里没有说过的话。";
   }
   return "";
 }

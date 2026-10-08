@@ -412,6 +412,7 @@ class UploadSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.read(key, token)["chunks"], [0])
 
     async def test_owner_count_byte_global_and_disk_reservation_limits(self) -> None:
+        self.store.owner_max_files = 20  # the mechanism, not the shipped size of the visitor quota
         created = [await self._new() for _ in range(20)]
         with self.assertRaises(HTTPException) as error:
             await self._new()
@@ -441,6 +442,7 @@ class UploadSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.calls), 1)
 
     async def test_owner_declared_bytes_not_just_received_bytes_are_reserved(self) -> None:
+        self.store.owner_max_bytes = 5 * 1024**3
         with patch.object(module.shutil, "disk_usage", return_value=SimpleNamespace(free=1 << 50)):
             for _ in range(10):
                 await self.store.create(name="large.mp4", size=module.MAX_FILE_BYTES, sha256="0" * 64, owner="large")

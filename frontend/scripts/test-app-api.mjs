@@ -532,11 +532,11 @@ test('successful JSON and empty 204 responses decode without inventing payloads'
 });
 
 test('upload-limit 429s show the server\'s own fixed sentence; any other 429 text stays the generic rate-limit message', async () => {
-  for (const known of ['当前会话最多保留 20 个文件，合计不超过 5 GiB。', '新建上传过于频繁，请稍后重试。', '全站上传名额已满，请稍后重试。']) {
+  for (const known of ['你保存的素材已达上限（最多 100 个文件，合计不超过 20 GiB）。', '新建上传过于频繁，请稍后重试。', '全站上传名额已满，请稍后重试。']) {
     const h = harness({ respond: () => json({ detail: known }, 429) });
     await assert.rejects(request(h)(ROOT), error => { assert.equal(error.status, 429); assert.equal(error.message, known); return true; });
   }
-  for (const detail of ['Traceback (most recent call last): secret=abc', '当前会话最多保留 21 个文件，合计不超过 5 GiB。', { message: '新建上传过于频繁，请稍后重试。' }]) {
+  for (const detail of ['Traceback (most recent call last): secret=abc', '你保存的素材已达上限（最多 101 个文件，合计不超过 20 GiB）。', { message: '新建上传过于频繁，请稍后重试。' }]) {
     const h = harness({ respond: () => json({ detail }, 429) });
     await assert.rejects(request(h)(ROOT), error => { assert.ok(error.message.includes('频繁')); assert.ok(!error.message.includes('Traceback')); assert.ok(!error.message.includes('21')); return true; });
   }

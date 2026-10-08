@@ -1769,6 +1769,7 @@ async def render_mode_video(
         previous_source = None
         previous_out = previous_timeline_end = None
         previous_end_frame = 0
+        source_frames: dict[str, int | None] = {}
         for item in edl:
             cursor = item.timeline_start
             for clip in item.clips:
@@ -1790,11 +1791,21 @@ async def render_mode_video(
                 # NEXT source in is based on emitted want, never cached frames.
                 frames = max(want, math.ceil(duration * VIDEO_FPS - 1e-8))
                 seek_frame = math.floor(clip.in_time * VIDEO_FPS + 1e-8)
+                if clip.src not in source_frames:
+                    probed = await probe_media(source, task_dir)
+                    stream = next((s for s in probed.get("streams", []) if s.get("codec_type") == "video"), {})
+                    count = stream.get("nb_frames")
+                    source_frames[clip.src] = int(count) if str(count).isdigit() else None
                 continuous = (previous_source == source_hashes[clip.src]
                               and previous_out is not None and abs(previous_out - clip.in_time) < 1e-8
                               and previous_timeline_end is not None and abs(previous_timeline_end - cursor) < 1e-8)
                 if continuous:
                     seek_frame = previous_end_frame
+                available = source_frames.get(clip.src)
+                if available is not None and want <= available - seek_frame < frames:
+                    # The optional tail frame would run past the source's real last frame (a clip that ends
+                    # exactly at the end of a video): drop that optional frame instead of failing.
+                    frames = available - seek_frame
                 signature = {
                     "recipe": "mode-continuous-source-grid-v2", "source": source_hashes[clip.src],
                     "in_frame": seek_frame, "frames": frames,

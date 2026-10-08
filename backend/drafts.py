@@ -135,8 +135,8 @@ from verified persisted chunks, then the existing assembler verifies it again.
         own = [record for record in self._records.values() if record.owner_hash == digest]
         need_count = len(files)
         need_bytes = sum(int(file["manifest"]["size"]) for file in files)
-        free_count = self.max_files - len(own)
-        free_bytes = self.max_total_bytes - sum(record.size for record in own)
+        free_count = self.owner_max_files - len(own)
+        free_bytes = self.owner_max_bytes - sum(record.size for record in own)
         plan: list[tuple[str, str]] = []
         for item in source_task.draft_context.get("files", []):
             if free_count >= need_count and free_bytes >= need_bytes:
@@ -587,7 +587,7 @@ class DraftService:
                 "shot_reuse_accepted": (record.draft_context.get("shot_reuse") or {}).get("accepted") is True,
                 "created_at": record.created_at.isoformat(), "updated_at": record.updated_at.isoformat()}
 
-    async def reclaim_finished_staging(self, owner: str, size: int) -> int:
+    async def reclaim_finished_staging(self, owner: str, size: int, *, keep: str | None = None) -> int:
         """Free upload staging that only finished tasks still hold, when it blocks a new upload.
 
         An accepted task copies its originals into its own task_dir/raw; the staging session
@@ -601,7 +601,7 @@ class DraftService:
         from .uploads import MAX_SESSIONS
         digest = hashlib.sha256(owner.encode()).hexdigest()
         own = [record for record in self.uploads._records.values() if record.owner_hash == digest]
-        state = {"count": self.uploads.max_files - len(own), "bytes": self.uploads.max_total_bytes - sum(record.size for record in own)}
+        state = {"count": self.uploads.owner_max_files - len(own), "bytes": self.uploads.owner_max_bytes - sum(record.size for record in own)}
         owner_ok = lambda: state["count"] >= 1 and state["bytes"] >= size
         site_ok = lambda: len(self.uploads._records) + self.uploads._orphans < MAX_SESSIONS
         if owner_ok() and site_ok():
@@ -642,6 +642,28 @@ class DraftService:
             for task in finished:
                 if await release(task, site_ok):
                     break
+        if not owner_ok() and keep is not None:
+            # Still full: this visitor's OTHER drafts, least recently used first, give up their clips (their
+            # text stays; the draft being edited is never touched). The visitor asked for old clips to go.
+            stale = sorted((task for task in self.manager._tasks.values() if task.owner_hash == owner and task.task_id != keep
+                            and task.status == TaskState.draft and task.lifecycle_v2), key=lambda task: task.updated_at)
+            for draft in stale:
+                for item in list(draft.draft_context.get("files", [])):
+                    if owner_ok():
+                        break
+                    live = self.uploads._records.get(item.get("up_id"))
+                    try:
+                        if live is not None:
+                            await self.uploads.delete(live.id, item.get("capability"))
+                            state["count"] += 1
+                            state["bytes"] += live.size
+                    except (HTTPException, OSError):
+                        continue
+                    draft.draft_context["files"].remove(item)
+                    released += 1
+                self.manager._persist_record(draft)
+                if owner_ok():
+                    break
         return released
 
     async def add_file(self, record: TaskRecord, raw: dict, task_token: str) -> dict:
@@ -656,7 +678,7 @@ class DraftService:
             capacity = await self.guard.snapshot()
             if capacity.free_bytes < self.settings.minimum_free_disk_bytes + capacity.reserved_bytes + self.uploads.reserved_bytes + self.uploads._reservation(payload.size):
                 raise HTTPException(507, "Insufficient shared upload/task storage")
-            await self.reclaim_finished_staging(record.owner_hash, payload.size)
+            await self.reclaim_finished_staging(record.owner_hash, payload.size, keep=record.task_id)
             receipt = await self.uploads.create(name=payload.name, size=payload.size,
                 sha256=payload.sha256 or "0" * 64, owner=record.owner_hash, content_type=payload.content_type)
             item = {"file_id": receipt["upload_id"], "up_id": receipt["upload_id"],
@@ -1143,7 +1165,7 @@ class DraftService:
                 release = self.uploads.plan_quota_release(source, source.owner_hash, files)
                 if release is None:
                     raise HTTPException(429, {"code": "recovery_quota",
-                        "message": f"恢复需要 {len(files)} 个文件名额，当前会话最多保留 {self.uploads.max_files} 个文件、合计 5 GiB，"
+                        "message": f"恢复需要 {len(files)} 个文件名额，你最多保存 {self.uploads.owner_max_files} 个文件、合计 20 GiB，"
                                    "释放这个作品的暂存副本后仍放不下。请先删除不需要的草稿或作品，再回去修改。"})
                 for up_id, capability in release:
                     try:

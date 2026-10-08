@@ -17,7 +17,7 @@ import {
   quoteGate, quoteTextEvidence, readModePreferences, readSentenceInputs, readSpeakers,
   scriptFromSentences, selectTranscriptSentence, sentencesMatchScript,
 } from "../lib/productionModes";
-import type { ModePreferences, ProductionMode, SentenceInput, SentenceKind, Speaker, TranscriptSegment, UploadSnapshot, MatchPreview } from "../lib/productionModes";
+import type { ModePreferences, ProductionMode, SentenceInput, SentenceKind, Speaker, TranscriptSegment, UploadSnapshot, MatchPreview, TerminalPunctuation } from "../lib/productionModes";
 import {
   MATCH_DEBOUNCE_MS, deleteUploadFile, pollUploadStatus, readUploadBindings, readUploadTokens,
   requestMatchPreview, transferComplete, uploadFile, uploadMediaUrl, uploadUsable, completeUpload, reconcileServerProbe, serverTrimEnd, getUploadStatus,
@@ -595,6 +595,13 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
     setSentenceChecks({}); setElements({});
   }
 
+  /** 只用原声: replace a line with exactly the words the transcript says were spoken (one click, no retyping). */
+  function useSourceWords(idx: number, spoken: string) {
+    const trimmed = spoken.trim(), ending = /[，,。.;；!?！？]$/.exec(trimmed)?.[0] as TerminalPunctuation | undefined;
+    const text = ending ? trimmed.slice(0, -1) : trimmed;
+    if (!text) return;
+    commitSentences(analysis.rows.map(row => row.idx === idx ? { ...row, text, ...(ending ? { terminal_punctuation: ending } : {}) } : row));
+  }
   function commitSentences(rows: SentenceInput[]) {
     setAlignmentEnabled(true);
     invalidatePreview();
@@ -1150,6 +1157,9 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
           <p>{source.asr_text}</p><p className="gm-muted gm-small">{state === "low" ? "请在原素材中试听；低分待确认项仍会进入成片检查。" : "文字对上不等于口型、切点或新闻事实已核验。"}
             {source.precision === "segment" ? " 没有完整词时间，不能承诺按字裁剪；实际区间可能包括前后文。" : " 按字剪短只能选连续词段，不能拼接中间删词。"}</p>
         </details>}
+        {mode === "original" && state !== "missing" && source && quoteTextEvidence(sentence.text, source.asr_text).unverified && <div className="gm-match-fixes">
+          <button type="button" className="gm-small-button" onClick={() => useSourceWords(sentence.idx, source.asr_text)}>改成素材里的原话</button>
+          <span className="gm-muted gm-small">素材里实际说的是：“{source.asr_text}”。只用原声只能用真正说过的话。</span></div>}
         {state === "missing" && <div className="gm-match-fixes">{mode === "mixed" && <button type="button" className="gm-small-button" onClick={() => changeKind(sentence.idx, "narration")}>改成旁白</button>}
           <button type="button" className="gm-small-button" onClick={() => commitSentences(analysis.rows.filter(row => row.idx !== sentence.idx))}>删掉这句</button>
           {mode === "original" && <button type="button" className="gm-small-button" onClick={() => { setPickOpen(true); goToStep(1); }}>从转写里挑</button>}
@@ -1243,6 +1253,7 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
                 <b className="gm-clock">{sentence.idx + 1}</b><div><p className={unverified ? "gm-unverified-quote" : ""}>{sentence.text}</p>
                   {sentence.speaker_hint && <span className="gm-muted gm-small">{sentence.speaker_hint}</span>}
                   {unverified && <p className="gm-danger-text gm-small">红线内容未能在这个出处中核实为连续原话，可能有新增词或中间删词。请从转写重新选择，不能任意删词后拼出新的发言。</p>}
+                  {unverified && state !== "missing" && sourceText && <button type="button" className="gm-small-button" onClick={() => useSourceWords(sentence.idx, sourceText)}>改成素材里的原话</button>}
                   {sentence.kind === "quote" && countSpokenChars(sentence.text) > 60 && <p className="gm-warning">这句原声超过 60 字，建议在完整意思处断成两句；实际时长以转写出处为准。</p>}
                 </div>
                 {mode === "mixed" ? <button type="button" className="gm-kind-chip" data-kind={sentence.kind} aria-pressed={sentence.kind === "quote"}

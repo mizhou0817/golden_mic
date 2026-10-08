@@ -733,7 +733,7 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
     async def test_recovery_releases_the_failed_tasks_own_staging_copies_when_the_file_quota_is_full(self):
         source, _, item = await self.recovery_fixture()
         # One live staging copy already fills this session's quota, so a plain copy could never fit.
-        self.store.max_files = 1
+        self.store.owner_max_files = 1
         view = await self.service.recover(source, {"step": 1})
         draft = self.manager.get(view["task_id"])
         self.assertNotIn(item["up_id"], self.store._records, "redundant staging copy is released")
@@ -777,7 +777,7 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_finished_tasks_staging_is_reclaimed_when_it_blocks_the_next_upload(self):
         source, _, item = await self.recovery_fixture()
-        self.store.max_files = 1  # the finished work's staging copy fills this session's quota
+        self.store.owner_max_files = 1  # the finished work's staging copy fills this session's quota
         draft = await self.new_draft_for(source)
         receipt, new_item = await self.file(draft)
         self.assertNotIn(item["up_id"], self.store._records, "the finished task's redundant staging was released")
@@ -794,10 +794,10 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
                               ("missing task copy", lambda: (source.task_dir / "raw" / source.uploads[0].stored_name).unlink())):
             with self.subTest(label):
                 change()
-                self.store.max_files = len([r for r in self.store._records.values() if r.owner_hash == hashlib.sha256(source.owner_hash.encode()).hexdigest()])
-                another = await self.new_draft_for(source)
+                self.store.owner_max_files = len([r for r in self.store._records.values() if r.owner_hash == hashlib.sha256(source.owner_hash.encode()).hexdigest()])
+                # The same draft: the one being edited never gives up its own clips.
                 with self.assertRaises(HTTPException) as caught:
-                    await self.service.add_file(another, {"name": "x.mp4", "size": 1}, "")
+                    await self.service.add_file(draft, {"name": "x.mp4", "size": 1}, "")
                 self.assertEqual(caught.exception.status_code, 429)
                 self.assertIn(item["up_id"], self.store._records, "never released: " + label)
 
@@ -805,11 +805,26 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
         mine, _, mine_item = await self.recovery_fixture()
         other, _, other_item = await self.recovery_fixture()
         self.assertNotEqual(mine.owner_hash, other.owner_hash)
-        self.store.max_files = 1
+        self.store.owner_max_files = 1
         draft = await self.new_draft_for(mine)
         await self.file(draft)
         self.assertNotIn(mine_item["up_id"], self.store._records)
         self.assertIn(other_item["up_id"], self.store._records, "another owner's staging is untouched")
+
+    async def test_a_full_visitor_quota_frees_clips_of_their_older_drafts_but_never_the_current_one(self):
+        source, _, _ = await self.recovery_fixture()
+        source.status = TaskState.running  # nothing finished to release
+        old = await self.new_draft_for(source)
+        _, old_item = await self.file(old)
+        current = await self.new_draft_for(source)
+        _, current_item = await self.file(current)
+        self.store.owner_max_files = len([r for r in self.store._records.values()
+                                          if r.owner_hash == hashlib.sha256(source.owner_hash.encode()).hexdigest()])
+        _, new_item = await self.file(current)
+        self.assertNotIn(old_item["up_id"], self.store._records, "the older draft's clip made room")
+        self.assertEqual(old.draft_context["files"], [], "and is no longer listed in that draft")
+        self.assertIn(current_item["up_id"], self.store._records, "the draft being edited keeps its clips")
+        self.assertIn(new_item["up_id"], self.store._records)
 
     async def test_a_full_site_releases_any_finished_works_redundant_staging_instead_of_refusing(self):
         mine, _, _ = await self.recovery_fixture()
@@ -849,7 +864,7 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_recovery_quota_shortage_is_reported_with_a_specific_code_and_creates_nothing(self):
         source, _, _ = await self.recovery_fixture()
-        self.store.max_files = 0
+        self.store.owner_max_files = 0
         before = set(self.manager._tasks)
         with self.assertRaises(HTTPException) as caught:
             await self.service.recover(source, {"step": 1})
@@ -1024,12 +1039,12 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
         source, _, _ = await self.recovery_fixture()
         tasks, uploads = set(self.manager._tasks), set(self.store._records)
         counts = self.service.ledger.counts(source.owner_hash, "ip")
-        for limit in ("max_files", "max_total_bytes", "disk"):
+        for limit in ("owner_max_files", "owner_max_bytes", "disk"):
             with self.subTest(limit=limit), ExitStack() as stack:
                 if limit == "disk":
                     stack.enter_context(patch.object(self.store, "_space", side_effect=HTTPException(507)))
                 else:
-                    stack.enter_context(patch.object(self.store, limit, 0 if limit == "max_files" else 1))
+                    stack.enter_context(patch.object(self.store, limit, 0 if limit == "owner_max_files" else 1))
                 copied = stack.enter_context(patch("backend.drafts._copy_verified", side_effect=AssertionError("No oversized copy")))
                 with self.assertRaises(HTTPException) as caught:
                     await self.service.recover(source, {"step": 1})

@@ -477,6 +477,12 @@ def generate_quality_report(
                 + (f"等共 {len(fact_rows)} 句。" if len(fact_rows) > 3 else "。"),
                 sentence_id=fact_rows[0][1],
             ), "level": 1, "action": "去看"})
+        mode_manifest = task_dir / "production_mode.json"
+        fallback = json.loads(mode_manifest.read_text(encoding="utf-8")).get("broll_fallback") if mode_manifest.is_file() else None
+        if fallback:
+            from .mode_pipeline import BROLL_FALLBACK_TEXT
+            issues.append({**_issue("BROLL_FALLBACK", "warning", BROLL_FALLBACK_TEXT.get(fallback, "空镜不够，部分旁白画面用了替代片段；请看看画面是否合适。")),
+                           "level": 1, "action": "去看"})
         measured_ids = {value["sentence_id"] for value in sentence_loudness}
         if {t.sentence_id for t in timings} - measured_ids:
             issues.append(_issue("MODE_UNIT_LOUDNESS_UNMEASURABLE", "error", "部分原声或旁白单元无法测量响度；不视为通过。"))

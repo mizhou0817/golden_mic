@@ -76,8 +76,13 @@ MAX_PHOTO_PIXELS = 20_000_000
 PHOTO_DURATION = 3.0
 MAX_FILE_SECONDS = 1800.0
 MAX_TASK_SECONDS = 3600.0
-MAX_OWNER_BYTES = 5 * 1024**3
-MAX_OWNER_FILES = 20
+# One work: at most 20 files / 5 GiB. One visitor, across all drafts: 100 files / 20 GiB (old drafts'
+# clips and finished works' staging copies are released automatically when that fills up).
+MAX_WORK_FILES = 20
+MAX_WORK_BYTES = 5 * 1024**3
+MAX_OWNER_FILES = 100
+MAX_OWNER_BYTES = 20 * 1024**3
+OWNER_QUOTA_MESSAGE = "你保存的素材已达上限（最多 100 个文件，合计不超过 20 GiB）。"
 # Site-wide live staging sessions. Disk is protected separately by the per-upload reservation, and
 # redundant copies held by finished works are released when this fills up (DraftService).
 MAX_SESSIONS = 500
@@ -401,9 +406,11 @@ class UploadStore:
         self.root = Path(os.path.abspath(settings.data_dir)) / "_uploads"
         self.max_bytes = min(MAX_FILE_BYTES, int(settings.upload_limit_bytes))
         self.max_seconds = min(MAX_FILE_SECONDS, float(settings.max_source_duration_seconds_per_file))
-        self.max_total_bytes = min(MAX_OWNER_BYTES, int(settings.total_upload_limit_bytes))
+        self.max_total_bytes = min(MAX_WORK_BYTES, int(settings.total_upload_limit_bytes))
         self.max_total_seconds = min(MAX_TASK_SECONDS, float(settings.max_total_source_duration_seconds))
-        self.max_files = min(MAX_OWNER_FILES, int(settings.max_files))
+        self.max_files = min(MAX_WORK_FILES, int(settings.max_files))
+        self.owner_max_files = max(MAX_OWNER_FILES, self.max_files)
+        self.owner_max_bytes = max(MAX_OWNER_BYTES, self.max_total_bytes)
         self._records: dict[str, _Manifest] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._jobs: dict[str, asyncio.Task[None]] = {}
@@ -582,8 +589,8 @@ class UploadStore:
                 own = [record for record in self._records.values() if record.owner_hash == owner_hash]
                 if len(self._records) + self._orphans >= MAX_SESSIONS:
                     raise _error(429, "全站上传名额已满，请稍后重试。")
-                if len(own) >= self.max_files or sum(record.size for record in own) + size > self.max_total_bytes:
-                    raise _error(429, "当前会话最多保留 20 个文件，合计不超过 5 GiB。")
+                if len(own) >= self.owner_max_files or sum(record.size for record in own) + size > self.owner_max_bytes:
+                    raise _error(429, OWNER_QUOTA_MESSAGE)
                 if count_budget and (len(entries) >= GLOBAL_CREATIONS_PER_HOUR or sum(entry.owner == owner_hash for entry in entries) >= OWNER_CREATIONS_PER_HOUR):
                     raise _error(429, "新建上传过于频繁，请稍后重试。")
                 self._space(self._reservation(size))

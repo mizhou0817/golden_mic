@@ -500,17 +500,46 @@ def broll_source_intervals(snapshot: dict[str, Any], clock: dict[str, Any], mode
     return _subtract(quiet, excluded)
 
 
-def _pool_shots(shots: Sequence[Shot], snapshots: Sequence[dict[str, Any]], clocks: dict[str, Any], mode: Mode) -> list[Shot]:
+BROLL_TIERS = ("quiet", "no_speech", "any")
+BROLL_FALLBACK_TEXT = {
+    "no_speech": "素材里没有足够安静的空镜（环境声较大），旁白画面改用了没有人讲话的片段。",
+    "any": "素材里几乎处处有人讲话，旁白画面用了有人讲话的片段（声音已换成旁白）；请看看画面是否合适。",
+    "quote_overlap": "空镜不够，部分旁白画面用了原声句子附近的片段；请看看画面是否重复。",
+}
+
+
+def _broll_intervals(snapshot: dict[str, Any], clock: dict[str, Any], mode: Mode, tier: str) -> list[tuple[float, float]]:
+    """B-roll candidates per fallback tier: quiet non-speech (strict) -> anything but detected speech -> all footage.
+
+    Narration replaces the sound under B-roll, so the looser tiers only risk showing people talking; they
+    are used only when the strict tier leaves too little picture, and the work is flagged for review.
+    """
+    if tier == "quiet" or mode == "voiceover":
+        return broll_source_intervals(snapshot, clock, mode)
+    start, end = clock["prepared_start"], clock["prepared_end"]
+    if tier == "any":
+        return [(start, end)]
+    speech = [(segment.start - 0.3, segment.end + 0.3) for segment in _segments(snapshot)]
+    speech.extend((float(a) - 0.3, float(b) + 0.3) for a, b in snapshot.get("speech_intervals", []))
+    return _subtract([(start, end)], speech)
+
+
+def _pool_shots(shots: Sequence[Shot], snapshots: Sequence[dict[str, Any]], clocks: dict[str, Any], mode: Mode,
+                tier: str = "quiet") -> list[Shot]:
     result = []
     for shot in shots:
         snapshot = snapshots[shot.source_index]
         clock = clocks[snapshot["id"]]
         offset = clock["norm_source_offset"]
-        for start, end in broll_source_intervals(snapshot, clock, mode):
+        for start, end in _broll_intervals(snapshot, clock, mode, tier):
             lo, hi = max(shot.start, start - offset), min(shot.end, end - offset)
             if hi - lo >= 1.0:
                 result.append(shot.model_copy(update={"shot_id": len(result), "start": lo, "end": hi, "duration": hi - lo}))
     return result
+
+
+def _usable_broll(pool: Sequence[AnnotatedShot]) -> bool:
+    return any(s.status == "available" and s.description and s.quality is not None for s in pool)
 
 
 def _physical_shot_id(manifest: dict[str, Any], upload_id: str, start: float, end: float, variant: int = 0) -> int:
@@ -804,7 +833,8 @@ async def _extend_short_coverage(record: Any, plan: Sequence[MatchPlanItem], tim
         chain = chains.get(str(item.sentence_id))
         ids = list(chain) if chain and chain[0] == item.shot_id and all(value in by_id for value in chain) else [item.shot_id]
         need = timing.duration + timing.gap_after + 0.05
-        remaining = need - sum(by_id[value].duration for value in ids)
+        # build_mode_edl keeps one frame back at the end of every window but the last.
+        remaining = need - sum(by_id[value].duration for value in ids) + (len(ids) - 1) / _FPS
         if remaining <= 0:
             continue
         parent = _source_parent(shot, shots)
@@ -818,7 +848,7 @@ async def _extend_short_coverage(record: Any, plan: Sequence[MatchPlanItem], tim
                 break
             if parent.end - pointer < 0.5:
                 pointer = parent.start  # the same real footage again, from the beginning
-            take = min(parent.end - pointer, remaining)
+            take = min(parent.end - pointer, remaining + 1.0 / _FPS)
             start, end = pointer, pointer + take
             variant = 1
             while True:
@@ -836,7 +866,7 @@ async def _extend_short_coverage(record: Any, plan: Sequence[MatchPlanItem], tim
             taken.add(new_id)
             manifest.setdefault("broll_shot_ids", []).append(new_id)
             ids.append(new_id)
-            pointer, remaining = end, remaining - take
+            pointer, remaining = end, remaining - (take - 1.0 / _FPS)
         chains[str(item.sentence_id)] = ids
         extended += 1
     if extended:
@@ -1380,7 +1410,11 @@ def build_mode_edl(
                 remaining = need
                 for position, window_id in enumerate(chain):
                     window = shots_by_id[window_id]
-                    take = min(window.duration, remaining)
+                    last = position == len(chain) - 1
+                    # Leave one frame at the end of every window but the last: frame rounding on the timeline can
+                    # otherwise ask for a frame past a window that ends at the very end of its video.
+                    usable = window.duration if last else max(0.0, window.duration - 1.0 / _FPS)
+                    take = min(usable, remaining)
                     if clips and take < 1 / _FPS:
                         break
                     start = window.start
@@ -1742,7 +1776,19 @@ async def run_mode_pipeline(record: PipelineTask, reporter: PipelineReporter, se
     else:
         raw_shots = await _run_scene_detection(record, reporter, normalized, settings)
         stage_cache.save(3, signature3, {"shots": [s.model_dump(mode="json") for s in raw_shots]})
-    pool_shots = _pool_shots(raw_shots, snapshots, manifest["source_clocks"], mode)
+    narration_inputs = [value for value in inputs if value.kind == "narration"]
+    need = sum(_estimated_footage_need(value.text, preferences) for value in narration_inputs)
+    tiers = [(tier, _pool_shots(raw_shots, snapshots, manifest["source_clocks"], mode, tier)) for tier in BROLL_TIERS]
+    # The strict tier unless it leaves the narration short of picture; then the first looser tier that is
+    # enough, else the one with the most footage. No narration: keep the strict pool.
+    tier, pool_shots = tiers[0]
+    if narration_inputs and sum(s.duration for s in pool_shots) < need:
+        enough = [(name, pool) for name, pool in tiers if sum(s.duration for s in pool) >= need]
+        tier, pool_shots = enough[0] if enough else max(tiers, key=lambda value: sum(s.duration for s in value[1]))
+    manifest.pop("broll_fallback", None)
+    if tier != "quiet":
+        manifest["broll_fallback"] = tier
+        write_text_log(record.task_dir, f"空镜降级：{BROLL_FALLBACK_TEXT[tier]}（需要约 {need:.0f} 秒，严格空镜 {sum(s.duration for s in tiers[0][1]):.0f} 秒）")
     _write_models(record.task_dir, "shots.json", pool_shots)
     signature4 = _stage_signature(4, settings, signature3, [s.model_dump(mode="json") for s in pool_shots])
     cached4 = stage_cache.load(4, signature4)
@@ -1788,6 +1834,11 @@ async def run_mode_pipeline(record: PipelineTask, reporter: PipelineReporter, se
             shot_id=0, confidence=row["score"], candidates=[],
         ) for row in aligned if row["kind"] == "quote"]
         filtered_pool = await _exclude_quotes(record, shots, quote_plan, manifest)
+        if any(s.kind == "narration" for s in inputs) and shots and not _usable_broll(filtered_pool):
+            # Every B-roll moment sits within two seconds of a quote: reuse those moments rather than fail.
+            filtered_pool = list(shots)
+            manifest["broll_fallback"] = "quote_overlap"
+            write_text_log(record.task_dir, f"空镜降级：{BROLL_FALLBACK_TEXT['quote_overlap']}")
         all_shots = {shot.shot_id: shot for shot in [*shots, *filtered_pool]}
         shots = list(all_shots.values())
         manifest["broll_shot_ids"] = [shot.shot_id for shot in filtered_pool]
@@ -2030,6 +2081,8 @@ async def edit_mode_workspace(work: Any, original: Any, payload: Any, settings: 
         # Footage reuse replaces a shared shot by its windows; those windows are this task's B-roll now.
         base_ids |= set(manifest.get("broll_shot_ids", []))
     pool = await _exclude_quotes(work, [shot for shot in shots if shot.shot_id in base_ids], plan, manifest)
+    if any(item.kind == "narration" for item in plan) and not _usable_broll(pool):
+        pool = [shot for shot in shots if shot.shot_id in base_ids]  # same fallback as the first build
     all_shots = {shot.shot_id: shot for shot in [*shots, *pool]}
     shots = list(all_shots.values())
     manifest["broll_shot_ids"] = [shot.shot_id for shot in pool]

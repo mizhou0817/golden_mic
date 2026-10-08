@@ -121,7 +121,7 @@ export function assertSameOriginConfiguration(): void {
   }
 }
 const KNOWN_LIMIT_MESSAGES = new Set([
-  '当前会话最多保留 20 个文件，合计不超过 5 GiB。', '新建上传过于频繁，请稍后重试。', '全站上传名额已满，请稍后重试。',
+  '你保存的素材已达上限（最多 100 个文件，合计不超过 20 GiB）。', '新建上传过于频繁，请稍后重试。', '全站上传名额已满，请稍后重试。',
   'AI 写作用得太频繁了，请稍后再试，或先自己动手改一改。', 'AI 正在为别人写稿，请几秒后再试。',
 ]);
 async function decode<T>(response: Response): Promise<T> {

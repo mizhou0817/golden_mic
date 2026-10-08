@@ -204,7 +204,11 @@ test('NFKC, combining accents, Jamo and locale-independent casefold are stable',
 test('original text evidence rejects inserted words and noncontiguous deletion, including interior fillers', () => {
   assert.equal(modes.quoteTextEvidence('今天欢迎大家', '前文今天欢迎大家后文').contiguous, true);
   assert.equal(modes.quoteTextEvidence('我们欢迎大家', '我们今天欢迎大家').unverified, true);
-  assert.equal(modes.quoteTextEvidence('我们，嗯，欢迎大家', '我们欢迎大家').unverified, true);
+  assert.equal(modes.quoteTextEvidence('我们，嗯，欢迎大家', '我们欢迎大家').unverified, true);
+  // The recognizer heard '那边比较旺一点' this time: the typed line is blocked in 只用原声, and taking the
+  // transcript's exact words (what “改成素材里的原话” does) passes the same literal check.
+  assert.equal(modes.quoteTextEvidence('那边比较方便', '那边比较旺一点。').unverified, true);
+  assert.equal(modes.quoteTextEvidence('那边比较旺一点', '那边比较旺一点。').unverified, false);
   assert.equal(modes.quoteTextEvidence('我们欢迎大家', '我们，嗯，欢迎大家').unverified, true);
   assert.equal(modes.quoteTextEvidence('1月31日', '一月三十一号').exact, true);
   assert.equal(modes.quoteTextEvidence('', '欢迎大家').unverified, true);
