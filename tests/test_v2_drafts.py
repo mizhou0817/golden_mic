@@ -811,6 +811,30 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(mine_item["up_id"], self.store._records)
         self.assertIn(other_item["up_id"], self.store._records, "another owner's staging is untouched")
 
+    async def test_a_full_site_releases_any_finished_works_redundant_staging_instead_of_refusing(self):
+        mine, _, _ = await self.recovery_fixture()
+        other, _, other_item = await self.recovery_fixture()
+        mine.status = TaskState.running  # only the other visitor's finished work is eligible
+        draft = await self.new_draft_for(mine)
+        # The site-wide cap is exactly full; this owner still has room of their own.
+        with patch("backend.uploads.MAX_SESSIONS", len(self.store._records) + self.store._orphans):
+            receipt, new_item = await self.file(draft)
+        self.assertNotIn(other_item["up_id"], self.store._records, "a finished work's copy made room for the new upload")
+        self.assertIn(new_item["up_id"], self.store._records)
+        self.assertEqual((other.task_dir / "raw" / other.uploads[0].stored_name).read_bytes(), b"synthetic-video",
+                         "that work keeps its own copy")
+
+    async def test_a_full_site_never_releases_drafts_or_running_work(self):
+        mine, _, _ = await self.recovery_fixture()
+        other, _, other_item = await self.recovery_fixture()
+        mine.status = other.status = TaskState.running
+        draft = await self.new_draft_for(mine)
+        with patch("backend.uploads.MAX_SESSIONS", len(self.store._records) + self.store._orphans):
+            with self.assertRaises(HTTPException) as caught:
+                await self.service.add_file(draft, {"name": "x.mp4", "size": 1}, "")
+        self.assertEqual(caught.exception.status_code, 429)
+        self.assertIn(other_item["up_id"], self.store._records)
+
     async def test_recovery_copies_do_not_consume_the_hourly_new_upload_budget(self):
         source, _, _ = await self.recovery_fixture()
         entries = len(self.store._budgets.entries)

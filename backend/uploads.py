@@ -78,9 +78,11 @@ MAX_FILE_SECONDS = 1800.0
 MAX_TASK_SECONDS = 3600.0
 MAX_OWNER_BYTES = 5 * 1024**3
 MAX_OWNER_FILES = 20
-MAX_SESSIONS = 100
+# Site-wide live staging sessions. Disk is protected separately by the per-upload reservation, and
+# redundant copies held by finished works are released when this fills up (DraftService).
+MAX_SESSIONS = 500
 OWNER_CREATIONS_PER_HOUR = 40
-GLOBAL_CREATIONS_PER_HOUR = 200
+GLOBAL_CREATIONS_PER_HOUR = 1000  # site-wide; an 8-clip work is 8 uploads
 UPLOAD_TTL_SECONDS = 72 * 3600
 MAX_PREPROCESS = 4
 IO_BLOCK = 128 * 1024

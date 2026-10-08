@@ -20,6 +20,7 @@ import unicodedata
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
@@ -591,31 +592,37 @@ class DraftService:
 
         An accepted task copies its originals into its own task_dir/raw; the staging session
         (kept 72 h) is then redundant, and recovery/retry fall back to the task's own copy. Without
-        this, a handful of finished or failed works use up the per-session file quota and the
-        next work can upload one file before every other file is refused. Only this owner's
-        idle sessions of accepted, terminal tasks whose copy exists are released, oldest first,
-        and only as many as needed; drafts and running tasks are never touched.
+        this, a handful of finished or failed works use up the per-session file quota (or, across
+        all visitors, the site-wide session cap) and the next upload is refused. Only idle sessions
+        of accepted, terminal tasks whose copy exists are released, oldest first, and only as many
+        as needed: first this owner's, then (only for the site-wide cap) anyone's. Drafts and
+        running tasks are never touched.
         """
+        from .uploads import MAX_SESSIONS
         digest = hashlib.sha256(owner.encode()).hexdigest()
         own = [record for record in self.uploads._records.values() if record.owner_hash == digest]
-        free_count = self.uploads.max_files - len(own)
-        free_bytes = self.uploads.max_total_bytes - sum(record.size for record in own)
-        if free_count >= 1 and free_bytes >= size:
+        state = {"count": self.uploads.max_files - len(own), "bytes": self.uploads.max_total_bytes - sum(record.size for record in own)}
+        owner_ok = lambda: state["count"] >= 1 and state["bytes"] >= size
+        site_ok = lambda: len(self.uploads._records) + self.uploads._orphans < MAX_SESSIONS
+        if owner_ok() and site_ok():
             return 0
         terminal = {TaskState.done, TaskState.failed, TaskState.cancelled}
-        candidates = sorted((task for task in self.manager._tasks.values() if task.owner_hash == owner
-                             and task.status in terminal and task.lifecycle_v2 and self.ledger.accepted(task.task_id)),
-                            key=lambda task: task.updated_at)
+        finished = sorted((task for task in self.manager._tasks.values()
+                           if task.status in terminal and task.lifecycle_v2 and task.owner_hash and self.ledger.accepted(task.task_id)),
+                          key=lambda task: task.updated_at)
         released = 0
-        for task in candidates:
+
+        async def release(task: TaskRecord, done: Callable[[], bool]) -> bool:
+            nonlocal released
+            task_digest = hashlib.sha256(task.owner_hash.encode()).hexdigest()
             materialized = {asset.upload_id: asset for asset in task.uploads}
             for item in task.draft_context.get("files", []):
-                if free_count >= 1 and free_bytes >= size:
-                    return released
+                if done():
+                    return True
                 live = self.uploads._records.get(item.get("up_id"))
                 asset = materialized.get(item.get("up_id"))
                 capability = item.get("capability")
-                if (live is None or live.owner_hash != digest or asset is None or not isinstance(capability, str)
+                if (live is None or live.owner_hash != task_digest or asset is None or not isinstance(capability, str)
                         or not (task.task_dir / "raw" / asset.stored_name).is_file()):
                     continue
                 try:
@@ -623,8 +630,18 @@ class DraftService:
                 except (HTTPException, OSError):
                     continue
                 released += 1
-                free_count += 1
-                free_bytes += live.size
+                if task_digest == digest:
+                    state["count"] += 1
+                    state["bytes"] += live.size
+            return done()
+
+        for task in finished:
+            if task.owner_hash == owner and await release(task, lambda: owner_ok() and site_ok()):
+                break
+        if not site_ok():
+            for task in finished:
+                if await release(task, site_ok):
+                    break
         return released
 
     async def add_file(self, record: TaskRecord, raw: dict, task_token: str) -> dict:
