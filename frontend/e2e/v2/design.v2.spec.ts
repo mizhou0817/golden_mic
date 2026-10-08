@@ -107,27 +107,22 @@ test.describe('current design: one owned short-A lifecycle', () => {
     try { if (m) await m.finish(); } finally { if (context) await context.close(); }
   });
 
-  test('VD-01 native keyboard mode fold and C selection preserve manuscript without writes', async () => {
+  test('VD-01 all three modes are always visible; native keyboard C selection preserves manuscript without writes', async () => {
     await creator(page, 'voiceover', SCRIPT);
     const cards = page.getByRole('group', { name: '制作模式', exact: true });
-    const fold = page.locator('.gm-mode-more');
-    await expect(cards.getByRole('button')).toHaveCount(1);
+    await expect(cards.getByRole('button')).toHaveCount(3);
+    await expect(page.locator('.gm-mode-more')).toHaveCount(0);
+    await expect(cards.getByRole('button', { name: /AI 配音/ })).toHaveAttribute('aria-pressed', 'true');
     const before = writes().length;
     const taskGETs = () => m.observations.filter(r => r.method === 'GET' && r.path.startsWith('/api/tasks/')).length;
     const getsBefore = taskGETs();
-    for (const expanded of [true, false, true]) {
-      await fold.focus(); await fold.press('Space');
-      await expect(fold).toHaveAttribute('aria-expanded', String(expanded));
-      await expect(cards.getByRole('button')).toHaveCount(expanded ? 3 : 1);
-      await expect(scriptBox()).toHaveValue(SCRIPT);
-    }
+    await expect(scriptBox()).toHaveValue(SCRIPT);
     const c = cards.getByRole('button', { name: /只用原声/ });
     await c.focus(); await c.press('Space'); await expect(c).toHaveAttribute('aria-pressed', 'true');
-    await expect(fold).toHaveCount(0); // Current contract: C keeps all choices visible, no C fold button.
     await expect(cards.getByRole('button')).toHaveCount(3); await expect(scriptBox()).toHaveValue(SCRIPT);
     await cards.getByRole('button', { name: /AI 配音/ }).press('Space');
-    await fold.press('Space'); await expect(cards.getByRole('button')).toHaveCount(1);
-    await fold.press('Space'); await expect(cards.getByRole('button')).toHaveCount(3);
+    await expect(cards.getByRole('button', { name: /AI 配音/ })).toHaveAttribute('aria-pressed', 'true');
+    await expect(cards.getByRole('button')).toHaveCount(3);
     expect(writes()).toHaveLength(before); expect(m.tasks.size).toBe(0);
     expect(taskGETs()).toBe(getsBefore);
     m.evidence('design-fold', { taskGETsBefore: getsBefore, taskGETsAfter: taskGETs(), writes: 0, nativeSpace: true });

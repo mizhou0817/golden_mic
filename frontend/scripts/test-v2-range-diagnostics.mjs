@@ -42,7 +42,7 @@ function privateError(name = 'Error') {
 }
 
 function fixture(t, options = {}) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-range-diagnostics-'));
+  const directory = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'gm-range-diagnostics-'));
   const format = options.format ?? 'mp4';
   const target = path.join(directory, `download-${'a'.repeat(32)}.${format}`);
   const state = { gets: 0, bodies: 0, disposes: 0, closes: 0, writes: 0, probes: 0, bytesWritten: 0, requests: [], evidence: [] };

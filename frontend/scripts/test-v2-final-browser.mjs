@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, mkdtempSync, writeFileSync, lstatSync, mkdirSync, readdirSync, rmdirSync } from 'node:fs';
+import { launchBrowser } from './browser.mjs';
+import { realpathSync, existsSync, readFileSync, mkdtempSync, writeFileSync, lstatSync, mkdirSync, readdirSync, rmdirSync } from 'node:fs';
 import { dirname, resolve, relative, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -148,13 +149,14 @@ if (direct && process.env.GM_FINAL_BROWSER === '1') test('native Edge: independe
     rawErrors: false, rawDOM: false, screenshots: false, traces: false, syntheticCapabilities: true, cases };
   let watchdog;
   try {
-    stage = 'transport'; temp = mkdtempSync(join(tmpdir(), 'gm-final-browser-'));
+    stage = 'transport'; temp = mkdtempSync(join(realpathSync(tmpdir()), 'gm-final-browser-'));
     downloadDir = join(temp, 'downloads'); mkdirSync(downloadDir);
     transport = await startDownloadTransport({ task: A, job: JOB, token: caps[A], revision: 2, bytes: SRT });
     const ORIGIN = transport.origin;
     stage = 'launch';
     const { chromium } = require('playwright');
-    browser = await chromium.launch({ channel: 'msedge', headless: true, timeout: 6000, downloadsPath: downloadDir,
+    // The rejecting-proxy transport relies on Chromium proxy bypass/host-resolver switches.
+    browser = await launchBrowser({ chromiumOnly: true, headless: true, timeout: 6000, downloadsPath: downloadDir,
       proxy: { server: ORIGIN, bypass: '<-loopback>' },
       args: ['--disable-background-networking', '--disable-component-update', '--no-first-run', '--disable-quic',
         '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'] });
@@ -282,7 +284,7 @@ if (direct && process.env.GM_FINAL_BROWSER === '1') test('native Edge: independe
     check(!await page.getByRole('button', { name: '我来读', exact: true }).isEnabled(), 'stale-recording-disabled');
     check(await page.getByLabel('或上传音频').count() === 0, 'stale-upload-hidden');
     await page.getByRole('button', { name: '导出 / 分享', exact: true }).click();
-    check(!await page.getByRole('dialog', { name: '导出 / 分享', exact: true }).getByRole('button', { name: '检查通过后才能导出', exact: true }).isEnabled(), 'stale-export-disabled');
+    check(!await page.getByRole('dialog', { name: '导出 / 分享', exact: true }).getByRole('button', { name: '暂时不能导出', exact: true }).isEnabled(), 'stale-export-disabled');
     check(await page.evaluate(A => JSON.parse(localStorage.getItem('gm-modes-v1')).pend.resultV2[A].draft.sentences[1].text === 'Synthetic retained pending', A), 'durable-pending-preserved');
     check(posts === 0 && deletes === 0, 'stale-no-write'); cases.push('native-edit-reload-new-revision-stale-durable-draft');
 

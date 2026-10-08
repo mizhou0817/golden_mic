@@ -4,6 +4,7 @@ import ipaddress
 import json
 import re
 import secrets
+import time
 import unicodedata
 from contextlib import asynccontextmanager, suppress
 from collections import defaultdict, deque
@@ -293,7 +294,11 @@ async def security_headers(
             )
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Referrer-Policy"] = "no-referrer"
+    # Pages use same-origin: with no-referrer, WebKit/Safari sends "Origin: null" on the app's own
+    # POSTs, so every write would fail the Origin check. Nothing is ever sent to other sites.
+    response.headers["Referrer-Policy"] = (
+        "no-referrer" if request.url.path.startswith(("/api/", "/health/")) else "same-origin"
+    )
     response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
@@ -590,7 +595,7 @@ async def _create_preuploaded_task(request: Request, payload: TaskCreateRequest,
                 task_id, task_dir, payload.script, uploads, preferences=payload.preferences,
                 mode=payload.mode, mode_contract=True, upload_ids=payload.upload_ids,
                 sentences=payload.sentences, speakers=payload.speakers,
-                quality_gate_mode="block" if settings.is_production else (payload.quality_gate_mode or settings.quality_gate_mode),
+                quality_gate_mode=settings.quality_gate_mode if settings.is_production or settings.quality_gate_mode == "block" else (payload.quality_gate_mode or settings.quality_gate_mode),
                 reserved_disk_bytes=reservation.reserved_bytes,
             )
             reservation.retain()
@@ -689,6 +694,68 @@ async def preview_match(request: Request) -> dict[str, Any]:
         except ValueError as exc:
             raise HTTPException(422, "这份原话暂时无法安全核对——请缩短单句，或从转写中直接挑选。") from exc
     return {"matches": matches, "match_ok": 0.85, "match_low": 0.6}
+
+
+_assist_slot = asyncio.Semaphore(2)
+_assist_calls: dict[str, deque[float]] = defaultdict(deque)
+ASSIST_PER_CLIENT_PER_HOUR = 30
+ASSIST_PER_SITE_PER_HOUR = 300
+
+
+def _enforce_assist_budget(client: str) -> None:
+    """AI writing calls a paid model: a small separate budget, never counted against task starts."""
+    now = time.monotonic()
+    for key in [key for key, calls in _assist_calls.items() if not calls or calls[-1] < now - 3600]:
+        _assist_calls.pop(key, None)
+    for calls in _assist_calls.values():
+        while calls and calls[0] < now - 3600:
+            calls.popleft()
+    site = sum(len(calls) for calls in _assist_calls.values())
+    if len(_assist_calls[f"client={client}"]) >= ASSIST_PER_CLIENT_PER_HOUR or site >= ASSIST_PER_SITE_PER_HOUR:
+        raise HTTPException(429, "AI 写作用得太频繁了，请稍后再试，或先自己动手改一改。", headers={"Retry-After": "600"})
+    _assist_calls[f"client={client}"].append(now)
+
+
+class ScriptAssistRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["write", "edit"]
+    mode: Literal["voiceover", "mixed", "original"]
+    brief: str = Field(default="", max_length=2000)
+    text: str = Field(default="", max_length=3000)
+    instruction: str = Field(default="", max_length=300)
+    length: Literal["short", "normal", "long"] = "normal"
+
+
+@app.post("/api/script/assist")
+async def assist_script_endpoint(request: Request) -> dict[str, Any]:
+    """Draft or polish narration with the configured LLM. Needs no draft yet: it works on text only."""
+    try:
+        payload = ScriptAssistRequest.model_validate(await _bounded_json(request, limit=32 * 1024))
+    except ValidationError as exc:
+        raise HTTPException(422, "AI 写作的内容太长或格式不对：要点最多 2000 字，稿子最多 3000 字，修改要求最多 300 字。") from exc
+    from .providers.llm import LLMConfigurationError, LLMProvider, LLMProviderError
+    from .script_assist import ScriptAssistError, assist_script
+    if payload.mode == "original":
+        raise HTTPException(422, "“只用原声”的稿子必须是素材里真实说过的话，不能由 AI 写或改。")
+    provider = LLMProvider.from_settings(settings)
+    try:
+        provider.validate_configuration()
+    except LLMConfigurationError:
+        await provider.aclose()
+        raise HTTPException(503, "AI 写作服务还没有配置，请先自己写稿，或联系管理员配置大模型。") from None
+    if _assist_slot.locked():
+        await provider.aclose()
+        raise HTTPException(429, "AI 正在为别人写稿，请几秒后再试。", headers={"Retry-After": "5"})
+    try:
+        _enforce_assist_budget(_client_ip(request))
+        async with _assist_slot, provider:
+            return await asyncio.wait_for(assist_script(
+                provider, action=payload.action, mode=payload.mode, brief=payload.brief, text=payload.text,
+                instruction=payload.instruction, length=payload.length), timeout=150)
+    except ScriptAssistError as exc:
+        raise HTTPException(422, str(exc)) from None
+    except (LLMProviderError, TimeoutError):
+        raise HTTPException(502, "AI 写作暂时不可用或超时，稿子没有被改动。请稍后重试。") from None
 
 
 def _metadata_ledger() -> AdmissionLedger | None:
@@ -1020,8 +1087,9 @@ def _enforce_task_rate_limits(request: Request) -> None:
         legacy = _legacy_start_counts(owner, client_ip)
         if (v2[0] + legacy[0] >= settings.anonymous_global_task_rate_limit_per_hour
                 or v2[2] + legacy[2] >= settings.anonymous_ip_task_rate_limit_per_hour
-                or (anonymous_session_id and v2[1] + legacy[1] >= min(2, settings.anonymous_session_task_rate_limit_per_hour))):
-            raise HTTPException(429, "Shared task start budget exhausted", headers={"Retry-After": "3600"})
+                or (anonymous_session_id and v2[1] + legacy[1] >= settings.effective_session_start_limit)):
+            from .admission import start_budget_detail
+            raise HTTPException(429, start_budget_detail(settings.effective_session_start_limit, 3600), headers={"Retry-After": "3600"})
     if anonymous_session_id:
         rules = [
             (f"anonymous-session={anonymous_session_id}", settings.anonymous_session_task_rate_limit_per_hour, "当前浏览器会话"),
@@ -1121,7 +1189,7 @@ def _must_check_origin(request: Request) -> bool:
     if (not settings.enforce_origin_check and not settings.is_production) or request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return False
     path = request.url.path
-    return path == "/api/tasks" or path.startswith(("/api/tasks/", "/api/uploads", "/api/match/"))
+    return path == "/api/tasks" or path.startswith(("/api/tasks/", "/api/uploads", "/api/match/", "/api/script/"))
 
 
 def _must_require_anonymous_session(request: Request) -> bool:
@@ -1130,7 +1198,7 @@ def _must_require_anonymous_session(request: Request) -> bool:
         and request.method in {"POST", "PUT", "PATCH", "DELETE"}
         and (
             request.url.path == "/api/tasks"
-            or request.url.path.startswith(("/api/tasks/", "/api/uploads", "/api/match/"))
+            or request.url.path.startswith(("/api/tasks/", "/api/uploads", "/api/match/", "/api/script/"))
         )
     )
 
@@ -1156,9 +1224,13 @@ def _anonymous_session(request: Request) -> AnonymousSession | None:
 
 def _has_allowed_origin(request: Request) -> bool:
     origins = request.headers.getlist("origin")
-    return trusted_local_request(request, settings, mutation=True) or (
-        len(origins) == 1 and origins[0] in settings.cors_origins
-    )
+    if trusted_local_request(request, settings, mutation=True) or (len(origins) == 1 and origins[0] in settings.cors_origins):
+        return True
+    # A browser that withholds the origin ("null", e.g. Safari under a strict referrer policy) still
+    # proves same-site with Sec-Fetch-Site, which page scripts cannot set and cross-site requests never carry.
+    fetch_sites = request.headers.getlist("sec-fetch-site")
+    return (len(origins) == 1 and origins[0] == "null" and fetch_sites == ["same-origin"]
+            and len(request.headers.getlist("host")) == 1 and bool(settings.cors_origins))
 
 
 def _request_is_https(request: Request) -> bool:
@@ -1415,6 +1487,14 @@ async def default_sample(request: Request) -> Any:
     from .v2_editing import packaged_sample
     from .pipeline import _run_blocking_until_complete
     return await _run_blocking_until_complete(lambda: packaged_sample(request.url.path.endswith("/video")))
+
+
+@app.get("/api/samples/default/{kind}/{name}")
+async def default_sample_media(kind: Literal["sources", "thumbs"], name: str) -> Any:
+    """Source clips and per-sentence pictures of the packaged sample; only registered, hash-verified files."""
+    from .v2_editing import packaged_sample
+    from .pipeline import _run_blocking_until_complete
+    return await _run_blocking_until_complete(lambda: packaged_sample(media=f"{kind}/{name}"))
 
 
 @app.api_route("/api/{unmatched_path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], include_in_schema=False)

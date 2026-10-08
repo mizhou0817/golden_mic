@@ -1,6 +1,8 @@
 import { defineConfig } from '@playwright/test';
 import { env, exists, joinPath, makeDirectory, newInstance, parentPath, readText, writeJSON } from './e2e/modes/io.mjs';
 import { BASE_URL, evidenceRoot, invariant, loadManifest, settings } from './e2e/v2/environment';
+// Default Edge; GM_BROWSER=chrome selects Chrome. WebKit is covered by the node tests, not these suites.
+const browserChannel = env.GM_BROWSER === 'chrome' ? 'chrome' : 'msedge';
 env.PLAYWRIGHT_NO_COPY_PROMPT = '1';
 invariant(env.V2_DESIGN_ONLY === undefined || env.V2_DESIGN_ONLY === '1', 'V2_DESIGN_ONLY must be absent or 1');
 invariant(!(env.V2_DESIGN_ONLY === '1' && env.V2_NAV_ONLY === '1'), 'select exactly one explicit suite');
@@ -23,7 +25,7 @@ export default defineConfig<{ v2NoRawArtifacts: boolean }>({
   outputDir: joinPath(output, 'test-results'), preserveOutput: 'always',
   captureGitInfo: { commit: false, diff: false }, globalSetup: './e2e/v2/global-setup.ts',
   reporter: [['./e2e/v2/reporter.ts']],
-  use: { v2NoRawArtifacts: true, baseURL: BASE_URL, browserName: 'chromium', channel: 'msedge',
+  use: { v2NoRawArtifacts: true, baseURL: BASE_URL, browserName: 'chromium', channel: browserChannel,
     headless: true, locale: 'zh-CN', viewport: { width: 1280, height: 900 },
     serviceWorkers: 'block', acceptDownloads: false, screenshot: 'off', trace: 'off', video: 'off',
     actionTimeout: 20_000, navigationTimeout: 30_000,

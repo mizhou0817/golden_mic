@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .config import Settings
-from .matching import build_match_plan, extract_visual_beats, parse_script
+from .matching import MatchingError, build_match_plan, extract_visual_beats, parse_script
 from .media import run_logged_command
 from .models import (
     AnnotatedShot, CaptionStyle, EDLItem, EditingPreferences, MatchCandidate, MatchPlanItem,
@@ -49,7 +49,7 @@ from .revisions import (
     publish_artifacts, read_json, record_metadata, revision_dir, snapshot_revision,
     version_summaries,
 )
-from .storage import sanitize_sensitive_text, write_json_atomic
+from .storage import sanitize_sensitive_text, write_json_atomic, write_text_log
 from .subtitles import generate_ass_subtitles
 from .tts_pipeline import (
     probe_audio_duration, rebuild_narration_from_existing, synthesize_narration,
@@ -642,10 +642,13 @@ class _WorkbenchReporter:
     def __init__(self, record: Any, work: Any, manager: Any, first_stage: int) -> None:
         self.record, self.work, self.manager, self.first_stage = record, work, manager, first_stage
         self.started: dict[int, float] = {}
+        # The edit job that owns the record. Progress may arrive from its parallel sub-tasks (e.g. video
+        # embeddings gathered during a picture replacement); those are still this job, not a takeover.
+        self.owner = asyncio.current_task()
 
     def publish(self) -> None:
         if (self.manager.get(self.record.task_id) is not self.record
-                or self.record.background is not asyncio.current_task()):
+                or self.owner is None or self.record.background is not self.owner):
             raise RevisionError("Workbench no longer owns its task")
         if len(self.work.stages) != 10 or [stage.number for stage in self.work.stages] != list(range(1, 11)):
             raise RevisionError("Mode reporter requires ten ordered stages")
@@ -1190,6 +1193,16 @@ def create_workbench_router(settings: Settings, task_manager: Any, authorize: An
                 code = f"validation_failed: {exc}"
             elif isinstance(exc, TimeoutError):
                 code = "operation_timed_out"
+            elif isinstance(exc, MatchingError):
+                # Footage/matching problems are the user's to fix; their messages carry no paths or secrets.
+                code = "needs_change: " + sanitize_sensitive_text(exc)[:300]
+            if not isinstance(exc, asyncio.CancelledError):
+                # Server-side diagnosis only (sanitised); the client still sees the code.
+                try:
+                    import traceback
+                    write_text_log(record.task_dir, f"修改失败 r{revision}: {type(exc).__name__}: {exc}\n" + "".join(traceback.format_exception(exc))[-4000:])
+                except Exception:
+                    pass
             # Do not expose provider exceptions, credentials, or arbitrary paths.
             restore_error(record, saved, code)
             if isinstance(payload, BatchEditRequest):

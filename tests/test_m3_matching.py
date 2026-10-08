@@ -1082,6 +1082,35 @@ class MatchingPipelineTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(MatchingError, "一对一全局分配"):
             apply_beat_decisions(sentences, shots, candidates, decisions)
 
+    def test_accepted_repeated_footage_lets_entity_sentences_share_their_only_related_shot(self) -> None:
+        sentences = [
+            Sentence(
+                sentence_id=index,
+                text=f"关键实体第{index}句。",
+                visual_beats=[VisualBeat(beat_id=0, text="关键实体", entities=["关键实体"], requires_entity_coverage=True)],
+            )
+            for index in range(3)
+        ]
+        shots = _make_shots(3)
+        for shot in shots:
+            shot.duration = 30.0  # long enough to be cut into several non-overlapping windows
+        candidates = {
+            (index, 0): [
+                MatchCandidate(shot_id=0, similarity=0.9, combined_score=0.8, matched_terms=["关键实体"]),
+                MatchCandidate(shot_id=1, similarity=0.88, combined_score=0.78),
+            ]
+            for index in range(3)
+        }
+        decisions = [RerankDecision(sentence_id=index, shot_id=0, confidence=0.9, alternates=[1]) for index in range(3)]
+
+        plan = apply_beat_decisions(sentences, shots, candidates, decisions, shot_reuse_window_seconds=6.0)
+
+        self.assertEqual([item.shot_id for item in plan], [0, 0, 0])
+        self.assertFalse(any(item.is_fallback for item in plan), "related footage is reused, not replaced by unrelated shots")
+        # Without the explicit consent the very same input is still refused.
+        with self.assertRaisesRegex(MatchingError, "一对一全局分配"):
+            apply_beat_decisions(sentences, shots, candidates, decisions)
+
     def test_same_visual_group_still_obeys_actual_reuse_capacity(self) -> None:
         sentences = [
             Sentence(

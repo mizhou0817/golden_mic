@@ -4,7 +4,7 @@ import type { CaptionStyle, EditingPacing } from '../types';
 import {
   canConfirmCheck, createWorkbenchApi, DEFAULT_EXPORT, diffWorkbenchPreferences, exportSupport,
   hasWorkbenchPreferenceChanges, isQuoteRow, normalizeExport, protectedMedia, readWorkbenchPreferences,
-  serverAllowsExport, SIMPLE_EXPORT_FORMATS, validateEditBatch, validateRecording, recordingLimit, rowStart,
+  serverAllowsExport, SIMPLE_EXPORT_FORMATS, unresolvedChecks, unresolvedSignature, validateEditBatch, validateRecording, recordingLimit, rowStart,
   workbenchErrorMessage,
 } from '../lib/workbenchApi';
 import type {
@@ -39,6 +39,16 @@ export function clearWorkbenchMemory(): void { drafts.clear(); exportJobs.clear(
 const emptyDraft = (): Draft => ({ base: null, sentences: {}, deleted: [],
   pendTrim: {}, pendTake: {}, pendToNarration: [], pendSpeakers: {} });
 const message = workbenchErrorMessage;
+
+/** Why the last edit did not become a new version; the previous version is always kept. */
+export function operationErrorText(code: string): string {
+  const keep = '之前的版本没有受影响，待修改内容已保留。';
+  if (code.startsWith('needs_change: ')) {
+    return `上次修改没做成：${code.slice('needs_change: '.length).trim()} ${keep}按提示调整后再点“应用修改”即可。`;
+  }
+  if (code === 'operation_timed_out') return `上次修改处理超时，没有生成新版本。${keep}可以直接再点一次“应用修改”重试。`;
+  return `上次修改没做成（处理过程中出错），没有生成新版本。${keep}可以直接再点一次“应用修改”重试；多次失败时，试试减少一次修改的句子数量。`;
+}
 // Translate browser recording failures only; API and file-validation errors keep
 // their own actionable messages instead of being mislabeled as permission errors.
 function microphoneErrorMessage(failure: unknown): string {
@@ -106,6 +116,8 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
   const [replaceFailures, setReplaceFailures] = useState<NonNullable<Report['replace_fails']>>({});
   const draftRef = useRef(draft); draftRef.current = draft;
   const [exportOpen, setExportOpen] = useState(false);
+  // Signature of the open checks the user has read and accepted for this export; stale as soon as the list changes.
+  const [acceptedOpen, setAcceptedOpen] = useState('');
   const [options, setOptions] = useState<ExportOptions>({ ...DEFAULT_EXPORT });
   const [job, setJob] = useState<ExportJob | null>(() => owner ? exportJobs.get(taskId) ?? null : null);
   const [pollError, setPollError] = useState(false);
@@ -247,7 +259,7 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
         if (!mounted.current || seq !== loadSequence.current) return;
         setReplaceFailures(operation.failures);
       }
-      if (ctx.last_operation_error) setError('上次修改未完成，待修改内容保留。请核对作品状态后再操作。');
+      if (ctx.last_operation_error) setError(operationErrorText(ctx.last_operation_error));
       if (!old && ctx.status === 'done') await refreshChecks(ctx.revision, relay, notify);
     } catch (e) {
       if (mounted.current && !signal.aborted && seq === loadSequence.current) {
@@ -279,8 +291,16 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
   const disabled = !!busy || loading || recording || micStarting || exporting || processing;
   const editable = owner && !!context && state === 'done' && !historical && !disabled && !staleDraft;
   const dirty = hasUnsent(draft) || recording || micStarting || editText !== null || !!instruction.trim();
-  const canExport = owner && !!context && !historical && state === 'done' && !processing && !disabled && !dirty
-    && !checksLoading && !checksError && serverAllowsExport(checks, revision);
+  const exportReady = owner && !!context && !historical && state === 'done' && !processing && !disabled && !dirty
+    && !checksLoading && !checksError && checks?.revision === revision;
+  const canExport = exportReady && serverAllowsExport(checks, revision);
+  // Open checks no longer block exporting; they must be shown and explicitly accepted first.
+  const openChecks = useMemo(() => unresolvedChecks(checks, revision), [checks, revision]);
+  const openSignature = unresolvedSignature(openChecks);
+  const canExportAnyway = exportReady && !canExport && openChecks.length > 0;
+  const acknowledged = canExportAnyway && acceptedOpen === openSignature;
+  // A file exported with open checks stays downloadable while the work is otherwise ready.
+  const canDownload = canExport || (exportReady && !!job?.unresolved);
   const rows = report?.rows ?? [];
   const row = rows.find(r => r.sentence_id === selected) ?? rows[0];
   const rowIsQuote = !!row && isQuoteRow(row, mode);
@@ -723,16 +743,18 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
   const stopRecording = () => recordingSession.current?.stop();
 
   const openExport = () => {
-    if (!canExport) { setNotice('请先应用或撤销待修改内容，再完成服务器的发布前检查。检查未通过时不能导出。'); return; }
+    if (!canExport && !canExportAnyway) { setNotice('请先应用或撤销待修改内容，并等服务器读完发布前检查，再导出。'); return; }
     setExportOpen(true);
   };
   useEffect(() => {
-    if (exportOpen) exportDialog.current?.showModal(); else exportDialog.current?.close();
+    if (exportOpen) exportDialog.current?.showModal(); else { exportDialog.current?.close(); setAcceptedOpen(''); }
   }, [exportOpen]);
   const submitExport = () => {
-    if (!canExport || disabled || dirty) return;
+    if (!(canExport || acknowledged) || disabled || dirty) return;
+    const acknowledgedAtClick = acceptedOpen;
     const relay = callbacks.current.onChecksChange;
     const notify = callbacks.current.onUnavailable;
+    let openAtExport = false;
     void run('准备导出任务', async () => {
       // Refresh the server gate before the single explicit export POST. No fallback.
       invalidateChecks(); setChecksLoading(true);
@@ -741,7 +763,14 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
         const current = await api.checks(lifecycle.current.signal);
         if (!mounted.current || sequence !== checksSequence.current) return;
         setChecks(current); relay?.(current);
-        if (!serverAllowsExport(current, revision)) throw new Error('还有检查没有完成，或作品已变化。请先刷新并完成发布前检查。');
+        const stillOpen = unresolvedChecks(current, revision);
+        if (current.revision !== revision) throw new Error('作品已变化。请先刷新，再重新核对检查。');
+        // Exporting past open checks is allowed, but only for exactly the list the user was shown.
+        // The acknowledgement must name a non-empty list identical to the one the server reports now.
+        if (!serverAllowsExport(current, revision) && (!stillOpen.length || !acknowledgedAtClick || unresolvedSignature(stillOpen) !== acknowledgedAtClick)) {
+          throw new Error('未通过的检查在你确认之后发生了变化。请重新查看列表并再次确认。');
+        }
+        openAtExport = !serverAllowsExport(current, revision);
       } catch (e) {
         if (mounted.current && sequence === checksSequence.current) { relay?.(null); setChecksError(message(e)); readUnavailable(e, notify, relay); }
         throw e;
@@ -751,7 +780,7 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
         const frame = video.current;
         if (options.format === 'png' && (!frame || !frame.readyState || !Number.isFinite(frame.duration))) throw new Error('请先在播放器选择要导出的画面。');
         const captured = options.format === 'png' ? { ...options, frame_time: Math.max(0, Math.min(frame!.currentTime, frame!.duration - 1 / 30)) } : options;
-        const next = await api.export(captured, revision, lifecycle.current.signal);
+        const next = await api.export(captured, revision, lifecycle.current.signal, openAtExport);
         if (mounted.current) { rememberExport(next); setPollError(false); callbacks.current.onChanged(); }
       } catch (e) {
         if (mounted.current && sequence === checksSequence.current) { invalidateChecks(relay); setChecksError(`${message(e)} 导出没有确认成功，请重新读取检查和任务状态，不要直接重复提交。`); }
@@ -826,7 +855,7 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
           && <button disabled={disabled || !context} onClick={() => void refreshChecks(revision)}>重新读取检查</button>}
         {!processing && !historical && !dirty && !checksError && nextCheck && <button disabled={disabled || checksLoading} onClick={() => goToCheck(nextCheck)}>{nextCheck.action ? checkActionLabel(nextCheck) : '去核对'}</button>}
         {!processing && dirty && <button disabled={!editable || !hasEdit(draft)} onClick={submitBatch}>应用修改</button>}
-        {canExport && <button onClick={openExport}>开始导出</button>}
+        {(canExport || canExportAnyway) && <button onClick={openExport}>{canExport ? '开始导出' : '导出（有未通过的检查）'}</button>}
       </div>
 
         {/* Responsive grid retains a single instance of every control. */}
@@ -931,7 +960,7 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
                 <p className="gm-rw-muted">匹配置信度：{confidence(row.confidence)}</p>
               </div>}
               <p className="gm-rw-muted">{rowIsQuote ? '只能剪短，不能改字' : `${row.duration.toFixed(1)} 秒 · ${rowAudioLabel(row)}`}</p>
-              {replacementFailure && <div role="alert" className="gm-rw-alert"><b>上次换画面没成功：</b>{replacementFailure.kind === 'used' ? '合适的镜头已经用过了——删掉这句，或回去多传素材。' : replacementFailure.kind === 'abstract' ? '这句太抽象，AI 找不到能直接表现它的画面。换成具体的人、物或动作。' : '素材里没找到合适画面——换个说法，或回去多传素材。'}</div>}
+              {replacementFailure && <div role="alert" className="gm-rw-alert"><b>上次换画面没成功：</b>{replacementFailure.kind === 'used' ? '合适的镜头已经用过了——删掉这句，或回去多传素材。' : replacementFailure.kind === 'abstract' ? '这句太抽象，AI 找不到能直接表现它的画面。换成具体的人、物或动作。' : replacementFailure.kind === 'processing_failed' ? '换画面时处理出错了，原来的画面保持不变。可以再记一次换画面并点“应用修改”重试。' : '素材里没找到合适画面——换个说法，或回去多传素材。'}</div>}
               {timing?.audio_source === 'recording' && <p className="gm-rw-warning">{'transcript_verified' in timing && timing.transcript_verified === true ? '此句录音已通过转写稿件核对（不代表新闻事实核实）' : 'transcript_verified' in timing && timing.transcript_verified === false ? '此句录音未经转写核验，请试听并核对稿件。' : '此版本未提供录音转写核验状态，请试听核对。'}</p>}
               {row.replacement_instruction && <p className="gm-rw-muted">上次换镜指令：{row.replacement_instruction}</p>}
             </div>
@@ -1015,7 +1044,7 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
 
       {owner && <dialog ref={exportDialog} className="gm-rw-export" aria-labelledby="gm-rw-export-title" onCancel={() => setExportOpen(false)}>
         <div className="gm-rw-section-head"><h2 id="gm-rw-export-title">导出 / 分享</h2><button onClick={() => setExportOpen(false)}>关闭</button></div>
-        <p>生成独立文件，不覆盖成片。所有发布前检查通过、待修改内容已处理，才能导出。</p>
+        <p>生成独立文件，不覆盖成片。待修改内容需要先应用或撤销；发布前检查没通过时仍可导出，但会先告诉你哪些没通过，由你确认。</p>
         <p className="gm-rw-muted">竖屏与正方形会居中裁切，请留意人物是否完整。标准字幕保留原成片；改变字幕样式后的包装效果请检查导出文件。</p>
         <fieldset disabled={!!busy || exporting || loading || checksLoading}><legend>导出选项</legend>
           <div className="gm-rw-format"><h3>导出什么</h3>{SIMPLE_EXPORT_FORMATS.map(f => <button key={f} type="button" aria-pressed={options.format === f} onClick={() => setOptions(o => normalizeExport({ ...o, format: f }))}>{({ mp4: '视频 MP4', gif: '动图 GIF', mp3: '音频 MP3', srt: '字幕 SRT', png: '封面图' } as const)[f]}</button>)}</div>
@@ -1028,8 +1057,18 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
         {options.format === 'srt' && <p>字幕文件可以导入其他剪辑软件。</p>}
         {options.format === 'png' && <p>导出当前画面当封面。</p>}
         {checksError && <p className="gm-rw-alert" role="alert">{checksError}</p>}
-        {!canExport && !checksError && <p className="gm-rw-warning">{dirty ? '还有待应用修改，请先应用或撤销。' : '检查尚未通过，或作品正在处理中，暂时不能导出。'}</p>}
-        <button className="gm-rw-primary" disabled={!canExport} onClick={submitExport}>{canExport ? '开始导出' : '检查通过后才能导出'}</button>
+        {canExportAnyway && <section className="gm-rw-unresolved" data-testid="export-unresolved" aria-labelledby="gm-rw-unresolved-title">
+          <h3 id="gm-rw-unresolved-title">有 {openChecks.length} 项检查没有通过</h3>
+          <p>仍然可以导出，但这份文件可能带着下面的问题，请先看一遍：</p>
+          <ul>{openChecks.slice(0, 20).map(check => <li key={check.key} data-level={check.level}>
+            <b>{check.level === 0 ? '错误' : '待确认'}</b>
+            {check.sentence_id != null ? `第 ${check.sentence_id + 1} 句：` : ''}{check.message}</li>)}</ul>
+          {openChecks.length > 20 && <p className="gm-rw-muted">还有 {openChecks.length - 20} 项未列出。</p>}
+          <label><input type="checkbox" data-control="export-accept-unresolved" checked={acknowledged} disabled={!!busy || exporting}
+            onChange={event => setAcceptedOpen(event.target.checked ? openSignature : '')} /> 我已看过以上未通过的检查，仍要导出</label>
+        </section>}
+        {!canExport && !canExportAnyway && !checksError && <p className="gm-rw-warning">{dirty ? '还有待应用修改，请先应用或撤销。' : '作品正在处理中，或检查结果还没读完，暂时不能导出。'}</p>}
+        <button className="gm-rw-primary" disabled={!(canExport || acknowledged)} onClick={submitExport}>{canExport ? '开始导出' : canExportAnyway ? (acknowledged ? '仍然导出（带未通过的检查）' : '先勾选确认，再导出') : '暂时不能导出'}</button>
         {job && <div aria-live="polite"><h3>导出任务：{exportStateLabel(job.state)}</h3>{DEV_NOTES && <p>{job.qc}</p>}
           {exporting && <><progress aria-label="导出任务正在处理，未提供百分比" /><p>正在排队或编码；没有可用的百分比进度。</p>
             <button disabled={!!busy} onClick={() => void run('取消导出', async () => {
@@ -1038,9 +1077,10 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
             })}>取消导出</button></>}
           {pollError && <button onClick={() => { setPollError(false); setPollRetry(n => n + 1); }}>恢复状态查询（不重新提交）</button>}
           {job.error && <p className="gm-rw-danger">{job.error}</p>}
-          {job.state === 'succeeded' && job.output_id && canExport && job.pipeline_revision === revision
+          {job.unresolved && <p className="gm-rw-warning" data-testid="export-unresolved-note">这份文件是在检查未通过时导出的：错误 {job.unresolved.blocking} 项、待确认 {job.unresolved.pending} 项{job.unresolved.qc_blockers ? '，另有制作质检的阻断项' : ''}。发布前请自己再核对。</p>}
+          {job.state === 'succeeded' && job.output_id && canDownload && job.pipeline_revision === revision
             && <a className="gm-rw-download" href={media(`${root}/exports/${job.export_id ?? job.id}/file`, job.pipeline_revision)} download>下载已完成的 {job.options.format.toUpperCase()} 文件（第 {job.pipeline_revision} 版）</a>}
-          {job.state === 'succeeded' && (!canExport || job.pipeline_revision !== revision) && <p>这份文件的版本或检查需要重新核对，暂不提供下载入口。</p>}
+          {job.state === 'succeeded' && (!canDownload || job.pipeline_revision !== revision) && <p>这份文件的版本或检查需要重新核对，暂不提供下载入口。</p>}
           {job.result && <p>{job.result.bytes.toLocaleString()} 字节 · 实测 {job.result.duration.toFixed(3)} 秒</p>}
           {job.disclosure && <p>衍生画面包含整段 AI 生成内容披露。</p>}
           {context && job.pipeline_revision !== revision && <p>这个导出捕获成片 v{job.pipeline_revision}，不是当前 v{revision}；已完成文件保持不变，新修改需要另行导出。</p>}

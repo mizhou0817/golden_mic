@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { launchBrowser } from './browser.mjs';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -92,7 +93,7 @@ if (process.env.GM_DIALOG_BROWSER === '1') test('actual extracted React dialogs:
   const evidence = [];
   try {
     const { chromium } = require('playwright');
-    browser = await chromium.launch({ channel: 'msedge', headless: true,
+    browser = await launchBrowser({ headless: true,
       args: ['--disable-background-networking', '--disable-component-update', '--no-first-run'] });
     context = await browser.newContext({ offline: true, serviceWorkers: 'block', acceptDownloads: false, viewport: { width: 320, height: 900 } });
     await context.route('**/*', route => { requests++; return route.abort(); });
@@ -135,7 +136,8 @@ if (process.env.GM_DIALOG_BROWSER === '1') test('actual extracted React dialogs:
         background: a === document.getElementById('opener') || a === document.getElementById('after'),
         documentFocus: document.hasFocus(), dialog: a === d };
     });
-    const open = async kind => { await page.locator('#opener').click(); await page.evaluate(kind => window.mountDialog(kind), kind); };
+    // Safari/WebKit does not focus a button on mouse click and a click would blur it, so focus the opener as a keyboard user would.
+    const open = async kind => { await page.locator('#opener').focus(); await page.evaluate(kind => window.mountDialog(kind), kind); };
     const press = async key => { await page.keyboard.press(key); return snapshot(); };
     const sequence = async (keys, contained = true) => {
       const result = [await snapshot()];

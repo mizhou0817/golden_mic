@@ -34,11 +34,52 @@ from .storage import write_json_atomic
 SAMPLE_ASSETS = Path(__file__).parent / "assets" / "samples"
 
 
-def packaged_sample(video: bool = False) -> Any:
+SAMPLE_MEDIA = re.compile(r"(?:sources/[0-9]{2}\.(?:mp4|jpg)|thumbs/[0-9]{1,4}\.jpg)")
+SAMPLE_MODES = {"voiceover", "mixed", "original"}
+def _sample_text(value: Any, maximum: int) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value) > maximum \
+            or any(ord(c) < 32 and c not in "\n\t" for c in value):
+        raise RevisionError("Invalid sample walkthrough text")
+    return value
+
+
+def _sample_walkthrough(folder: Path, files: dict[str, str], row_ids: set[int]) -> dict[str, Any]:
+    """The steps that produced the sample: script, chosen mode/settings and the uploaded clips."""
+    data = read_json(folder, "walkthrough.json")
+    if not isinstance(data, dict) or data.get("schema_version") != 1 or data.get("mode") not in SAMPLE_MODES:
+        raise RevisionError("Invalid sample walkthrough")
+    settings = data.get("settings", [])
+    sources = data.get("sources")
+    if not isinstance(settings, list) or len(settings) > 12 or not isinstance(sources, list) or not 1 <= len(sources) <= 20:
+        raise RevisionError("Invalid sample walkthrough")
+    result_sources = []
+    for index, source in enumerate(sources, 1):
+        name = f"sources/{index:02d}"
+        if not isinstance(source, dict) or source.get("file") != f"{name}.mp4" or source.get("thumb") != f"{name}.jpg" \
+                or f"{name}.mp4" not in files or f"{name}.jpg" not in files:
+            raise RevisionError("Unregistered sample source")
+        duration = source.get("duration")
+        used_by = source.get("used_by", [])
+        if type(duration) not in (int, float) or not 0 < duration <= 3600 or not isinstance(used_by, list) \
+                or any(type(value) is not int or value not in row_ids for value in used_by):
+            raise RevisionError("Invalid sample source")
+        result_sources.append({"index": index, "name": _sample_text(source.get("name"), 80), "duration": round(float(duration), 2),
+                               "used_by": sorted(set(used_by)), "video_url": f"/api/samples/default/{name}.mp4",
+                               "thumb_url": f"/api/samples/default/{name}.jpg"})
+    return {"script": _sample_text(data.get("script"), 4000), "mode": data["mode"],
+            "settings": [{"label": _sample_text(item.get("label"), 20), "value": _sample_text(item.get("value"), 80)}
+                         for item in settings if isinstance(item, dict)][:12],
+            "sources": result_sources}
+
+
+def packaged_sample(video: bool = False, media: str | None = None, _digests: dict[tuple[Any, ...], str] = {}) -> Any:  # noqa: B006
     """Only an explicitly packaged hash registry can supply the read-only demo.
 
     No fallback to user tasks, downloads or synthesized media. The registry's
-    default entry binds report.json and final.mp4 under its relative directory.
+    default entry binds report.json and final.mp4 under its relative directory;
+    an optional walkthrough.json with its source clips and thumbnails is bound the same way.
+    _digests remembers a file's SHA-256 only while its size/inode/times are unchanged, so the
+    page's many picture requests do not re-hash every clip.
     """
     import hashlib
     from fastapi.responses import FileResponse, JSONResponse
@@ -57,26 +98,38 @@ def packaged_sample(video: bool = False) -> Any:
             if not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected):
                 raise RevisionError("Invalid sample digest")
             path = local_file(folder, name)
-            with path.open("rb") as stream:
-                actual = hashlib.file_digest(stream, "sha256").hexdigest()
-            if actual != expected:
+            info = path.stat()
+            key = (str(path), info.st_size, info.st_ino, info.st_mtime_ns, info.st_ctime_ns)
+            if key not in _digests:
+                with path.open("rb") as stream:
+                    _digests[key] = hashlib.file_digest(stream, "sha256").hexdigest()
+            if _digests[key] != expected:
                 raise RevisionError("Sample integrity failed")
         # Reject unregistered auxiliary metadata consumed by the projection.
-        for name in ("timings.json", "shots_annotated.json", "v2_apply_plan.json"):
+        for name in ("timings.json", "shots_annotated.json", "v2_apply_plan.json", "walkthrough.json"):
             if (folder / name).exists() and name not in files:
                 raise RevisionError("Unregistered sample metadata")
+        if media is not None:
+            if not SAMPLE_MEDIA.fullmatch(media) or media not in files:
+                return JSONResponse({"code": "sample_media_missing", "detail": "范例里没有这个文件。", "read_only": True}, status_code=404)
+            return FileResponse(local_file(folder, media), media_type="video/mp4" if media.endswith(".mp4") else "image/jpeg",
+                                headers={"Cache-Control": "no-store"})
         report = _safe_report(folder, entry["task_id"], {})
         ReportResponse.model_validate(report)
         for row in report["rows"]:
-            row["thumb_url"] = None
+            thumb = f"thumbs/{row['sentence_id']}.jpg"
+            row["thumb_url"] = f"/api/samples/default/{thumb}" if thumb in files else None
             for beat in row["visual_beats"]:
                 beat["thumb_url"] = None
         if video:
             return FileResponse(local_file(folder, "final.mp4"), media_type="video/mp4",
                                 headers={"Cache-Control": "no-store"})
-        return {"read_only": True, "task_id": entry["task_id"], "title": entry["title"][:80],
-                "report": report, "video_url": "/api/samples/default/video"}
-    except (OSError, ValueError, KeyError, TypeError):
+        result = {"read_only": True, "task_id": entry["task_id"], "title": entry["title"][:80],
+                  "report": report, "video_url": "/api/samples/default/video"}
+        if "walkthrough.json" in files:
+            result["walkthrough"] = _sample_walkthrough(folder, files, {row["sentence_id"] for row in report["rows"]})
+        return result
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return JSONResponse({"code": "sample_unavailable", "detail": "示例素材尚未安装或校验未通过，请创建自己的作品。", "read_only": True}, status_code=503)
 
 
@@ -258,6 +311,13 @@ async def _replacement(work: Any, row: int, instruction: str, settings: Any) -> 
     if not available:
         raise ReplacementUnavailable("none")
     pool = [s for s in available if s.shot_id not in used]
+    reusing = mp._shot_reuse_accepted(work)
+    if reusing:
+        # Repeated footage is allowed: search all of it except what this sentence shows now (unused leftovers
+        # alone are often tiny windows). A shared pick is cut into its own real window below; nothing is frozen.
+        current = {clip.shot_id for entry in edl if entry.sentence_id == row for clip in entry.clips} | {item_shot for item_shot in [
+            next(p.shot_id for p in plan if p.sentence_id == row)]}
+        pool = [s for s in available if s.shot_id not in current]
     if not pool:
         raise ReplacementUnavailable("used")
     item = next(p for p in plan if p.sentence_id == row)
@@ -266,12 +326,21 @@ async def _replacement(work: Any, row: int, instruction: str, settings: Any) -> 
     matches = await mp._match_narration(work, [query], pool, settings,
         lambda f, text: reporter.update_stage(work, 6, f, text))
     match = matches[0]
-    # A fallback/abstract retrieval is NOT evidence that the requested picture exists.
-    if (match.is_fallback or match.confidence < settings.quality_min_match_confidence
-            or not any(c.shot_id == match.shot_id for c in match.candidates)):
+    if not any(c.shot_id == match.shot_id for c in match.candidates):
         raise ReplacementUnavailable("abstract")
+    if match.is_fallback or match.confidence < settings.quality_min_match_confidence:
+        if not reusing:
+            # Without consent to repeat footage keep the strict rule: a weak retrieval is no evidence.
+            raise ReplacementUnavailable("abstract")
+        # The user asked for this picture: use the best real candidate and keep it flagged for review
+        # (the quality check lists it before export) instead of refusing.
+        match.is_fallback = True
     match.text, match.replacement_instruction = item.text, instruction
     plan = [match if p.sentence_id == row else p for p in plan]
+    if reusing and sum(p.shot_id == match.shot_id for p in plan) > 1:
+        narration = [p for p in plan if p.kind == "narration"]
+        shots, _ = await mp._allocate_reused_footage(work, narration, shots, manifest, {p.sentence_id: p.text for p in narration},
+                                                     mp._preferences(work))
     reporter.complete_stage(work, 6, "Selected candidate retains actual matcher confidence and evidence")
     reporter.start_stage(work, 9, "Render replacement against unchanged voice and subtitle clocks")
     await mp._render_mode(work, plan, timings, shots, snapshots, manifest, settings,
@@ -374,6 +443,15 @@ async def execute_plan(work: Any, original: Any, record: Any, payload: Any, sett
         except Exception as exc:
             step["state"] = "failed"
             step["error"] = exc.code if isinstance(exc, ReplacementUnavailable) else "processing_failed"
+            if not isinstance(exc, ReplacementUnavailable):
+                # Server-side diagnosis only (sanitised); the client still sees the error code.
+                import traceback
+                from .storage import write_text_log
+                try:
+                    write_text_log(record.task_dir, f"修改步骤 {step['kind']} 失败: {type(exc).__name__}: {exc}\n"
+                                   + "".join(traceback.format_exception(exc))[-4000:])
+                except Exception:
+                    pass
             if step["kind"] != "replace":
                 write_json_atomic(record.task_dir / name, receipt)
                 raise
@@ -430,7 +508,17 @@ def create_v2_export_router(settings: Any, manager: Any, authorize: Any, *, lega
             raise HTTPException(403, "Task authorization changed")
         return record
 
-    def ready(record: Any, revision: int) -> None:
+    def unresolved_summary(record: Any) -> dict[str, Any]:
+        """What is still unresolved right now: publication checks (errors and unconfirmed warnings) and pipeline QC blockers."""
+        gate = publication_gate(record)
+        try:
+            studio.check_qc(record.task_dir)
+            qc_blocked = False
+        except HTTPException:
+            qc_blocked = True
+        return {"blocking": gate["blocking_count"], "pending": gate["pending_count"], "qc_blockers": qc_blocked}
+
+    def ready(record: Any, revision: int, acknowledged: bool = False) -> None:
         if (manager.get(record.task_id) is not record or record.revision != revision
                 or str(getattr(record.status, "value", record.status)) != "done"
                 or (record.background is not None and not record.background.done())
@@ -439,6 +527,10 @@ def create_v2_export_router(settings: Any, manager: Any, authorize: Any, *, lega
             raise HTTPException(409, "Task is stale, busy or requires recovery")
         if not getattr(record, "mode_contract", False):
             raise HTTPException(422, "v2 export requires a production-mode task")
+        if acknowledged:
+            # The user explicitly accepted the unresolved checks for this export. Every other gate
+            # (task state, revision, busy, generated-media disclosure, source/output binding) still applies.
+            return
         studio.check_qc(record.task_dir)
         require_publication(record)
 
@@ -461,7 +553,7 @@ def create_v2_export_router(settings: Any, manager: Any, authorize: Any, *, lega
         # Hashes, publication bindings, paths and source metadata are private.
         # `id` identifies the legacy Studio schema in the client. V2 must keep
         # only export_id on POST, GET and DELETE, alongside its fmt options.
-        result = {key: job[key] for key in ("export_id", "revision", "state", "output_id", "options", "error", "cleanup_pending") if key in job}
+        result = {key: job[key] for key in ("export_id", "revision", "state", "output_id", "options", "error", "cleanup_pending", "unresolved") if key in job}
         if job.get("state") == "succeeded":
             result["result"] = {key: job["result"][key] for key in ("bytes", "duration", "frame_seconds", "audio") if key in job["result"]}
         return result
@@ -472,7 +564,10 @@ def create_v2_export_router(settings: Any, manager: Any, authorize: Any, *, lega
         payload = await parse_request(request, V2ExportOptions)
         if await access(request, task_id, True) is not record:
             raise HTTPException(403, "Task authorization changed")
-        ready(record, payload.expected_revision)
+        acknowledged = payload.acknowledge_unresolved
+        ready(record, payload.expected_revision, acknowledged)
+        # Recorded with the job so the client can say honestly that this file was exported with open checks.
+        unresolved = unresolved_summary(record) if acknowledged else None
         if getattr(manager, "_draining", False):
             raise HTTPException(503, "Server is draining")
         root = record.task_dir.resolve()
@@ -519,7 +614,7 @@ def create_v2_export_router(settings: Any, manager: Any, authorize: Any, *, lega
                 studio._BUSY.discard(key)
 
         def stable() -> None:
-            ready(record, payload.expected_revision)
+            ready(record, payload.expected_revision, acknowledged)
             if (root.stat().st_dev, root.stat().st_ino) != root_stamp or publication_gate(record) != publication:
                 raise HTTPException(409, "Export source or publication changed")
 
@@ -544,7 +639,8 @@ def create_v2_export_router(settings: Any, manager: Any, authorize: Any, *, lega
             work.mkdir(parents=True, exist_ok=False)
             job = {"export_id": identity, "revision": record.revision, "state": "queued", "output_id": None,
                    "options": payload.model_dump(), "budget": asdict(budget), "source_sha256": hashes,
-                   "publication": publication, "error": None}
+                   "publication": publication, "error": None,
+                   **({"unresolved": unresolved} if acknowledged and (unresolved["blocking"] or unresolved["pending"] or unresolved["qc_blockers"]) else {})}
             write_json_atomic(path, job)
 
             async def run() -> None:
@@ -632,7 +728,8 @@ def create_v2_export_router(settings: Any, manager: Any, authorize: Any, *, lega
     async def download(request: Request, task_id: str, export_id: str) -> Any:
         record = await access(request, task_id)
         job = load(record, export_id)
-        ready(record, job["revision"])
+        acknowledged = job.get("options", {}).get("acknowledge_unresolved") is True
+        ready(record, job["revision"], acknowledged)
         if job["state"] != "succeeded" or job["output_id"] != export_id:
             raise HTTPException(409, "Export not published")
         path = job_path(record, export_id).parent / "media"
@@ -641,7 +738,7 @@ def create_v2_export_router(settings: Any, manager: Any, authorize: Any, *, lega
             **studio.mode_export_inputs(record.task_dir), "output": output}))
         if await access(request, task_id) is not record:
             raise HTTPException(403, "Task authorization changed")
-        ready(record, job["revision"])
+        ready(record, job["revision"], acknowledged)
         if (actual.pop("output") != job["result"]["sha256"] or actual != job["source_sha256"]
                 or output.stat().st_size != job["result"]["bytes"] or publication_gate(record) != job["publication"]):
             raise HTTPException(409, "Export source/output binding changed")

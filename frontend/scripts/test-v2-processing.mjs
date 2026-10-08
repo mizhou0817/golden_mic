@@ -102,7 +102,9 @@ for (const kind of ['qc', 'shortage', 'quote_missing']) test(`${kind}: two step-
   const elements = nodes(Processing(props({ task, onEdit: step => calls.push(step) })));
   for (const key of ['processing-edit-script', 'processing-edit-materials']) elements.find(n => n.props?.['data-control'] === key).props.onClick();
   assert.deepEqual(calls, [1, 2]); const html = render({ task });
-  assert.deepEqual(controls(html), ['processing-edit-script', 'processing-edit-materials', 'processing-delete']);
+  // A resumable shortage additionally offers the explicit, confirm-first repeated-footage option; never an ordinary retry.
+  assert.deepEqual(controls(html), [...(kind === 'shortage' ? ['processing-reuse-shots', 'processing-reuse-restart'] : []), 'processing-edit-script', 'processing-edit-materials', 'processing-delete']);
+  assert.doesNotMatch(html, /processing-retry/);
   assert.doesNotMatch(html, /重新提交（算|回去改第 2、2|NaN/);
 });
 for (const kind of ['network', 'transient']) test(`${kind}: explicit supported same-task retry only`, () => {
@@ -123,6 +125,55 @@ test('busy disables every button and optional editing adds no fake controls', ()
 test('honest unavailable recovery is visible, other raw errors are not echoed', () => {
   assert.ok(render({ error: RECOVERY_UNAVAILABLE }).includes(RECOVERY_UNAVAILABLE));
 });
+test('failed task says where it stopped and why: plain cause plus redacted technical detail', () => {
+  const task = makeTask({ status: 'failed', errorKind: 'transient', current_stage: 2, error_stage: '听素材里的声音',
+    error_message: "'/Users/me/Documents/golden_mic/data/tasks/505ee5c12c544208830841ecea123878/raw/1b075c83912adc7b5d493c3093ebe0e0.mp4' is not in the subpath of 'data/tasks/505ee5c12c544208830841ecea123878' api_key=sk-SECRET123 done" });
+  const html = render({ task });
+  assert.match(html, /停在了“听素材里的声音”这一步。/); assert.match(html, /data-testid="processing-cause"/);
+  assert.match(html, /data-testid="processing-technical"/); assert.match(html, /技术详情/);
+  assert.match(html, /is not in the subpath of/);
+  assert.doesNotMatch(html, /\/Users\/me|505ee5c12c544208830841ecea123878|SECRET123|sk-/);
+  // No stage/message at all still gives an honest, non-empty statement and no empty details block.
+  const bare = render({ task: makeTask({ status: 'failed', errorKind: 'transient', current_stage: null, stages: [] }) });
+  assert.doesNotMatch(bare, /data-testid="processing-technical"/); assert.match(bare, /这次没做成|制作服务暂时没能完成这一步/);
+});
+test('an action error on a known failure is shown as such, never relabelled as a lost connection', () => {
+  const task = makeTask({ status: 'failed', errorKind: 'transient' });
+  const html = render({ task, error: '这个作品没有保存完整、可核验的原始稿件和素材记录，无法恢复为草稿。' });
+  assert.match(html, /data-testid="processing-action-error"/); assert.match(html, /刚才的操作没成功：这个作品没有保存完整/);
+  assert.doesNotMatch(html, /暂时无法确认最新状态|状态需要确认/);
+  assert.match(html, /重新读取状态/); assert.match(html, /data-control="processing-edit-script"/);
+  const retry = nodes(Processing(props({ task, error: 'x' }))).find(n => n.props?.['data-control'] === 'processing-retry');
+  assert.equal(retry.props.disabled, false, 'known failure + action error must not block an explicit retry');
+  // Without a known failure the connection really is in doubt.
+  const lost = render({ task: makeTask(), error: 'Failed to fetch' });
+  assert.match(lost, /状态需要确认/); assert.match(lost, /暂时无法确认最新状态/); assert.doesNotMatch(lost, /刚才的操作没成功/);
+});
+test('failed mixed/original task offers an optional AI-voiceover fallback; the user decides', () => {
+  for (const mode of ['mixed', 'original']) {
+    const calls = [];
+    const task = makeTask({ status: 'failed', errorKind: 'transient', mode });
+    const html = render({ task });
+    assert.match(html, /data-testid="processing-alternative"/); assert.match(html, /临时替代方案：改用 AI 配音/);
+    assert.match(html, /由你确认后才会重新提交/); assert.match(html, /data-control="processing-switch-voiceover"/);
+    // Choosing it is a click on one explicit button that asks the host to recover the draft in voiceover mode.
+    const button = nodes(Processing(props({ task, onEdit: (...args) => calls.push(args) }))).find(n => n.props?.['data-control'] === 'processing-switch-voiceover');
+    button.props.onClick(); assert.deepEqual(calls, [[1, 'voiceover']]);
+    // The ordinary choices stay next to it, so declining the fallback is just another button.
+    assert.match(html, /data-control="processing-edit-script"/); assert.match(html, /data-control="processing-delete"/);
+  }
+  assert.doesNotMatch(render({ task: makeTask({ status: 'failed', errorKind: 'transient', mode: 'voiceover' }) }), /processing-alternative|processing-switch-voiceover/);
+  assert.doesNotMatch(render({ task: makeTask({ status: 'cancelled', mode: 'mixed' }) }), /processing-alternative/);
+});
+test('failure text redaction removes paths, long identifiers, key-like values and control characters', () => {
+  const { redactFailureText, describeFailure } = load('src/lib/failureDetail.ts');
+  const redacted = redactFailureText("open C:\\Users\\me\\data\\clip.mp4 failed; /var/x/y/z.mp4 token: abcdef0123456789abcdef0123456789 bad\u0000byte");
+  assert.doesNotMatch(redacted, /Users|\/var\/x|abcdef0123456789|\u0000/); assert.match(redacted, /clip\.mp4/); assert.match(redacted, /z\.mp4/);
+  assert.equal(redactFailureText({}), ''); assert.equal(redactFailureText(undefined), '');
+  assert.ok(redactFailureText('字'.repeat(5000)).length <= 401);
+  assert.deepEqual({ ...describeFailure(null) }, { stage: '', detail: '' });
+  assert.equal(describeFailure({ error_stage: '切分镜头', error_message: 'ok' }).stage, '切分镜头');
+});
 test('upload byte progress remains distinct from production, finished transfer is not acceptance', () => {
   const html = render({ uploading: true, task: null, upload: { loaded: 80, total: 100, startedAt: 0, finishedAt: 2500 } });
   assert.match(html, />80%<\/strong>/); assert.match(html, /等待服务器确认/); assert.match(html, /2.5 秒/);
@@ -141,7 +192,10 @@ test('dev-only static diagnostics contain no server messages or paths', () => {
 test('CSS module owns exact A-4 dimensions and reduced-motion/narrow reflow; no global processing selectors', () => {
   const css = read('src/components/Processing.module.css'); postcss.parse(css);
   for (const pattern of [/max-width:760px/, /width:64px; height:64px/, /font-size:3.25rem/, /grid-template-columns:34px minmax\(0,1fr\) auto/, /prefers-reduced-motion/, /max-width:600px/]) assert.match(css, pattern);
-  assert.doesNotMatch(read('src/components/Processing.tsx'), /shell-|styles\.css|task\?\.message|stage\?\.message|task\?\.error_message/);
+  const source = read('src/components/Processing.tsx');
+  assert.doesNotMatch(source, /shell-|styles\.css|task\?\.message|stage\?\.message|task\?\.error_message|task\.error_message/);
+  // Failure text is only shown after redaction (paths, long ids, key-like values, control chars, length cap).
+  assert.match(source, /import \{ describeFailure, redactFailureText \} from '\.\.\/lib\/failureDetail'/);
 });
 
 // Execute the actual hooks with task-scoped in-memory transport. Uses the real
@@ -176,12 +230,61 @@ function harness({ taskPatch = {}, reply, saved = { status: 'missing', draft: nu
   vm.createContext(env);
   vm.runInContext(ts.transpileModule([declaration('mutate'), declaration('retryOriginal'), declaration('editFailedDraft')].join('\n'),
     { compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS } }).outputText, env);
-  return { env, state, calls, target, async retry() { env.retryOriginal(); if (state.dialog) await state.dialog.action(); } };
+  return { env, state, calls, target, async retry(options) { env.retryOriginal(options); if (state.dialog) await state.dialog.action(); } };
 }
 test('v2 retry accepts actual revision-less cache-resume receipt; one POST surrounded by GETs', async () => {
   const h = harness(); await h.retry(); assert.deepEqual(h.calls.map(c => c.method), ['GET', 'POST', 'GET']);
   assert.equal(h.calls[1].path, '/api/tasks/owned-task/retry'); assert.deepEqual(JSON.parse(h.calls[1].body), { expected_revision: 0 });
   assert.equal(h.state.task.status, 'queued'); assert.equal(h.state.error, ''); assert.match(h.state.dialog.text, /不新增提交次数/);
+});
+test('accepting repeated footage asks first, then sends exactly one retry that carries the explicit consent', async () => {
+  const h = harness({ taskPatch: { errorKind: 'shortage', mode: 'mixed' } });
+  h.env.retryOriginal({ allowShotReuse: true });
+  assert.equal(h.calls.length, 0, 'opening the dialog sends nothing');
+  assert.equal(h.state.dialog.title, '接受重复使用画面吗？'); assert.equal(h.state.dialog.confirm, '接受并继续');
+  assert.match(h.state.dialog.text, /不是定格补帧/); assert.match(h.state.dialog.text, /取消，回去删减稿子或多传素材/);
+  await h.state.dialog.action();
+  assert.deepEqual(h.calls.map(c => c.method), ['GET', 'POST', 'GET']);
+  assert.deepEqual(JSON.parse(h.calls[1].body), { expected_revision: 0, allow_shot_reuse: true });
+  assert.equal(h.state.task.status, 'queued');
+});
+test('declining the repeated-footage dialog changes nothing; ordinary retry never carries consent', async () => {
+  const declined = harness({ taskPatch: { errorKind: 'shortage' } });
+  declined.env.retryOriginal({ allowShotReuse: true }); assert.ok(declined.state.dialog); assert.equal(declined.calls.length, 0);
+  const plain = harness({ taskPatch: { errorKind: 'transient' } }); await plain.retry();
+  assert.deepEqual(JSON.parse(plain.calls[1].body), { expected_revision: 0 });
+  // A shortage is not an ordinary retry: without the explicit consent path nothing is offered.
+  const ordinary = harness({ taskPatch: { errorKind: 'shortage' } }); await ordinary.retry();
+  assert.equal(ordinary.state.dialog, null); assert.equal(ordinary.calls.length, 0);
+});
+for (const [name, taskPatch] of [['a non-shortage failure', { errorKind: 'transient' }], ['original-sound mode', { errorKind: 'shortage', mode: 'original' }],
+  ['a task that cannot resume', { errorKind: 'shortage', retry_same_supported: false }], ['a legacy task', { errorKind: 'shortage', lifecycle_v2: false }]]) {
+  test(`repeated footage is not offered for ${name}`, async () => {
+    const h = harness({ taskPatch }); await h.retry({ allowShotReuse: true });
+    assert.equal(h.state.dialog, null); assert.equal(h.calls.length, 0);
+  });
+}
+test('repeated-footage option renders only for a resumable shortage, and its button carries the consent', () => {
+  const calls = [];
+  const shortage = makeTask({ status: 'failed', errorKind: 'shortage', mode: 'voiceover' });
+  const html = render({ task: shortage });
+  assert.match(html, /data-testid="processing-reuse"/); assert.match(html, /替代方案：允许画面重复出现/); assert.match(html, /data-control="processing-reuse-shots"/);
+  assert.match(html, /data-control="processing-edit-script"/, 'declining still has the normal edit choices');
+  const button = nodes(Processing(props({ task: shortage, onRetry: (...args) => calls.push(args) }))).find(n => n.props?.['data-control'] === 'processing-reuse-shots');
+  button.props.onClick(); assert.equal(JSON.stringify(calls), JSON.stringify([[{ allowShotReuse: true }]]));
+  for (const patch of [{ mode: 'original' }, { lifecycle_v2: false }, { errorKind: 'transient' }, { errorKind: 'qc' }, { status: 'cancelled' }]) {
+    assert.doesNotMatch(render({ task: makeTask({ status: 'failed', errorKind: 'shortage', ...patch }) }), /processing-reuse/, JSON.stringify(patch));
+  }
+  // A task that cannot resume (e.g. the program was updated) still offers the restart-with-consent path, not the resume button.
+  const stale = render({ task: makeTask({ status: 'failed', errorKind: 'shortage', retry_same_supported: false }) });
+  assert.doesNotMatch(stale, /processing-reuse-shots/); assert.match(stale, /data-control="processing-reuse-restart"/);
+  const edits = [];
+  const restart = nodes(Processing(props({ task: shortage, onEdit: (...args) => edits.push(args) }))).find(n => n.props?.['data-control'] === 'processing-reuse-restart');
+  restart.props.onClick(); assert.equal(JSON.stringify(edits), JSON.stringify([[1, null, { allowShotReuse: true }]]));
+  assert.doesNotMatch(render({ task: shortage, onEdit: undefined }), /processing-reuse-restart/);
+  // The ordinary retry button must not forward the click event as an options object.
+  const retry = nodes(Processing(props({ task: makeTask({ status: 'failed', errorKind: 'transient' }), onRetry: (...args) => calls.push(args) }))).find(n => n.props?.['data-control'] === 'processing-retry');
+  calls.length = 0; retry.props.onClick({ type: 'click' }); assert.equal(JSON.stringify(calls), JSON.stringify([[]]));
 });
 for (const malformed of [false, true]) test(`ambiguous ${malformed ? 'malformed receipt' : 'lost response'} does one read-only reconciliation`, async () => {
   const h = harness({ reply(path, init, state) {

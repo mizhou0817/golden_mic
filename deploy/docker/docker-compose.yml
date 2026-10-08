@@ -1,0 +1,21 @@
+# Lives at /opt/goldmic/docker-compose.yml on the host. Everything goldmic owns is under /opt/goldmic:
+#   build/        image build context      data/         tasks, ASR cache, temp (one filesystem)
+#   samples/      reviewed sample bundle   goldmic.env   secrets + settings (root, 0600)
+name: goldmic
+services:
+  app:
+    image: goldmic:latest
+    container_name: goldmic
+    restart: always
+    env_file: /opt/goldmic/goldmic.env
+    environment:
+      TMPDIR: /data/tmp
+    ports:
+      - "127.0.0.1:18765:8000"   # only nginx on this host reaches it
+    volumes:
+      - /opt/goldmic/data:/data
+      - /opt/goldmic/samples:/app/backend/assets/samples:ro
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }

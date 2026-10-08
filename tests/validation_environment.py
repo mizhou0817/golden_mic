@@ -41,6 +41,9 @@ def temporary_base(environment: Mapping[str, str], *, platform: str = sys.platfo
     elif platform == "linux":
         # Do not inherit arbitrary TMPDIR/provider configuration before guards.
         base = Path("/tmp")
+    elif platform == "darwin":
+        # /tmp and /var are symlinks on macOS; use the real, fixed directory.
+        base = Path("/private/tmp")
     else:
         raise RuntimeError("unsupported_validation_platform")
     _directory(base)
@@ -64,6 +67,12 @@ def media_tools(environment: Mapping[str, str], *, platform: str = sys.platform)
         if not encoder or not probe:
             raise RuntimeError("linux_media_tools_required")
         ffmpeg, ffprobe = Path(encoder), Path(probe)
+    elif platform == "darwin":
+        encoder, probe = shutil.which("ffmpeg", path=path), shutil.which("ffprobe", path=path)
+        if not encoder or not probe:
+            raise RuntimeError("darwin_media_tools_required")
+        # Homebrew exposes tools as symlinks into the Cellar; pin the real files.
+        ffmpeg, ffprobe = Path(encoder).resolve(strict=True), Path(probe).resolve(strict=True)
     else:
         raise RuntimeError("unsupported_validation_platform")
     for tool in (ffmpeg, ffprobe):

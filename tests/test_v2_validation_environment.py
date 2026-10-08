@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from tests import validation_environment as bootstrap
-from tests.run_v2_validation import LINUX_EXCLUSIONS, SetupFailure, platform_suite
+from tests.run_v2_validation import DARWIN_EXCLUSIONS, LINUX_EXCLUSIONS, SetupFailure, platform_suite
 
 
 class ValidationEnvironmentTests(unittest.TestCase):
@@ -112,3 +112,36 @@ class ValidationEnvironmentTests(unittest.TestCase):
         self.assertEqual(excluded, [])
         with self.assertRaises(SetupFailure):
             platform_suite(unittest.TestSuite([Case("renamed.platform.case")]), platform="linux")
+
+    def test_darwin_temp_is_fixed_real_directory(self):
+        # /tmp and /var are symlinks on macOS; the base must be the real /private/tmp.
+        with patch.object(bootstrap, "_directory"):
+            self.assertEqual(bootstrap.temporary_base({"TMPDIR": "ignored"}, platform="darwin"), Path("/private/tmp"))
+
+    def test_darwin_homebrew_style_links_resolve_to_paired_real_tools(self):
+        encoder, probe = self.tool("Cellar/ffmpeg/1/bin/ffmpeg"), self.tool("Cellar/ffmpeg/1/bin/ffprobe")
+        (self.root / "bin").mkdir()
+        links = {"ffmpeg": self.root / "bin/ffmpeg", "ffprobe": self.root / "bin/ffprobe"}
+        links["ffmpeg"].symlink_to(encoder)
+        links["ffprobe"].symlink_to(probe)
+        with patch.object(bootstrap.shutil, "which", side_effect=lambda name, **kw: str(links[name]) if name in links else None):
+            self.assertEqual(bootstrap.media_tools({"PATH": "explicit"}, platform="darwin"),
+                             (encoder.resolve(), probe.resolve()))
+        with patch.object(bootstrap.shutil, "which", return_value=None), \
+                self.assertRaisesRegex(RuntimeError, "darwin_media_tools_required"):
+            bootstrap.media_tools({}, platform="darwin")
+
+    def test_darwin_selection_lists_windows_native_and_case_probe_exclusions(self):
+        class Case(unittest.TestCase):
+            def __init__(self, identity):
+                super().__init__()
+                self.identity = identity
+            def id(self):
+                return self.identity
+            def runTest(self):
+                raise AssertionError("inventory only")
+        self.assertTrue(LINUX_EXCLUSIONS < DARWIN_EXCLUSIONS)
+        identities = sorted(DARWIN_EXCLUSIONS) + ["tests.portable.ImportTests.contract"]
+        selected, excluded = platform_suite(unittest.TestSuite(Case(name) for name in identities), platform="darwin")
+        self.assertEqual(excluded, sorted(DARWIN_EXCLUSIONS))
+        self.assertEqual([case.id() for case in selected], [identities[-1]])

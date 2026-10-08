@@ -408,6 +408,38 @@ class LLMProvider:
             raise LLMProviderError(f"音乐基调返回值无效：{content!r}")
         return mood
 
+    async def complete_text(self, system: str, user: str, *, max_tokens: int = 2048, temperature: float | None = None) -> str:
+        """One free-text completion (script writing/editing). A single retry on a transient transport error."""
+        self.validate_configuration()
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        }
+        # Kimi K3 reasons first; the old max_tokens budget can be consumed before any answer is written.
+        payload["max_completion_tokens" if self.model.lower().startswith("kimi-") else "max_tokens"] = max_tokens
+        self._apply_generation_controls(payload)
+        if temperature is not None and self.supports_temperature:
+            payload["temperature"] = temperature
+        last_error: Exception | None = None
+        for attempt in range(2):
+            try:
+                response_payload = await self._request_payload(payload)
+                if _extract_finish_reason(response_payload) == "length":
+                    raise LLMProviderError("AI 输出被长度限制截断。")
+                content = _extract_message_content(response_payload).strip()
+                if not content:
+                    raise LLMProviderError("AI 没有返回内容。")
+                return content
+            except asyncio.CancelledError:
+                raise
+            except (httpx.HTTPError, LLMProviderError, ValueError, TypeError) as exc:
+                last_error = exc
+                if attempt == 0 and isinstance(exc, httpx.HTTPError):
+                    await asyncio.sleep(self.backoff_base)
+                    continue
+                break
+        raise LLMProviderError(f"AI 写作请求失败：{_exception_detail(last_error) if last_error else '未知错误'}") from last_error
+
     async def _request_once(
         self,
         payload: dict[str, Any],

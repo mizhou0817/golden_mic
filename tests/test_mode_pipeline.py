@@ -545,6 +545,69 @@ class ModeMediaIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(plan[0]["source"])
         self.assertEqual(timings[0]["audio_kind"], "tts")
 
+    async def test_default_run_completes_all_ten_stages_with_far_too_little_footage(self):
+        from backend.models import BeatMatch, MatchCandidate, MatchPlanItem
+        lines = ["老家的院子变了样，墙边种满了花草。", "孩子们在树下追逐，笑声传得很远。", "爷爷奶奶坐在门口，看着孙辈玩耍。",
+                 "傍晚的炊烟升起，饭菜香飘满小巷。", "村口的小河很清澈，岸边有人洗衣服。", "新修的水泥路通到了每家门前。",
+                 "乡亲们聚在一起，聊着今年的收成。", "夜色降临，院子里亮起了暖黄的灯。"]
+        texts = [(line, "narration") for line in lines]
+        record = self.record("voiceover", with_broll=True, texts=texts)  # no consent flag at all: the default must not stall
+        seen = {}
+
+        async def best_effort_match(root, sentences, shots, embedding, llm, progress, **kwargs):
+            # What the solver does when footage is short: everything lands on the few shots there are.
+            seen.update(kwargs)
+            result = []
+            for index, sentence in enumerate(sentences):
+                shot = shots[index % len(shots)]
+                candidate = MatchCandidate(shot_id=shot.shot_id, similarity=0.9)
+                result.append(MatchPlanItem(sentence_id=sentence.sentence_id, text=sentence.text, shot_id=shot.shot_id, confidence=0.9,
+                                            candidates=[candidate], beat_matches=[BeatMatch(beat_id=0, text=sentence.text, shot_id=shot.shot_id,
+                                                                                             confidence=0.9, candidates=[candidate])]))
+            return result
+
+        reporter = Reporter()
+        with ExitStack() as stack:
+            self.providers(stack)
+            stack.enter_context(patch("backend.mode_pipeline.build_match_plan", side_effect=best_effort_match))
+            await mp.run_mode_pipeline(record, reporter, self.settings)
+        self.assertTrue(seen["shot_reuse_best_effort"], "the never-fail matching tier is on by default")
+        self.assertEqual(sorted(reporter.completed)[-1], 10, "every stage through the final check completed")
+        manifest = mp.read_json(self.root, mp.MODE_MANIFEST)
+        self.assertGreater(manifest["shot_reuse"]["chained_sentences"], 0, "footage was short, so sentences were chained")
+        edl = mp.read_json(self.root, "edl.json")
+        timings = mp.read_json(self.root, "timings.json")
+        self.assertEqual(len(edl), len(texts))
+        ids = [clip["shot_id"] for item in edl for clip in item["clips"]]
+        self.assertEqual(len(ids), len(set(ids)), "every window keeps its own shot id")
+        self.assertFalse(any(clip.get("freeze_pad") for item in edl for clip in item["clips"]), "no frozen frames")
+        for item, timing in zip(edl, timings):
+            covered = sum(clip["out"] - clip["in"] for clip in item["clips"])
+            self.assertAlmostEqual(covered, timing["duration"] + timing["gap_after"], places=3)
+        self.assertTrue((self.root / "final.mp4").is_file())
+
+    async def test_an_explicit_no_to_repeated_footage_keeps_strict_uniqueness(self):
+        from backend.models import BeatMatch, MatchCandidate, MatchPlanItem
+        record = self.record("voiceover", with_broll=True, texts=[("老家的院子变了样，墙边种满了花草。", "narration"),
+                                                                 ("孩子们在树下追逐，笑声传得很远。", "narration")])
+        record.draft_context = {"shot_reuse": {"accepted": False}}
+        seen = {}
+
+        async def repeated_match(root, sentences, shots, embedding, llm, progress, **kwargs):
+            seen.update(kwargs)
+            shot = shots[0]
+            candidate = MatchCandidate(shot_id=shot.shot_id, similarity=0.9)
+            return [MatchPlanItem(sentence_id=s.sentence_id, text=s.text, shot_id=shot.shot_id, confidence=0.9, candidates=[candidate],
+                                  beat_matches=[BeatMatch(beat_id=0, text=s.text, shot_id=shot.shot_id, confidence=0.9, candidates=[candidate])])
+                    for s in sentences]
+        with ExitStack() as stack:
+            self.providers(stack)
+            stack.enter_context(patch("backend.mode_pipeline.build_match_plan", side_effect=repeated_match))
+            with self.assertRaises(Exception):
+                await mp.run_mode_pipeline(record, Reporter(), self.settings)
+        self.assertFalse(seen["shot_reuse_best_effort"]); self.assertIsNone(seen["shot_reuse_window_seconds"])
+        self.assertFalse((self.root / "final.mp4").exists(), "no video is produced by silently repeating a shot")
+
     async def test_mixed_only_narration_tts_and_actual_quarter_second_gaps(self):
         record = self.record("mixed", with_broll=True, texts=[("现场活动开始了。", "narration"), ("今天活动开幕。", "quote")])
         voice = FakeVoice()

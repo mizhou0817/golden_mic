@@ -93,7 +93,11 @@ async def synthesize_narration(
     target_lra: float = NARRATION_TARGET_LRA,
     true_peak_dbfs: float = NARRATION_TRUE_PEAK_DBFS,
     enhance_speech: bool = False,
+    assemble_narration: bool = True,
 ) -> list[SentenceTiming]:
+    """assemble_narration=False: the caller builds its own exact track from the per-sentence units (the
+    three-mode pipeline does, with a sample-exact check), so the provisional full track and its coarse
+    total-length check are skipped instead of failing on accumulated per-unit rounding."""
     if not sentences:
         raise TTSProcessingError("没有可供配音的文稿句子。")
     if any(sentence.kind == "quote" for sentence in sentences):
@@ -294,6 +298,8 @@ async def synthesize_narration(
             remixed=False,
         ),
     )
+    if not assemble_narration:
+        return timings
     await concatenate_narration(
         task_dir,
         timings,

@@ -362,6 +362,13 @@ export const uploadUsable = (snapshot: UploadSnapshot | undefined): boolean => !
 /** Only an authorized, identity-checked server response can replace metadata.
  * Preserve authored notes/ranges; do not silently shorten a range or source.
  */
+/** The server's measured duration replaces the browser's (Safari reads e.g. 8.0667 where FFmpeg says 8.07).
+ * An untouched full-clip trim follows it; a trim the user set is kept as is (and flagged if it no longer fits). */
+export function serverTrimEnd(item: Pick<MediaSelection, "duration" | "trim_end">, sec: number): number {
+  const untouched = item.trim_end == null || item.duration != null && Math.abs(item.trim_end - item.duration) < 1e-6;
+  return untouched ? sec : item.trim_end!;
+}
+
 export function reconcileServerProbe(item: MediaSelection, snapshot: ProbedUploadSnapshot, limits: PublicLimits): Partial<MediaSelection> {
   if (snapshot.probe_ok !== true) return { status: snapshot.status === "failed" ? "error" : "loading" };
   const cap = mediaLimits(limits);
@@ -370,7 +377,7 @@ export function reconcileServerProbe(item: MediaSelection, snapshot: ProbedUploa
     || !number(snapshot.height, 1, 4320)
     || !number(snapshot.fps, Number.MIN_VALUE, 120)) return fail();
   return { duration: snapshot.sec, width: snapshot.width, height: snapshot.height,
-    trim_end: item.kind === "image" ? null : item.trim_end ?? snapshot.sec,
+    trim_end: item.kind === "image" ? null : serverTrimEnd(item, snapshot.sec),
     status: snapshot.status === "ready" && uploadUsable(snapshot) ? "ready" : snapshot.status === "failed" ? "error" : "loading" };
 }
 

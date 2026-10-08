@@ -27,6 +27,14 @@
 .failure h2 { font-weight:900; font-size:1.125rem; color:var(--red); }
 .failure p { margin-top:4px; }
 .failure .advice { margin-top:6px; font-size:.875rem; color:var(--muted); }
+.failure .cause { margin-top:6px; font-weight:700; }
+.failure .actionError { margin-top:8px; padding:8px 10px; border:2px dashed var(--red); border-radius:10px; font-weight:700; }
+.failure .details { margin-top:8px; font-size:.8125rem; color:var(--muted); }
+.failure .details summary { cursor:pointer; font-weight:700; }
+.failure .details pre { margin-top:6px; padding:8px 10px; background:var(--paper, #f6f1e4); border-radius:8px; white-space:pre-wrap; overflow-wrap:anywhere; font-size:.75rem; }
+.failure .alternative { margin-top:12px; padding:10px 12px; border:2px dashed var(--ink, #4a3728); border-radius:12px; }
+.failure .alternative h3 { font-weight:900; font-size:1rem; }
+.failure .alternative button { margin-top:8px; }
 .actions { display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
 .processing button { min-height:48px; padding:8px 20px; border-radius:12px; background:var(--white); color:var(--ink); border:2px solid var(--ink); font-weight:800; font-size:.9375rem; white-space:normal; max-width:100%; overflow-wrap:anywhere; }
 .processing button.primary { background:var(--ink); color:var(--white); }

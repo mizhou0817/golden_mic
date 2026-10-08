@@ -531,6 +531,39 @@ test('successful JSON and empty 204 responses decode without inventing payloads'
   }
 });
 
+test('upload-limit 429s show the server\'s own fixed sentence; any other 429 text stays the generic rate-limit message', async () => {
+  for (const known of ['当前会话最多保留 20 个文件，合计不超过 5 GiB。', '新建上传过于频繁，请稍后重试。', '全站上传名额已满，请稍后重试。']) {
+    const h = harness({ respond: () => json({ detail: known }, 429) });
+    await assert.rejects(request(h)(ROOT), error => { assert.equal(error.status, 429); assert.equal(error.message, known); return true; });
+  }
+  for (const detail of ['Traceback (most recent call last): secret=abc', '当前会话最多保留 21 个文件，合计不超过 5 GiB。', { message: '新建上传过于频繁，请稍后重试。' }]) {
+    const h = harness({ respond: () => json({ detail }, 429) });
+    await assert.rejects(request(h)(ROOT), error => { assert.ok(error.message.includes('频繁')); assert.ok(!error.message.includes('Traceback')); assert.ok(!error.message.includes('21')); return true; });
+  }
+  // The same sentence under another status is not special-cased.
+  const h = harness({ respond: () => json({ detail: '新建上传过于频繁，请稍后重试。' }, 409) });
+  await assert.rejects(request(h)(ROOT), error => { assert.equal(error.status, 409); return true; });
+});
+test('recovery refusals say what they mean; only the fixed recovery_quota sentence overrides the generic 429', async () => {
+  for (const [status, detail, expected] of [
+    [409, { code: 'recovery_source_unverified' }, '没有保存完整'], [409, { code: 'recovery_legacy_unsupported' }, '旧版本'],
+    [409, { code: 'recovery_requires_terminal_task' }, '还在制作中'], [409, { code: 'recovery_requires_accepted_task' }, '没有被服务器正式接收'],
+    [409, { code: 'retry_same_unavailable', message: 'raw server prose' }, '不能从失败处继续制作'],
+    [409, { code: 'retry_inputs_changed' }, '不能直接续作'], [409, { code: 'retry_cache_missing', stage: 6 }, '缓存不完整'],
+    [409, { code: 'retry_cache_invalid' }, '缓存校验没通过'], [409, { code: 'retry_provider_uncertain', stage: 4 }, '避免重复收费'],
+    [409, { code: 'shot_reuse_not_applicable' }, '不是“镜头不足”'],
+    [429, { code: 'recovery_draft_limit', message: '未提交的草稿已达上限（每个会话最多 20 份）。' }, '草稿已达上限'],
+    [429, { code: 'recovery_quota', message: '恢复需要 17 个文件名额，当前会话最多保留 20 个文件。' }, '恢复需要 17 个文件名额']]) {
+    const h = harness({ respond: () => json({ detail }, status) });
+    await assert.rejects(request(h)(ROOT), error => { assert.equal(error.status, status); assert.ok(error.message.includes(expected), error.message); return true; });
+  }
+  // An ordinary 429 (or a quota code with an oversized/untyped message) stays the generic rate-limit text.
+  for (const detail of [{}, { code: 'recovery_quota', message: 'x'.repeat(301) }, { code: 'recovery_quota' }, { message: '全站上传名额已满' }]) {
+    const h = harness({ respond: () => json({ detail }, 429) });
+    await assert.rejects(request(h)(ROOT), error => { assert.ok(error.message.includes('频繁')); assert.ok(!error.message.includes('xxxx')); return true; });
+  }
+});
+
 test('HTTP error details/status survive decoding, with bounded generic fallbacks instead of proxy HTML', async () => {
   for (const [status, payload, expected] of [[409, { detail: 'Synthetic revision conflict' }, 'Synthetic revision conflict'],
     [422, { detail: { message: 'Synthetic validation' } }, 'Synthetic validation'], [401, {}, '凭据'], [403, {}, '安全'],
@@ -930,8 +963,9 @@ function processingRenderer() {
   const modes = load('../src/lib/productionModes.ts', {
     '../../../backend/mode_rules.json': JSON.parse(readFileSync(new URL('../../backend/mode_rules.json', import.meta.url), 'utf8')),
   });
+  const failureDetail = load('../src/lib/failureDetail.ts', {});
   const Processing = load('../src/components/Processing.tsx', {
-    'react/jsx-runtime': jsxRuntime, '../lib/productionModes': modes,
+    'react/jsx-runtime': jsxRuntime, '../lib/productionModes': modes, '../lib/failureDetail': failureDetail,
     './Processing.module.css': { default: {} },
   }).default;
   const blocked = () => assert.fail('SSR never invokes task actions');

@@ -74,9 +74,9 @@ if ($LASTEXITCODE -ne 0) { throw 'V2 E2E typecheck failed.' }
 
 第二条会创建新的脱敏证据目录，读取源码/模板、进行 Python AST 和设计 JS AST 盘点；不执行产品测试。干净克隆缺少 artifacts 父目录时由运行器校验路径后创建空目录，不要求复制历史证据或手工放宽路径检查。它还依赖已安装的前端 TypeScript 和完整设计交接输入，因此不是仅有生产包也能运行的命令。静态盘点完成不等于设计完全一致或产品验收。
 
-## 5. 当前后端回归：受保护的 Linux / Windows 入口
+## 5. 当前后端回归：受保护的 Linux / Windows / macOS 入口
 
-受保护 V2 运行器面向 Linux x86_64 / Windows AMD64，使用独立环境与平台临时目录。基础依赖支持 CPython 3.11/3.12，但当前 Windows 原生事件循环回归严格要求 **CPython 3.11.9**，不能推广为其他补丁版本已通过；Linux CI 使用 3.11。Windows 使用已安装的 WinGet Gyan FFmpeg；Linux 必须预先安装真实、配对的 `ffmpeg` / `ffprobe` 并可从 PATH 定位。两平台都要校验实际工具及允许的子进程，缺工具/能力就拒绝，不下载模型、不用假工具或删媒体断言补绿。跨平台修复后的实际回归/CI **需要重跑并单独报告**，不沿用 2026-10-03 的历史计数作为当前通过证明。
+受保护 V2 运行器面向 Linux x86_64 / Windows AMD64，并支持 macOS（darwin；见下方“macOS 运行方式”），使用独立环境与平台临时目录。基础依赖支持 CPython 3.11/3.12，但当前 Windows 原生事件循环回归严格要求 **CPython 3.11.9**，不能推广为其他补丁版本已通过；Linux CI 使用 3.11。Windows 使用已安装的 WinGet Gyan FFmpeg；Linux 必须预先安装真实、配对的 `ffmpeg` / `ffprobe` 并可从 PATH 定位。两平台都要校验实际工具及允许的子进程，缺工具/能力就拒绝，不下载模型、不用假工具或删媒体断言补绿。跨平台修复后的实际回归/CI **需要重跑并单独报告**，不沿用 2026-10-03 的历史计数作为当前通过证明。
 
 从新的 Python 进程运行，先冻结源码，不在过程中同时编辑产品、测试、被绑定文档或依赖：
 
@@ -93,7 +93,25 @@ if ($LASTEXITCODE -ne 0) { throw 'V2 E2E typecheck failed.' }
 
 `--legacy` 只加入 `test_production_modes`、`test_upload_sessions`、`test_mode_workbench`、`test_quality`、`test_publication`、`test_public_media`、`test_anonymous_access`、`test_headline_contract`。不等于全历史 unittest 发现。
 
-Linux 在完整源码根目录使用 `.venv/bin/python -B tests/run_v2_validation.py --compile-ast`，需要这八个模块时再加 `--legacy`；静态分支则加 `--static-only`。不要把 Windows 解释器路径/WinGet 目录照搬到 Linux，也不将此能力推广到 macOS/ARM。
+Linux 在完整源码根目录使用 `.venv/bin/python -B tests/run_v2_validation.py --compile-ast`，需要这八个模块时再加 `--legacy`；静态分支则加 `--static-only`。不要把 Windows 解释器路径/WinGet 目录照搬到 Linux。macOS 的命令与差异见下一小节；除 Apple Silicon 的 macOS 外，不将此能力推广到其他 ARM 环境。
+
+### macOS 运行方式
+
+macOS 使用同一个受保护入口，不绕过任何防护。需要 CPython 3.11/3.12（例如 `conda create -n goldmic python=3.11` 或 `python3.11 -m venv .venv`）、已安装的 `ffmpeg` / `ffprobe`（Homebrew 即可）和 `pip install -r requirements.txt`。在完整源码根目录运行：
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python -I -B tests/run_v2_validation.py --compile-ast --legacy
+# 仅静态盘点：加 --static-only 并去掉 --legacy
+```
+
+与 Linux 相比，macOS 分支只在以下位置不同，其余防护（dotenv 屏蔽、网络/SQLite/子进程限制、源码散列）完全一致：
+
+- **临时目录**固定为真实目录 `/private/tmp`，不继承 `TMPDIR`。`/tmp`、`/var` 在 macOS 上是符号链接，防护会拒绝带链接的祖先路径，所以不能使用它们。
+- **媒体工具**：Homebrew 的 `ffmpeg` / `ffprobe` 是指向 Cellar 的符号链接，运行器先解析为真实文件再做“非链接、可执行、同目录配对”校验；缺工具或未配对仍然拒绝。
+- **目录描述符校验**用 `fcntl(F_GETPATH)` 取得路径（Linux 用 `/proc/self/fd`），之后的同一目录、规范路径和“位于受控 TEMP/证据目录内”检查不变。
+- **平台排除**：除 Linux 已列出的 7 个 Windows 原生用例外，macOS 另外排除 `ModelBundleTests.test_native_case_alias_supplied_root`：该用例在非 Windows 平台假定文件系统区分大小写，而 APFS 默认不区分。这 8 项同样须在摘要中逐项列明，不作为通过或隐式 skip。
+
+在 Apple Silicon 的 macOS、Python 3.11 上，2026-10-05 本地运行一次得到 838 项通过、0 失败、0 跳过、8 项平台排除、源码无漂移。这只是该次运行记录，不是当前源码的通过证明；改动后仍须重跑并单独报告。macOS 不执行 Windows 原生事件循环/8.3 路径用例，Linux CI 之外也没有因此获得 Linux 或 Windows 的覆盖。
 
 ### 平台限定排除：必须与实际执行结果分列
 
@@ -126,7 +144,7 @@ Linux 不执行以下 Windows 原生用例，须在验证摘要中逐项列明�
 
 ## 6. 前端回归：默认也不全是纯单元
 
-[package.json](https://github.com/mizhou0817/golden_mic/blob/main/frontend/package.json)的 `test` 串行执行全部前端测试 glob。**即使未打开三个 opt-in，默认测试已包含真实 Edge 和合成媒体用例**，例如样片查看和响应式布局；需要本机 Edge、FFmpeg 与安装好的前端依赖，不是任意纯 Node 环境都能跑。
+[package.json](https://github.com/mizhou0817/golden_mic/blob/main/frontend/package.json)的 `test` 串行执行全部前端测试 glob。**即使未打开三个 opt-in，默认测试已包含真实浏览器（Edge、Chrome 或 WebKit，见“浏览器选择”）和合成媒体用例**，例如样片查看和响应式布局；需要本机至少一种受支持的浏览器、FFmpeg 与安装好的前端依赖，不是任意纯 Node 环境都能跑。
 
 在隔离的开发/测试终端中，不注入实际提供方秘密。Windows 若 PATH 找不到编码器，只将 `GM_SAMPLE_FFMPEG` 指向已安装的真实 ffmpeg 可执行文件；可先采用[动态 PATH 方法](QUICKSTART.md)再运行：
 
@@ -138,6 +156,51 @@ if ($LASTEXITCODE -ne 0) { throw 'Independent result tests failed.' }
 ```
 
 根目录结果工作台测试不在前端 glob 内，分别报告，不把旧数字硬编码为成功标准。`test:e2e` npm 别名指向**旧 workspace 浏览器配置**，不是当前 V2 的核心六项，不作为快捷新手测试。
+
+### 浏览器选择：Edge、Chrome、Safari（WebKit）
+
+原生浏览器用例通过 [browser.mjs](https://github.com/mizhou0817/golden_mic/blob/main/frontend/scripts/browser.mjs) 启动，用环境变量 `GM_BROWSER` 选择：
+
+| `GM_BROWSER` | 引擎 | 说明 |
+|---|---|---|
+| `auto`（默认） | 依次尝试 Edge、Chrome、WebKit，取第一个能启动的 | 均不可用时报错，不会静默跳过 |
+| `msedge` | Microsoft Edge | 需要本机已安装；Playwright 可用 `node frontend/node_modules/playwright/cli.js install msedge` 安装（macOS/Linux 可能需要管理员权限） |
+| `chrome` | Google Chrome | 需要本机已安装 |
+| `webkit` | Playwright 自带的 WebKit（Safari 的引擎） | 用 `node frontend/node_modules/playwright/cli.js install webkit` 下载到用户缓存目录，无需管理员权限 |
+
+WebKit 构建与 Safari 应用使用同一引擎，但**不是 Safari 应用本身**：无头自动化无法驱动已安装的 Safari，不要把 WebKit 通过写成“Safari 应用已验收”。
+
+```bash
+GM_BROWSER=chrome  npm --prefix frontend test
+GM_BROWSER=webkit  npm --prefix frontend test
+```
+
+三个 opt-in 与浏览器选择相互独立，可叠加。WebKit 的差异由启动器统一处理，只作用于 WebKit，不改变其他浏览器的行为：
+
+- **`offline: true` 被去掉**：WebKit 在该标志下对被路由拦截的页面导航报内部错误。每个用例都装有 `**/*` 路由，对所有请求放行或拒绝，因此网络隔离不变；WebKit 额外传入的页面本地 `blob:` 请求直接放行，它不产生网络流量。
+- **macOS 上的 Tab**：Safari 默认不会用 Tab 聚焦按钮和链接，要用 Option+Tab。启动器在 macOS 的 WebKit 上把 `Tab` / `Shift+Tab` 发成 `Alt+Tab` / `Alt+Shift+Tab`。
+- **`preload="metadata"` 的视频**：WebKit 停在 `readyState` 1（只有元数据），Chromium 为 2；样片用例对 WebKit 接受 ≥ 1，其余断言（跳转、原生播放）不变。
+- **打开对话框前显式聚焦开启按钮**：Safari 鼠标点击不会聚焦按钮，关闭对话框时焦点回到开启按钮的断言依赖先聚焦。
+- **仅 Chromium 引擎的用例**：录音用例依赖 DevTools 协议；实际下载用例依赖自建拒绝式代理和 Chromium 的代理绕过/主机解析参数。这些用例声明 `chromiumOnly`，即使指定 `GM_BROWSER=webkit` 也使用 Edge/Chrome，**WebKit 的实际下载没有被这些用例覆盖**，不能据此声称 Safari 下载已验证。
+
+对话框焦点陷阱（[Workspace](https://github.com/mizhou0817/golden_mic/blob/main/frontend/src/components/Workspace.tsx) 的 `containDialogTab`）原本忽略所有带 Alt 的按键；因此 macOS Safari 的 Option+Tab 会让焦点逃出模态对话框。现在仅在苹果平台（`navigator.platform` 以 Mac/iPhone/iPad 开头）把 Option+Tab 当作 Tab 处理，其他平台的 Alt+Tab 仍交给操作系统。
+
+[Playwright 验收配置](https://github.com/mizhou0817/golden_mic/blob/main/frontend/playwright.v2.config.ts)（workspace / modes / v2）默认仍使用 Edge，`GM_BROWSER=chrome` 改用 Chrome；这些重型验收套件不承诺 WebKit，也没有因此改变验收口径。以上浏览器结果是 2026-10-05 在 macOS 上的一次本地运行（Chrome 154、WebKit 26.6；本机未安装 Edge，Edge 路径沿用原有 `msedge` 通道，未在 macOS 上实测）：默认测试加三个 opt-in 共 1268 项，`auto`（选中 Chrome）与 `webkit` 均全部通过。这不是当前源码的通过证明，改动后须重跑并单独报告。
+
+### 在 macOS 或 Linux 上运行
+
+命令与上面的 PowerShell 示例等价（macOS 通常无需设置 `GM_SAMPLE_FFMPEG`，Homebrew 的 `ffmpeg` 已在 PATH）：
+
+```bash
+npm --prefix frontend ci --ignore-scripts --no-audit --no-fund
+npm --prefix frontend run typecheck
+npm --prefix frontend test
+node --test --test-concurrency=1 scripts/test-v2-result.mjs
+# 可选：三个 opt-in
+GM_DIALOG_BROWSER=1 GM_RECORDING_BROWSER=1 GM_FINAL_BROWSER=1 npm --prefix frontend test
+```
+
+macOS 的 `os.tmpdir()` 位于带符号链接的 `/var/...` 下，前端测试用到的临时目录统一取 `fs.realpathSync(os.tmpdir())`，否则“拒绝链接路径”的防护会拒绝它。
 
 ### 显式增加原生交互检查
 

@@ -1,6 +1,8 @@
 import { defineConfig } from '@playwright/test';
 import { env, exists, joinPath, makeDirectory, newInstance, parentPath, readText, unlinked, writeJSON } from './e2e/modes/io.mjs';
 import { evidenceRoot, loadManifest, runSettings } from './e2e/modes/environment';
+// Default Edge; GM_BROWSER=chrome selects Chrome. WebKit is covered by the node tests, not these suites.
+const browserChannel = env.GM_BROWSER === 'chrome' ? 'chrome' : 'msedge';
 
 // Parent owns the build/server. No webServer, auto-start, package or old-config changes.
 env.PLAYWRIGHT_NO_COPY_PROMPT = '1';
@@ -31,7 +33,7 @@ export default defineConfig<{ modesNoRawArtifacts: boolean }>({
     // Enforced by this suite's _setupArtifacts override: NO_COPY_PROMPT alone
     // does not suppress Playwright 1.63's error-context file writer.
     modesNoRawArtifacts: true,
-    baseURL: run.baseURL, browserName: 'chromium', channel: 'msedge', headless: true,
+    baseURL: run.baseURL, browserName: 'chromium', channel: browserChannel, headless: true,
     viewport: { width: 1440, height: 960 }, locale: 'zh-CN', serviceWorkers: 'block', acceptDownloads: true,
     screenshot: 'off', trace: 'off', video: 'off', actionTimeout: 20_000, navigationTimeout: 30_000,
     launchOptions: { args: ['--disable-background-networking', '--disable-component-update',

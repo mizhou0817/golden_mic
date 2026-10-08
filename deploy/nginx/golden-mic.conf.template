@@ -66,7 +66,7 @@ server {
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy "no-referrer" always;
+    add_header Referrer-Policy "same-origin" always;  # no-referrer makes Safari send "Origin: null" on same-site POSTs
 
     # No login layer: the app always enforces anonymous CSRF/Origin and task tokens.
     limit_conn golden_mic_connection 20;

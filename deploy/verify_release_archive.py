@@ -16,7 +16,8 @@ MAX_MEMBER_BYTES = 1024 * 1024 * 1024
 MAX_TOTAL_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
 MAX_MEMBERS = 5000
 REQUIRED_MEMBERS = {
-    "golden-mic/backend/assets/fonts/NotoSansSC-Variable.ttf",
+    "golden-mic/backend/assets/fonts/NotoSansSC-Regular.ttf",
+    "golden-mic/backend/assets/fonts/NotoSansSC-Bold.ttf",
     "golden-mic/backend/assets/fonts/OFL.txt",
     "golden-mic/backend/main.py",
     "golden-mic/backend/frontend_static.py",

@@ -554,7 +554,11 @@ class UploadStore:
                 # worst-case reservation and exclude them from all reads/jobs.
                 self._orphans += 1
 
-    async def create(self, *, name: str, size: int, sha256: str, owner: str, content_type: str = "application/octet-stream") -> dict[str, Any]:
+    async def create(self, *, name: str, size: int, sha256: str, owner: str, content_type: str = "application/octet-stream",
+                     count_budget: bool = True) -> dict[str, Any]:
+        """count_budget=False is only for server-side recovery copies of the owner's own verified files:
+        they are not new uploads, so they must not exhaust the hourly new-upload budget. The per-session
+        file/byte quota, the global session cap and the disk reservation still apply."""
         async with self._operation():
             try:
                 payload = _CreateUpload(name=name, bytes=size, sha256=sha256, content_type=content_type)
@@ -578,7 +582,7 @@ class UploadStore:
                     raise _error(429, "全站上传名额已满，请稍后重试。")
                 if len(own) >= self.max_files or sum(record.size for record in own) + size > self.max_total_bytes:
                     raise _error(429, "当前会话最多保留 20 个文件，合计不超过 5 GiB。")
-                if len(entries) >= GLOBAL_CREATIONS_PER_HOUR or sum(entry.owner == owner_hash for entry in entries) >= OWNER_CREATIONS_PER_HOUR:
+                if count_budget and (len(entries) >= GLOBAL_CREATIONS_PER_HOUR or sum(entry.owner == owner_hash for entry in entries) >= OWNER_CREATIONS_PER_HOUR):
                     raise _error(429, "新建上传过于频繁，请稍后重试。")
                 self._space(self._reservation(size))
                 upload_id, token = "up_" + secrets.token_hex(16), secrets.token_urlsafe(32)
@@ -592,7 +596,7 @@ class UploadStore:
                     _safe_path(directory, exists=False, directory=True).mkdir(mode=0o700)
                     # Persist the budget first: an interrupted create cannot
                     # evade the hourly budget by deleting its session directory.
-                    self._budgets = _Budgets(entries=[*entries, _BudgetEntry(owner=owner_hash, at=now)])
+                    self._budgets = _Budgets(entries=[*entries, _BudgetEntry(owner=owner_hash, at=now)] if count_budget else entries)
                     _atomic_json(self.root / "budgets.json", self._budgets.model_dump(mode="json"))
                     self._save(record)
                 except OSError:

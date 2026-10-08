@@ -25,7 +25,7 @@ from typing import Any, TYPE_CHECKING
 from . import production_modes as rules
 from .asr_pipeline import SourceASRRecord
 from .graphics import generate_mode_graphics, generate_mode_subtitles
-from .matching import MatchingError, build_match_plan, extract_visual_beats
+from .matching import MatchingError, ShotShortageError, build_match_plan, extract_visual_beats
 from .media import normalize_assets, probe_media, require_media_tools, run_logged_command
 from .media_input import append_source_notes, processing_uploads
 from .models import (
@@ -126,6 +126,8 @@ class ModeStageCache:
         value = read_json(self.root, path.relative_to(self.root).as_posix())
         if value.get("signature") != signature or value.get("contract") != V2_MEDIA_CONTRACT:
             return None
+        if value.get("state") == "retry_safe":
+            return None
         if value.get("state") == "started":
             raise ModeQualityError(f"阶段 {stage} 上次 Provider 工作未确认完成；请核对结果后再显式重试，不能自动重复请求。")
         for relative, digest in value["files"].items():
@@ -139,6 +141,20 @@ class ModeStageCache:
         directory = self.root / "mode_stage_cache"
         directory.mkdir(exist_ok=True)
         write_json_atomic(directory / f"stage-{stage}.json", value)
+
+    def mark_retry_safe(self, stage: int) -> None:
+        """Record that an unfinished stage failed locally after its provider work ended.
+
+        Only for failures raised once no provider request can be in flight (e.g. the
+        local shot assignment). A plain "started" receipt keeps meaning "provider work
+        unconfirmed": retry refuses it. A retry_safe receipt is never a cache hit.
+        """
+        path = self.root / "mode_stage_cache" / f"stage-{stage}.json"
+        if not path.is_file():
+            return
+        value = read_json(self.root, path.relative_to(self.root).as_posix())
+        if value.get("state") == "started" and isinstance(value.get("signature"), str):
+            write_json_atomic(path, {"contract": V2_MEDIA_CONTRACT, "state": "retry_safe", "signature": value["signature"]})
 
     def begin(self, stage: int, signature: str) -> None:
         directory = self.root / "mode_stage_cache"
@@ -250,8 +266,10 @@ def _mode(record: Any) -> Mode:
 
 
 def _gate(record: Any, settings: Settings) -> str:
-    # A per-task preference cannot weaken production's mandatory block policy.
-    value = "block" if settings.app_env == "production" else (_get(record, "quality_gate_mode") or settings.quality_gate_mode)
+    # Production follows the operator's QUALITY_GATE_MODE (warn: the work finishes and unresolved checks are
+    # shown before export). A per-task preference can never weaken an operator "block".
+    configured = settings.quality_gate_mode
+    value = configured if settings.app_env == "production" or configured == "block" else (_get(record, "quality_gate_mode") or configured)
     if value not in {"warn", "block"}:
         raise ValueError("quality_gate_mode 必须为 warn 或 block。")
     return value
@@ -495,9 +513,10 @@ def _pool_shots(shots: Sequence[Shot], snapshots: Sequence[dict[str, Any]], cloc
     return result
 
 
-def _physical_shot_id(manifest: dict[str, Any], upload_id: str, start: float, end: float) -> int:
+def _physical_shot_id(manifest: dict[str, Any], upload_id: str, start: float, end: float, variant: int = 0) -> int:
     registry = manifest.setdefault("quote_shot_registry", {})
-    identity = _key([upload_id, float(start).hex(), float(end).hex()])
+    # variant > 0 only for deliberately repeated footage: the same range needs its own distinct shot id.
+    identity = _key([upload_id, float(start).hex(), float(end).hex()] + ([variant] if variant else []))
     if identity not in registry:
         registry[identity] = manifest["next_shot_id"]
         manifest["next_shot_id"] += 1
@@ -652,14 +671,190 @@ async def _exclude_quotes(record: Any, pool: Sequence[AnnotatedShot], plan: Sequ
     return filtered
 
 
-async def _match_narration(record: Any, sentences: list[Sentence], pool: list[AnnotatedShot], settings: Settings, progress: Callable[[float, str], None]) -> list[MatchPlanItem]:
+REUSE_MIN_WINDOW_SECONDS = 4.0
+
+
+def _shot_reuse_accepted(record: Any) -> bool:
+    """Whether footage may be repeated when there is not enough of it.
+
+    On by default so production never stalls on a shortage: matching still tries strictly distinct shots
+    first and only repeats real footage when it must. A task that explicitly declined
+    ({"shot_reuse": {"accepted": False}}) keeps the strict one-shot-per-sentence rule.
+    """
+    context = _get(record, "draft_context", None)
+    value = context.get("shot_reuse") if isinstance(context, dict) else None
+    return not (isinstance(value, dict) and value.get("accepted") is False)
+
+
+def _reuse_window_seconds(sentences: Sequence[Sentence], preferences: EditingPreferences) -> float:
+    """Length every reused window must have: the longest narration with headroom, never below the floor."""
+    longest = max((len(sentence.text) for sentence in sentences), default=0)
+    estimated = longest * 60.0 / max(1, preferences.target_chars_per_minute)
+    return max(REUSE_MIN_WINDOW_SECONDS, estimated * 1.5 + 1.0)
+
+
+def _estimated_footage_need(text: str, preferences: EditingPreferences) -> float:
+    """Seconds of picture one narration line may need, with headroom: audio is only measured in stage 7."""
+    return len(text) * 60.0 / max(1, preferences.target_chars_per_minute) * 1.8 + 1.2
+
+
+async def _allocate_reused_footage(
+    record: Any, plan: list[MatchPlanItem], shots: list[AnnotatedShot], manifest: dict[str, Any],
+    texts: dict[int, str], preferences: EditingPreferences,
+) -> tuple[list[AnnotatedShot], dict[str, int]]:
+    """Lay out footage for narration that shares a shot or outgrows it (the user accepted repeated footage).
+
+    Every use gets its own distinct shot ids, so every downstream uniqueness rule keeps holding unchanged:
+    * a shared shot that is long enough is cut into non-overlapping windows, one per sentence;
+    * when the footage is not enough for everyone, sentences walk through it in order and wrap around to the
+      beginning, each sentence receiving a chain of windows. All pictures are real frames; nothing is frozen,
+      looped as a filter, or invented. manifest["shot_chains"] records each sentence's chain.
+    """
+    uses: dict[int, list[MatchPlanItem]] = {}
+    for item in plan:
+        uses.setdefault(item.shot_id, []).append(item)
+    by_id = {shot.shot_id: shot for shot in shots}
+    need = {item.sentence_id: _estimated_footage_need(texts.get(item.sentence_id, ""), preferences) for item in plan}
+    work = {}
+    for shot_id, items in uses.items():
+        total = sum(need[item.sentence_id] for item in items)
+        if len(items) > 1 or by_id[shot_id].duration + 1e-6 < total:
+            work[shot_id] = sorted(items, key=lambda item: item.sentence_id)
+    if not work:
+        return shots, {"repeated_shots": 0, "windows": 0, "chained_sentences": 0}
+    clocks = manifest["source_clocks"]
+    chains = manifest.setdefault("shot_chains", {})
+    seen: dict[tuple[str, float, float], int] = {}
+    created: list[AnnotatedShot] = []
+
+    async def window(shot: AnnotatedShot, upload_id: str, clock: dict[str, Any], start: float, end: float) -> AnnotatedShot:
+        key = (upload_id, round(start, 6), round(end, 6))
+        variant = seen.get(key, 0)
+        seen[key] = variant + 1
+        new_id = _physical_shot_id(manifest, upload_id, start + clock["norm_source_offset"], end + clock["norm_source_offset"], variant)
+        value = shot.model_copy(update={"shot_id": new_id, "start": start, "end": end, "duration": end - start})
+        thumb = record.task_dir / "thumbs" / f"shot_{new_id}.jpg"
+        if not thumb.is_file():
+            thumb = await extract_shot_thumbnail(record.task_dir, value)
+        value.thumb_path = thumb.relative_to(record.task_dir).as_posix()
+        created.append(value)
+        return value
+
+    chained = 0
+    for shot_id, items in sorted(work.items()):
+        shot = by_id[shot_id]
+        upload_id, clock = next((key, value) for key, value in clocks.items() if value["source_index"] == shot.source_index)
+        total = sum(need[item.sentence_id] for item in items)
+        pointer = shot.start
+        for item in items:
+            wanted = need[item.sentence_id]
+            if total <= shot.duration + 1e-6:
+                # Enough footage for everyone: cut proportionally, one window per sentence.
+                length = shot.duration * wanted / total
+                spans = [(pointer, min(shot.end, pointer + length))]
+                pointer += length
+            else:
+                spans, remaining = [], wanted
+                while remaining > 0.15:
+                    if shot.end - pointer < 0.5:
+                        pointer = shot.start  # wrap around: the same real footage again, from the beginning
+                    take = min(shot.end - pointer, remaining)
+                    spans.append((pointer, pointer + take))
+                    pointer += take
+                    remaining -= take
+            windows = [await window(shot, upload_id, clock, start, end) for start, end in spans if end - start > 1e-6]
+            item.shot_id = windows[0].shot_id
+            for beat in item.beat_matches:
+                beat.shot_id = windows[0].shot_id
+            if len(windows) > 1:
+                chains[str(item.sentence_id)] = [value.shot_id for value in windows]
+                chained += 1
+    replaced = set(work)
+    kept = [shot for shot in shots if shot.shot_id not in replaced]
+    manifest["broll_shot_ids"] = [value for value in manifest.get("broll_shot_ids", []) if value not in replaced] + [shot.shot_id for shot in created]
+    return [*kept, *created], {"repeated_shots": len(work), "windows": len(created), "chained_sentences": chained}
+
+
+def _source_parent(shot: AnnotatedShot, shots: Sequence[AnnotatedShot]) -> AnnotatedShot:
+    """The longest real source shot that contains this (possibly derived) window."""
+    inside = [value for value in shots if value.media_origin == "source" and value.source_index == shot.source_index
+              and value.start <= shot.start + 1e-3 and value.end >= shot.end - 1e-3]
+    return max(inside, key=lambda value: (value.duration, -value.shot_id), default=shot)
+
+
+async def _extend_short_coverage(record: Any, plan: Sequence[MatchPlanItem], timings: Sequence[SentenceTiming],
+                                 shots: list[AnnotatedShot], manifest: dict[str, Any]) -> int:
+    """Measured narration can outrun the picture picked for it (a longer edit, a slower voice).
+
+    With footage reuse allowed, the sentence keeps its picture and continues on further windows of the same
+    real footage, wrapping to its beginning when needed. Nothing is frozen or invented. Returns how many
+    sentences were extended; without consent nothing changes and the renderer reports the shortage.
+    """
+    if not _shot_reuse_accepted(record):
+        return 0
+    by_id = {shot.shot_id: shot for shot in shots}
+    chains = manifest.setdefault("shot_chains", {})
+    clocks = manifest["source_clocks"]
+    taken = {item.shot_id for item in plan} | {value for chain in chains.values() for value in chain}
+    extended = 0
+    for item, timing in zip(plan, timings):
+        shot = by_id.get(item.shot_id)
+        if item.kind != "narration" or shot is None or shot.media_origin != "source":
+            continue
+        chain = chains.get(str(item.sentence_id))
+        ids = list(chain) if chain and chain[0] == item.shot_id and all(value in by_id for value in chain) else [item.shot_id]
+        need = timing.duration + timing.gap_after + 0.05
+        remaining = need - sum(by_id[value].duration for value in ids)
+        if remaining <= 0:
+            continue
+        parent = _source_parent(shot, shots)
+        found = next(((key, value) for key, value in clocks.items() if value["source_index"] == shot.source_index), None)
+        if found is None or parent.duration < 0.5:
+            continue
+        upload_id, clock = found
+        pointer = by_id[ids[-1]].end
+        for _ in range(200):
+            if remaining <= 0:
+                break
+            if parent.end - pointer < 0.5:
+                pointer = parent.start  # the same real footage again, from the beginning
+            take = min(parent.end - pointer, remaining)
+            start, end = pointer, pointer + take
+            variant = 1
+            while True:
+                new_id = _physical_shot_id(manifest, upload_id, start + clock["norm_source_offset"], end + clock["norm_source_offset"], variant)
+                if new_id not in taken:
+                    break
+                variant += 1
+            value = parent.model_copy(update={"shot_id": new_id, "start": start, "end": end, "duration": end - start})
+            thumb = record.task_dir / "thumbs" / f"shot_{new_id}.jpg"
+            if not thumb.is_file():
+                thumb = await extract_shot_thumbnail(record.task_dir, value)
+            value.thumb_path = thumb.relative_to(record.task_dir).as_posix()
+            shots.append(value)
+            by_id[new_id] = value
+            taken.add(new_id)
+            manifest.setdefault("broll_shot_ids", []).append(new_id)
+            ids.append(new_id)
+            pointer, remaining = end, remaining - take
+        chains[str(item.sentence_id)] = ids
+        extended += 1
+    if extended:
+        write_text_log(record.task_dir, f"有 {extended} 句旁白实际比画面长，已继续接上同一段真实素材（必要时从头循环使用，不定格）。")
+    return extended
+
+
+async def _match_narration(record: Any, sentences: list[Sentence], pool: list[AnnotatedShot], settings: Settings, progress: Callable[[float, str], None],
+                           reuse_window_seconds: float | None = None, best_effort: bool = False) -> list[MatchPlanItem]:
     if not sentences:
         return []  # Crucially before constructing ANY embedding/LLM/TTS provider.
     if any(s.kind != "narration" or len(s.visual_beats) != 1 for s in sentences):
         raise ValueError("语义检索只能接收一条旁白一个视觉节拍。")
     available = [s for s in pool if s.status == "available" and s.description and s.quality is not None]
-    if len(available) < len(sentences):
-        raise MatchingError("可用非原声画面不足以逐句唯一分配；请增加空镜或减少旁白，不会冻结补帧。")
+    if not available:
+        raise ShotShortageError("没有可用的空镜画面：请多传一些视频或图片素材，或把旁白句子改为原声。")
+    if len(available) < len(sentences) and not reuse_window_seconds and not best_effort:
+        raise ShotShortageError("镜头不足：可用非原声画面不足以逐句唯一分配；请增加空镜或减少旁白，不会冻结补帧。")
     async with AsyncExitStack() as stack:
         embedding = await stack.enter_async_context(EmbeddingProvider.from_settings(settings, task_dir=record.task_dir))
         llm = await stack.enter_async_context(LLMProvider.from_settings(settings))
@@ -673,6 +868,8 @@ async def _match_narration(record: Any, sentences: list[Sentence], pool: list[An
             entity_verifier=verifier, entity_verification_max_shots=settings.entity_verification_max_shots,
             entity_verification_min_confidence=settings.entity_verification_min_confidence,
             editing_brief=_preferences(record).custom_instructions,
+            shot_reuse_window_seconds=reuse_window_seconds,
+            shot_reuse_best_effort=best_effort,
         )
     expected = {sentence.sentence_id: sentence.text for sentence in sentences}
     if len(plan) != len(expected) or {p.sentence_id for p in plan} != set(expected):
@@ -1040,6 +1237,9 @@ async def _assemble_audio(
                     target_chars_per_minute=preferences.target_chars_per_minute,
                     rate_tolerance=settings.tts_news_rate_tolerance,
                     target_lufs=-20, target_lra=5, true_peak_dbfs=-3.5,
+                    # The exact track is assembled below from real PCM samples; a provisional one would only fail
+                    # its coarse length check as small per-sentence edge trims add up over many sentences.
+                    assemble_narration=False,
                 )
             tts_manifest = read_json(synthesis, "tts_manifest.json")
             synthesized_count = tts_manifest["provider_request_count"]
@@ -1145,7 +1345,7 @@ def build_mode_edl(
     positions = {item.sentence_id: index for index, item in enumerate(plan)}
     broll_ids = set(manifest["broll_shot_ids"])
     pool = [shot for shot in shots if shot.shot_id in broll_ids and shot.status == "available" and shot.quality is not None and shot.media_origin == "source"]
-    used = {item.shot_id for item in plan}
+    used = {item.shot_id for item in plan} | {value for chain in (manifest.get("shot_chains") or {}).values() for value in chain}
     covers: dict[int, AnnotatedShot] = {}
     for cut in initial_cuts:
         index = positions[cut.after_row] + 1
@@ -1174,10 +1374,30 @@ def build_mode_edl(
         clips: list[EDLClip] = []
         if item.kind == "narration":
             preferred = next((beat.preferred_in_time for beat in item.beat_matches if beat.shot_id == shot.shot_id), None)
-            if need > shot.duration + _SAMPLE:
-                raise MatchingError(f"第 {item.sentence_id + 1} 句旁白 {need:.3f} 秒长于所选真实镜头 {shot.duration:.3f} 秒；不会冻结或重复镜头。")
-            start = max(shot.start, min(preferred if preferred is not None else shot.start, shot.end - need))
-            clips.append(EDLClip(shot_id=shot.shot_id, src=shot.norm_path, in_time=start, out_time=start + need, media_origin=shot.media_origin))
+            chain = (manifest.get("shot_chains") or {}).get(str(item.sentence_id))
+            # A chain belongs to the shot it was cut for; a later shot replacement for this sentence drops it.
+            if chain and chain[0] == item.shot_id and all(value in shots_by_id for value in chain):
+                remaining = need
+                for position, window_id in enumerate(chain):
+                    window = shots_by_id[window_id]
+                    take = min(window.duration, remaining)
+                    if clips and take < 1 / _FPS:
+                        break
+                    start = window.start
+                    if position == 0 and preferred is not None:
+                        start = max(window.start, min(preferred, window.end - take))  # keep the matched moment when it fits
+                    clips.append(EDLClip(shot_id=window_id, src=window.norm_path, in_time=start, out_time=start + take, media_origin=window.media_origin))
+                    options[window_id] = SegmentRenderOptions(color_consistency=preferences.color_consistency, motion=preferences.motion_effects)
+                    remaining -= take
+                    if remaining <= _SAMPLE:
+                        break
+                if remaining > _SAMPLE:
+                    raise MatchingError(f"第 {item.sentence_id + 1} 句旁白比预估长，重复使用素材后画面仍差 {remaining:.2f} 秒；请缩短这句或补充素材。")
+            else:
+                if need > shot.duration + _SAMPLE:
+                    raise MatchingError(f"第 {item.sentence_id + 1} 句旁白 {need:.3f} 秒长于所选真实镜头 {shot.duration:.3f} 秒；不会冻结或重复镜头。")
+                start = max(shot.start, min(preferred if preferred is not None else shot.start, shot.end - need))
+                clips.append(EDLClip(shot_id=shot.shot_id, src=shot.norm_path, in_time=start, out_time=start + need, media_origin=shot.media_origin))
         else:
             assert item.source is not None
             value = layout[item.sentence_id]
@@ -1352,6 +1572,7 @@ async def _render_mode(
     from .pipeline import _generated_media_intervals
     from .providers.generative import filter_generated_media_disclosure
 
+    await _extend_short_coverage(record, plan, timings, shots, manifest)
     edl, options = build_mode_edl(plan, timings, shots, snapshots, manifest, _preferences(record))
     _write_models(record.task_dir, "edl.json", edl)
     filter_generated_media_disclosure(record.task_dir, edl)
@@ -1550,7 +1771,8 @@ async def run_mode_pipeline(record: PipelineTask, reporter: PipelineReporter, se
     _complete_stage(record, reporter, 5, started, f"保留 {len(sentences)} 个确认句子；每句旁白一个视觉节拍")
     started = _start_stage(record, reporter, 6, "使用与预览相同的原话匹配函数；仅旁白检索画面")
     signature6 = _stage_signature(6, settings, signature4, manifest["sentences"], snapshots,
-                                  manifest["speakers"], preferences.custom_instructions, preferences.generative_fill)
+                                  manifest["speakers"], preferences.custom_instructions, preferences.generative_fill,
+                                  _shot_reuse_accepted(record))
     cached6 = stage_cache.load(6, signature6)
     try:
         aligned = await _align_quotes_offloop(inputs, snapshots, [Speaker.model_validate(value) for value in manifest["speakers"]])
@@ -1575,20 +1797,32 @@ async def run_mode_pipeline(record: PipelineTask, reporter: PipelineReporter, se
             manifest.update(cached6["manifest"])
         else:
             stage_cache.begin(6, signature6)
-            narration = await _match_narration(record, [s for s in sentences if s.kind == "narration"], filtered_pool, settings,
-                                              lambda fraction, msg: reporter.update_stage(record, 6, fraction, msg))
+            narration_sentences = [s for s in sentences if s.kind == "narration"]
+            consent = _shot_reuse_accepted(record)
+            reuse_window = _reuse_window_seconds(narration_sentences, preferences) if consent else None
+            narration = await _match_narration(record, narration_sentences, filtered_pool, settings,
+                                              lambda fraction, msg: reporter.update_stage(record, 6, fraction, msg),
+                                              reuse_window_seconds=reuse_window, best_effort=consent)
+            if consent:
+                shots, reuse_report = await _allocate_reused_footage(
+                    record, narration, shots, manifest, {s.sentence_id: s.text for s in narration_sentences}, preferences)
+                manifest["shot_reuse"] = {"accepted": True, **reuse_report}
+                write_text_log(record.task_dir, f"已按用户同意重复使用画面：{reuse_report['repeated_shots']} 个镜头切成 {reuse_report['windows']} 段，"
+                                                f"其中 {reuse_report['chained_sentences']} 句由多段真实素材接成（素材不够时循环使用，不定格）。")
             narration = await _generated_narration(record, [s for s in sentences if s.kind == "narration"], narration, shots, manifest, settings)
             stage_cache.save(6, signature6, {
                 "narration": [p.model_dump(mode="json") for p in narration],
                 "shots": [s.model_dump(mode="json") for s in shots],
-                "manifest": {key: manifest[key] for key in ("next_shot_id", "generated_source_hashes", "generative_fill") if key in manifest},
+                "manifest": {key: manifest[key] for key in ("next_shot_id", "generated_source_hashes", "generative_fill", "quote_shot_registry", "broll_shot_ids", "shot_reuse", "shot_chains") if key in manifest},
             }, list(manifest.get("generated_source_hashes", {})))
         by_id = {item.sentence_id: item for item in [*quote_plan, *narration]}
         plan = [by_id[value.idx] for value in inputs]
         layout, _groups = quote_layout(plan, snapshots, manifest["source_clocks"])
         await _quote_shots(record, plan, layout, manifest, shots)
         _save_mode(record, manifest, plan, shots)
-    except BaseException:
+    except BaseException as failure:
+        if isinstance(failure, ShotShortageError):
+            stage_cache.mark_retry_safe(6)  # local assignment failed after all provider work ended
         _log_stage_abort(record, 6, started)
         raise
     _complete_stage(record, reporter, 6, started, f"匹配完成：原声 {len(quote_plan)} 句，旁白 {len(narration)} 句；未使用自动同期声替换")
@@ -1792,12 +2026,27 @@ async def edit_mode_workspace(work: Any, original: Any, payload: Any, settings: 
     layout, _groups = quote_layout(plan, snapshots, manifest["source_clocks"])
     await _quote_shots(work, plan, layout, manifest, shots)
     base_ids = set(manifest.get("base_broll_shot_ids", manifest["broll_shot_ids"]))
+    if _shot_reuse_accepted(work):
+        # Footage reuse replaces a shared shot by its windows; those windows are this task's B-roll now.
+        base_ids |= set(manifest.get("broll_shot_ids", []))
     pool = await _exclude_quotes(work, [shot for shot in shots if shot.shot_id in base_ids], plan, manifest)
     all_shots = {shot.shot_id: shot for shot in [*shots, *pool]}
     shots = list(all_shots.values())
     manifest["broll_shot_ids"] = [shot.shot_id for shot in pool]
     # Retained narration might become illegal after a quote take moves nearby.
     legal = {shot.shot_id for shot in pool if shot.status == "available" and shot.quality is not None}
+    reuse = _shot_reuse_accepted(work)
+    if reuse:
+        # Windows cut from legal footage when the first build reused it remain legal picture.
+        parents = [shot for shot in pool if shot.shot_id in legal]
+        windows = {shot.shot_id for shot in shots if shot.shot_id not in legal and shot.media_origin == "source" and any(
+            parent.source_index == shot.source_index and parent.start <= shot.start + 1e-3 and shot.end <= parent.end + 1e-3
+            for parent in parents)}
+        legal |= windows
+        manifest["broll_shot_ids"] += sorted(windows)
+    chains = manifest.setdefault("shot_chains", {})
+    for key in [key for key, chain in chains.items() if any(value not in legal for value in chain)]:
+        del chains[key]
     generated_ids = {shot.shot_id for shot in shots if shot.media_origin == "generated"}
     rematch.update(item.sentence_id for item in plan if item.kind == "narration" and item.shot_id not in legal | generated_ids)
     for sentence_id, edit in edits.items():
@@ -1820,7 +2069,10 @@ async def edit_mode_workspace(work: Any, original: Any, payload: Any, settings: 
         sentence = _sentences([SentenceInput(idx=item.sentence_id, text=item.text, kind="narration")])[0]
         sentence.visual_beats[0].text = (item.text + " " + instruction).strip()
         queries.append(sentence)
-    replacements = await _match_narration(work, queries, [shot for shot in pool if shot.shot_id not in reserved], settings, lambda *_: None)
+    free = [shot for shot in pool if shot.shot_id not in reserved]
+    usable = [shot for shot in free if shot.status == "available" and shot.description and shot.quality is not None]
+    short = reuse and len(usable) < len(queries)
+    replacements = await _match_narration(work, queries, pool if short else free, settings, lambda *_: None, best_effort=short)
     replacements = await _generated_narration(work, queries, replacements, shots, manifest, settings)
     for replacement in replacements:
         item = by_id[replacement.sentence_id]
@@ -1839,6 +2091,16 @@ async def edit_mode_workspace(work: Any, original: Any, payload: Any, settings: 
             else:
                 await extract_shot_thumbnail(root, next(s for s in shots if s.shot_id == item.shot_id))
     ids = [item.shot_id for item in plan]
+    if len(set(ids)) != len(ids) and reuse:
+        # Not enough distinct footage for the changed sentences: cut the shared shots into separate windows.
+        for item in plan:
+            if item.kind == "narration" and ids.count(item.shot_id) > 1:
+                chains.pop(str(item.sentence_id), None)
+        shared = [item for item in plan if item.kind == "narration" and ids.count(item.shot_id) > 1]
+        shots, report = await _allocate_reused_footage(work, shared, shots, manifest, {item.sentence_id: item.text for item in shared}, _preferences(work))
+        manifest["shot_reuse"] = {"accepted": True, **report}
+        write_text_log(root, f"修改后不同画面不够，已把 {report['repeated_shots']} 个镜头切成 {report['windows']} 段分给各句（真实素材，不定格）。")
+        ids = [item.shot_id for item in plan]
     if len(set(ids)) != len(ids):
         raise ValueError("修订导致同一个物理范围镜头被重复使用。")
     people = _get(payload, "speakers")

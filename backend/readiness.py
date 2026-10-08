@@ -35,8 +35,10 @@ LEGACY_ENVIRONMENT_KEYS = {
 }
 _FONT_SUFFIXES = {".ttf", ".otf", ".ttc"}
 _FONT_SIGNATURES = {b"\x00\x01\x00\x00", b"OTTO", b"ttcf", b"true"}
+# Static instances: libass cannot select the variable font, so Chinese rendered as boxes on Linux.
 EXPECTED_FONT_SHA256 = {
-    "NotoSansSC-Variable.ttf": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+    "NotoSansSC-Regular.ttf": "533f8fa55f77f828f999b6057523a4bd55a68704ce0d610f60c5eb6bd77a431b",
+    "NotoSansSC-Bold.ttf": "38b46719ade8c194fad5f2b7cccf9aabe62930f8f7181353cc5ff1f79958f663",
 }
 EXPECTED_FONT_LICENSE_SHA256 = "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9"
 

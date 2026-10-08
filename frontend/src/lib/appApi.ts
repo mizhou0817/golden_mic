@@ -120,6 +120,10 @@ export function assertSameOriginConfiguration(): void {
     throw new Error('工作区需要同源 /api 代理；请移除跨域或子路径 VITE_API_BASE_URL 配置。');
   }
 }
+const KNOWN_LIMIT_MESSAGES = new Set([
+  '当前会话最多保留 20 个文件，合计不超过 5 GiB。', '新建上传过于频繁，请稍后重试。', '全站上传名额已满，请稍后重试。',
+  'AI 写作用得太频繁了，请稍后再试，或先自己动手改一改。', 'AI 正在为别人写稿，请几秒后再试。',
+]);
 async function decode<T>(response: Response): Promise<T> {
   const text = await response.text();
   let payload: unknown;
@@ -129,10 +133,28 @@ async function decode<T>(response: Response): Promise<T> {
     const fallback: Record<number, string> = { 401: '作品访问凭据无效。', 403: '安全凭据无效或请求来源不受信任，请刷新页面后核对状态。',
       404: '作品或接口不存在，或没有访问权限。', 410: '作品暂不可访问，请核对访问凭据。', 409: '当前版本或任务状态不允许此操作，请刷新。', 429: '操作过于频繁，请稍后再试。' };
     const code = object(detail) && (detail.code === 'task_gone' || detail.code === 'stale_metadata') ? detail.code : undefined;
+    // Machine codes the server returns for refused recovery/retry: say what it means, never just "refresh".
+    const coded: Record<string, string> = {
+      recovery_source_unverified: '这个作品没有保存完整、可核验的原始稿件和素材记录，无法恢复为草稿。请用原稿和素材新建作品。',
+      recovery_legacy_unsupported: '这是旧版本制作的作品，不支持恢复为草稿。请用原稿和素材新建作品。',
+      recovery_requires_terminal_task: '作品还在制作中，等它结束（成功或失败）后才能回去修改。',
+      recovery_requires_accepted_task: '这个作品还没有被服务器正式接收，不能恢复。请用原稿和素材新建作品。',
+      retry_same_unavailable: '当前不能从失败处继续制作。可以回去修改稿子或素材后重新提交。',
+      retry_inputs_changed: '失败之后程序或素材记录发生了变化，这个作品不能直接续作。请点“回去删减稿子”或“回去多传素材”恢复为草稿后重新提交。',
+      retry_cache_missing: '已完成步骤的缓存不完整，不能安全续作。请点“回去删减稿子”或“回去多传素材”恢复为草稿后重新提交。',
+      retry_cache_invalid: '已完成步骤的缓存校验没通过，不能安全续作。请点“回去删减稿子”或“回去多传素材”恢复为草稿后重新提交。',
+      retry_provider_uncertain: '上次有一步是否已向 AI 服务提交无法确认，为避免重复收费，不会自动续作。请点“回去删减稿子”或“回去多传素材”恢复为草稿后重新提交。',
+      shot_reuse_not_applicable: '这次失败不是“镜头不足”，或当前制作方式不支持重复使用画面。',
+    };
+    // recovery_quota is a fixed, non-sensitive sentence from the server; unlike other 429s it is not a rate limit.
+    const quotaMessage = object(detail) && (detail.code === 'recovery_quota' || detail.code === 'recovery_draft_limit' || detail.code === 'start_budget') && typeof detail.message === 'string' && detail.message.length <= 300 ? detail.message : undefined;
+    // The server's own fixed upload-limit sentences (never free text): shown so people know what to free up.
+    const limitMessage = response.status === 429 && typeof detail === 'string' && KNOWN_LIMIT_MESSAGES.has(detail) ? detail : undefined;
+    const codedMessage = quotaMessage ?? limitMessage ?? (object(detail) && typeof detail.code === 'string' ? coded[detail.code] : undefined);
     const retryAfter = parseRetryAfter(response.headers.get('Retry-After'));
     // Never reflect private quota diagnostics or automatically replay a write.
-    const message = response.status === 429 ? `${fallback[429]}${retryAfter === undefined ? '' : ` 请在 ${retryAfter} 秒后手动重试。`}`
-      : typeof detail === 'string' ? detail : object(detail) && typeof detail.message === 'string' ? detail.message
+    const message = response.status === 429 && !quotaMessage && !limitMessage ? `${fallback[429]}${retryAfter === undefined ? '' : ` 请在 ${retryAfter} 秒后手动重试。`}`
+      : codedMessage ? codedMessage : typeof detail === 'string' ? detail : object(detail) && typeof detail.message === 'string' ? detail.message
         : fallback[response.status] ?? `请求失败（${response.status}）。`;
     throw new AppApiError(response.status === 410 && code === 'task_gone' ? '作品已到期或已清理。' : message, response.status, retryAfter, code);
   }
@@ -265,13 +287,14 @@ export function createAppRequest(access: Access): AppRequest {
     const abort = () => controller.abort();
     const signals = [access.signal, init.signal].filter((s): s is AbortSignal => !!s);
     signals.forEach(s => { if (s.aborted) abort(); s.addEventListener('abort', abort, { once: true }); });
-    const timer = setTimeout(abort, init.body instanceof FormData ? 30 * 60_000 : init.body instanceof Blob ? 120_000 : 30_000);
+    // AI writing is one slow model call; everything else keeps the short JSON timeout.
+    const timer = setTimeout(abort, init.body instanceof FormData ? 30 * 60_000 : init.body instanceof Blob ? 120_000 : url === '/api/script/assist' ? 170_000 : 30_000);
     try {
       if (controller.signal.aborted) throw new DOMException('已取消', 'AbortError');
       const uploadScope = access.taskId === undefined && access.token === undefined && (
         url === '/api/tasks' && init.method?.toUpperCase() === 'POST' ||
         url === '/api/uploads' || /^\/api\/uploads\/up_[0-9a-f]{32}(?:\/chunks\/(?:0|[1-9]\d*)|\/complete)?$/.test(url)
-        || url === '/api/match/preview');
+        || url === '/api/match/preview' || url === '/api/script/assist');
       if (!uploadScope && (!access.taskId || !validTaskId(access.taskId) || access.token !== undefined && !validToken(access.token)
         || !url.startsWith(`/api/tasks/${encodeURIComponent(access.taskId)}`)
         || !['', '/', '?'].includes(url.charAt(`/api/tasks/${encodeURIComponent(access.taskId)}`.length)))) throw new Error('只能访问当前选中的作品。');

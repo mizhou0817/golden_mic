@@ -4,6 +4,7 @@ import SharedIcon from "./ui/Icon";
 import { deferredRemoval, draftTaskOnce, readDraftAccess, readDraftTask } from "../lib/draftTasks";
 import type { DraftAccess } from "../lib/draftTasks";
 import type { PublicLimits } from "../types";
+import type { ScriptAssistContext } from "../lib/scriptAssist";
 import {
   AUDIO_ACCEPT, ELEMENT_RULES, MEDIA_ACCEPT, copyText, countSpokenChars, estimateSufficiency,
   fileIdentity, formatBytes, formatDuration, mediaKind, mediaLimits, probeMedia, canServerProbe,
@@ -19,7 +20,7 @@ import {
 import type { ModePreferences, ProductionMode, SentenceInput, SentenceKind, Speaker, TranscriptSegment, UploadSnapshot, MatchPreview } from "../lib/productionModes";
 import {
   MATCH_DEBOUNCE_MS, deleteUploadFile, pollUploadStatus, readUploadBindings, readUploadTokens,
-  requestMatchPreview, transferComplete, uploadFile, uploadMediaUrl, uploadUsable, completeUpload, reconcileServerProbe, getUploadStatus,
+  requestMatchPreview, transferComplete, uploadFile, uploadMediaUrl, uploadUsable, completeUpload, reconcileServerProbe, serverTrimEnd, getUploadStatus,
 } from "../lib/uploadSessions";
 import type { ProbedUploadSnapshot, UploadBinding, UploadSession } from "../lib/uploadSessions";
 import "../styles/modes.css";
@@ -84,6 +85,10 @@ export interface CreateWizardProps {
   onDraft: (draft: Draft) => void;
   onSubmit: (value: CreateSubmission) => Promise<void>;
   onError: (message: string) => void;
+  /** Optional AI writing helper, rendered under the manuscript. The wizard stays the owner of the text. */
+  scriptAssistant?: (context: ScriptAssistContext) => ReactNode;
+  /** Files to queue once on mount, exactly as if the user had picked them (the sample walkthrough). */
+  initialFiles?: File[];
 }
 
 export function defaultPreferences(mode: ProductionMode = "voiceover"): ModePreferences { return defaultModePreferences(mode); }
@@ -103,6 +108,20 @@ function Icon({ name }: { name: "mic" | "mic-bubble" | "bubble" | "cloud-up" | "
 }
 const sentenceKey = (text: string, index: number) => `${index}:${text}`;
 const errorMessage = (_error: unknown) => "操作未完成。请核对当前状态后重试；不会自动重复提交。";
+const errorStatus = (error: unknown): number | undefined => {
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status === "number" ? status : undefined;
+};
+/** Capacity refusals (quota, rate, disk): every further file would hit the same wall, so the queue pauses. */
+const isCapacityFailure = (error: unknown) => errorStatus(error) === 429 || errorStatus(error) === 507 || errorStatus(error) === 413;
+/** The real, safe reason for a failed upload; never raw server text beyond the fixed sentences decoded upstream. */
+function uploadErrorText(error: unknown): string {
+  const status = errorStatus(error), text = (error as { message?: unknown } | null)?.message, message = typeof text === "string" ? text : "";
+  if (status === 429) return message && message.length <= 200 ? `${message}请先移除不需要的素材，或在“我的作品”里删掉旧草稿/作品后重试。` : errorMessage(error);
+  if (status === 413) return "素材总量超过了服务器允许的上限，请移除一部分素材后重试。";
+  if (status === 507) return "服务器磁盘空间不足，暂时无法接收更多素材，请稍后再试或先移除一部分素材。";
+  return errorMessage(error);
+}
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(1).padStart(4, "0")}`;
 type FileJob = { file?: File; itemId: string; controller: AbortController; probe: boolean; continuation?: () => boolean };
 
@@ -155,11 +174,10 @@ function Chips<T extends string>({ label, value, options, onChange, disabled = f
  * No storage writes here: Workspace owns persistence. Mount only reads existing
  * upload status; new uploads/paid transcription require an explicit file action.
  */
-export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, busy, serviceReady = true, onDraft, onSubmit, onError }: CreateWizardProps) {
+export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, busy, serviceReady = true, onDraft, onSubmit, onError, scriptAssistant, initialFiles }: CreateWizardProps) {
   const id = useId();
   const [seed] = useState(() => modeDraftSeed(initialDraft, generativeAllowed));
   const [mode, setMode] = useState<ProductionMode>(seed.mode);
-  const [modeMore, setModeMore] = useState(seed.mode !== "voiceover");
   const [fileAdv, setFileAdv] = useState<Record<string, boolean>>({});
   const [sentListOpen, setSentListOpen] = useState(false);
   // Handoff Appendix B starts pickOpen=true, including blank C discovery.
@@ -187,6 +205,8 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
   const [uploadTokens, setUploadTokens] = useState<Record<string, string>>(seed.tokens);
   const [uploads, setUploads] = useState<Record<string, UploadSnapshot>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+  // Why the upload queue was paused (capacity refusal); cleared as soon as an upload goes through.
+  const [uploadBlock, setUploadBlock] = useState("");
   const [hashProgress, setHashProgress] = useState<Record<string, { bytes: number; total: number }>>({});
   const [expandedTranscripts, setExpandedTranscripts] = useState<Record<string, boolean>>({});
   const [preview, setPreview] = useState<{ key: string; rows: MatchPreview[]; error: string; pending: boolean }>({ key: "", rows: [], error: "", pending: false });
@@ -234,7 +254,9 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
   const recordingGeneration = useRef(0);
   const submitLock = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
+  const scriptBox = useRef<HTMLTextAreaElement>(null);
   const previousStep = useRef(step);
+  const [nextTried, setNextTried] = useState(false);
   const callbacks = useRef({ onDraft, onError });
   callbacks.current = { onDraft, onError };
   const cap = mediaLimits(limits);
@@ -480,12 +502,29 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
       }, [script, step, preferences, sourceVoicePreferred, generativeAllowed, files, elements, sentenceChecks, voice, voiceMeta, mode, sentenceKinds, speakers, bindings, uploadTokens, confirmedSentences, draftAccess]);
 
   useEffect(() => {
-    if (previousStep.current !== step) { heading.current?.focus(); previousStep.current = step; }
+    if (previousStep.current !== step) { heading.current?.focus(); previousStep.current = step; setNextTried(false); }
   }, [step]);
 
   function canGoToStep(target: 1 | 2 | 3) {
     // Backward navigation never requires fixing the current step first.
     return !locked && !audioBusy && (target <= step || (target === 2 ? scriptValid || blankOriginal : step === 2 && scriptValid && mediaValid && !matchingProblem));
+  }
+
+  // Why "下一步" cannot proceed yet. Empty when the user may continue.
+  const nextBlockReason = step >= 3 ? ""
+    : locked ? "正在提交，请稍候。"
+    : audioBusy ? "声音正在录制或处理，请稍候再继续。"
+    : step === 1 ? (scriptValid || blankOriginal ? "" : scriptProblem || "请先写好稿件：第一行标题，下一行正文。")
+    : scriptValid && mediaValid && !matchingProblem ? "" : scriptProblem || issues[0] || matchingProblem || "素材还没准备好，请检查后再继续。";
+
+  function goNext() {
+    if (nextBlockReason) {
+      // Never leave a dead button: say what is missing and move to it.
+      setNextTried(true);
+      if (step === 1 && !locked && !audioBusy) scriptBox.current?.focus();
+      return;
+    }
+    goToStep(step === 1 ? 2 : 3);
   }
 
   function goToStep(target: 1 | 2 | 3) {
@@ -530,7 +569,6 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
   function chooseMode(nextMode: ProductionMode, useSuggestion = false) {
     if (locked || audioBusy || nextMode === mode) return;
     setAlignmentEnabled(true);
-    if (nextMode !== "voiceover") setModeMore(true);
     invalidatePreview(); setSuggestion(null);
     // Mode changes never re-split source-selected rows or turn B's editorial
     // prefixes into spoken A text. Preserve the entire confirmed body and hints.
@@ -676,7 +714,7 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
     setUploadErrors(previous => { const next = { ...previous }; delete next[itemId]; return next; });
     if (session.draftTaskId) updateFile(itemId, reconcileServerProbe(item, snapshot, limits));
     else if (snapshot.sec != null && (snapshot.status === "ready" || snapshot.probe_ok)) updateFile(itemId, {
-      duration: snapshot.sec, trim_end: item.kind === "image" ? null : item.duration == null ? item.trim_end ?? snapshot.sec : item.trim_end, status: "ready",
+      duration: snapshot.sec, trim_end: item.kind === "image" ? null : serverTrimEnd(item, snapshot.sec), status: "ready",
     });
     else if (!item.file) updateFile(itemId, { status: snapshot.status === "uploading" ? "reselect" : snapshot.status === "failed" ? "error" : "loading" });
   }
@@ -768,6 +806,7 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
             onSnapshot: snapshot => { if (current()) publishSnapshot(itemId, snapshot); },
             onHashProgress: (bytes, total) => { if (current()) setHashProgress(previous => ({ ...previous, [itemId]: { bytes, total } })); },
           }, sessionFor(itemId), access, !!access);
+          if (current()) setUploadBlock("");
           if (current() && (snapshot.status === "probing" || snapshot.status === "transcribing")) observeUpload(itemId);
           // Only an explicit transfer/retry may continue preprocessing. Refresh
           // merely observes. All current local files must be bound and probed;
@@ -809,8 +848,20 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
           }
         } catch (error) {
           if (current()) {
-            if (!probeDone) updateFile(itemId, { status: "error", error: errorMessage(error) });
-            setUploadErrors(previous => ({ ...previous, [itemId]: errorMessage(error) }));
+            const reason = uploadErrorText(error);
+            if (!probeDone) updateFile(itemId, { status: "error", error: reason });
+            setUploadErrors(previous => ({ ...previous, [itemId]: reason }));
+            if (isCapacityFailure(error)) {
+              // Every queued file would be refused for the same reason: stop here instead of failing them one by one.
+              const dropped = jobs.current.splice(0);
+              for (const waiting of dropped) if (operations.current.get(waiting.itemId) === waiting.controller) operations.current.delete(waiting.itemId);
+              if (dropped.length) setUploadErrors(previous => {
+                const next = { ...previous };
+                for (const waiting of dropped) next[waiting.itemId] = `没有开始上传：${reason}`;
+                return next;
+              });
+              setUploadBlock(reason);
+            }
           }
         } finally {
           if (operations.current.get(itemId) === controller) operations.current.delete(itemId);
@@ -836,6 +887,51 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
       continuation: () => !removalCancels.current.size && identityOf() === identity });
     void drainFileJobs();
   }
+
+  // Files that did not get through, and files that are fully uploaded but still waiting for the explicit "continue".
+  const failedFiles = files.filter(item => !removing[item.id] && (uploadErrors[item.id] || item.status === "error"));
+  // Only while the queue is idle: during a normal batch the completion step runs by itself at the end.
+  const queueIdle = operations.current.size === 0 && jobs.current.length === 0 && !transferRunning.current;
+  const waitingToFinish = !queueIdle ? [] : files.filter(item => {
+    const state = uploadFor(item.id);
+    return !removing[item.id] && state?.status === "uploading" && transferComplete(state);
+  });
+  function retryFailed() {
+    if (locked || removalCancels.current.size) return;
+    setUploadBlock("");
+    // Files with no server session yet are queued exactly like a fresh selection (no "list unchanged" fence:
+    // the first upload binds a session and would otherwise silently cancel every later retry).
+    const fresh = failedFiles.filter(item => item.file && !sessionFor(item.id) && !operations.current.has(item.id));
+    if (fresh.length) {
+      setUploadErrors(previous => { const next = { ...previous }; for (const item of fresh) delete next[item.id]; return next; });
+      for (const item of fresh) {
+        const controller = new AbortController(); operations.current.set(item.id, controller);
+        jobs.current.push({ itemId: item.id, file: item.file, controller, probe: item.status !== "ready" });
+      }
+      void drainFileJobs();
+      return;
+    }
+    // Everything left already has a server session: one explicit continuation reconciles every peer first.
+    const resumable = failedFiles.find(item => !operations.current.has(item.id));
+    if (resumable) retryFile(resumable.id);
+  }
+  function removeFailed() {
+    for (const item of failedFiles) removeFile(item.id);
+    setUploadBlock("");
+  }
+  function continueUploaded() {
+    const first = waitingToFinish[0];
+    if (first) retryFile(first.id);
+  }
+
+  const pendingInitialFiles = useRef(initialFiles);
+  useEffect(() => {
+    const pending = pendingInitialFiles.current;
+    pendingInitialFiles.current = undefined;
+    if (pending?.length) void addFiles(pending);
+    // Once per mount: a remount with a new key is how another draft is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function addFiles(incoming: File[]) {
     if (locked || draftChecking || draftReadError) return;
@@ -1083,23 +1179,23 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
             : step === 2 ? mode === "voiceover" ? "为稿件内容准备真实、相关的画面。" : "上传真实采访，对上原话和说话人。" : "按制作需求选择字幕和画面效果。"}</p></header>
 
         {step === 1 && <>
-          <div id={`${id}-modes`} className="gm-mode-cards" data-collapsed={!modeMore && mode === "voiceover"} role="group" aria-label="制作模式">{MODE_CARDS.filter(card => modeMore || mode !== "voiceover" || card.mode === "voiceover").map(card => <button type="button" key={card.mode} aria-pressed={mode === card.mode}
+          <div id={`${id}-modes`} className="gm-mode-cards" role="group" aria-label="制作模式">{MODE_CARDS.map(card => <button type="button" key={card.mode} aria-pressed={mode === card.mode}
             className="gm-mode-card" disabled={audioBusy} onClick={() => chooseMode(card.mode)}>
             <span className="gm-mode-card-title"><span className="gm-mode-icon" aria-hidden="true"><Icon name={card.mode === "voiceover" ? "mic" : card.mode === "mixed" ? "mic-bubble" : "bubble"} /></span><strong>{card.name}</strong></span>
             {card.mode === "voiceover" && <span className="gm-mode-stamp">最简单，先用这个</span>}
             <span className="gm-mode-description">{card.description}</span><span className="gm-mode-fit">适合：{card.fit}</span>
             {mode === card.mode && <span className="gm-mode-check" aria-hidden="true"><Icon name="check" /></span>}
           </button>)}</div>
-          {mode === "voiceover" && <button type="button" className="gm-small-button gm-mode-more" aria-expanded={modeMore} aria-controls={`${id}-modes`} onClick={() => setModeMore(value => !value)}>{modeMore ? "收起 ▴" : "更多制作方式：旁白 + 原声 / 只用原声 ▾"}</button>}
           {transcriptPicker}
           <label className="gm-sr-only" htmlFor={`${id}-script`}>新闻稿（第一行标题，下一行正文）</label>
-          <textarea id={`${id}-script`} className="gm-script" value={script} onChange={(event) => changeScript(event.target.value)}
-            placeholder={mode === "original" ? "把从采访里挑出来的原话贴到这里，一句一行。还没有稿？先去第 2 步传素材，转写完回来挑句子" : mode === "mixed" ? "把稿子粘贴到这里；受访者的话写成「同期 王红（市集主办方）：…」" : "把新闻稿粘贴到这里……"} aria-describedby={`${id}-script-hint ${id}-gate`} aria-invalid={charCount > 0 && !scriptValid} />
+          <textarea id={`${id}-script`} ref={scriptBox} className="gm-script" value={script} onChange={(event) => changeScript(event.target.value)}
+            placeholder={mode === "original" ? "把从采访里挑出来的原话贴到这里，一句一行。还没有稿？先去第 2 步传素材，转写完回来挑句子" : mode === "mixed" ? "直接粘贴稿子到这里，或用下面的 AI 助手写旁白；受访者的话写成「同期 王红（市集主办方）：…」" : "直接粘贴新闻稿到这里，或自己写；也可以用下面的 AI 写作助手帮你写一稿……"} aria-describedby={`${id}-script-hint ${id}-gate`} aria-invalid={charCount > 0 && !scriptValid} />
           <div className="gm-row gm-script-status" id={`${id}-script-hint`} aria-live="polite">
             <strong className={analysis.title ? "gm-teal-text" : charCount ? "gm-danger-text" : "gm-muted"}>{analysis.title ? `标题：${analysis.title}` : charCount ? analysis.titleError : "第一行会当作标题"}</strong>
             {analysis.titleFixable && <button type="button" className="gm-small-button" onClick={() => changeScript(analysis.fixedScript)}>去掉首行句末标点，当标题</button>}
             <span className={charCount > cap.maxScript ? "gm-danger-text gm-push" : "gm-muted gm-push"}>{charCount} / {MODE_LIMITS.script_soft_chars} 字</span>
           </div>
+          {scriptAssistant?.({ mode, script, disabled: locked || audioBusy, maxScript: cap.maxScript, onApply: changeScript })}
           {charCount > MODE_LIMITS.script_soft_chars && <p className="gm-warning">稿件超过 {MODE_LIMITS.script_soft_chars} 字的建议长度，建议精简；服务器硬上限 {cap.maxScript} 字。</p>}
           {analysis.longSentences.length > 0 && <div className="gm-warning">有 {analysis.longSentences.length} 句超过 30 字：{analysis.longSentences.slice(0, 6).map((item) => `第 ${item.index + 1} 句 ${item.chars} 字`).join("、")}。建议在意思完整的地方拆句。</div>}
           {mode !== "original" && script.trim() && <section className="gm-elements"><div className="gm-element-summary"><h2>五要素</h2>
@@ -1174,6 +1270,17 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
           </label>
           <p className="gm-muted gm-small">最多 {cap.maxFiles} 个 · 单文件 {formatBytes(cap.maxBytes)} / {formatDuration(cap.maxDuration)} · 总量 {formatBytes(cap.maxTotalBytes)} / {formatDuration(cap.maxTotalDuration)}。格式支持不等于浏览器能解码，服务端还会复核。</p>
           {files.some((item) => item.status === "reselect") && <div className="gm-warning">已恢复文件清单。带上传凭据的素材正在核实服务器状态；上传完整后无需重选。未上传或缺少分片的素材需重选同一个原文件，不能只凭文件名认作已上传。</div>}
+          {(failedFiles.length > 0 || (waitingToFinish.length > 0 && !locked)) && <div className={failedFiles.length ? "gm-warning gm-upload-summary" : "gm-cloud-notice gm-upload-summary"} role={failedFiles.length ? "alert" : "status"} data-testid="upload-summary">
+            {failedFiles.length > 0 ? <>
+              <p><b>有 {failedFiles.length} 个素材没有传成。</b>{uploadBlock ? ` 原因：${uploadBlock}` : " 每个素材下面写着具体原因。"}</p>
+              <p className="gm-small">没传成的素材会挡住“下一步”。先处理原因，再重试；也可以直接移除它们，用已经传好的素材继续。</p>
+              <div className="gm-row"><button type="button" className="gm-small-button" data-control="upload-retry-failed" disabled={locked} onClick={retryFailed}>重试这些素材</button>
+                <button type="button" className="gm-small-button" data-control="upload-remove-failed" disabled={locked} onClick={removeFailed}>移除这些素材</button></div>
+            </> : <>
+              <p><b>{waitingToFinish.length} 个素材已经传完，等你点一下继续处理。</b></p>
+              <div className="gm-row"><button type="button" className="gm-small-button" data-control="upload-continue" onClick={continueUploaded}>继续处理已传好的素材</button></div>
+            </>}
+          </div>}
           <div className="gm-file-list">{files.filter(item => !removing[item.id]).map((item) => {
             const trimError = item.status === "ready" ? validateTrim(item) : null;
             const durationError = item.duration != null && item.duration > cap.maxDuration;
@@ -1299,7 +1406,8 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
       <footer className="gm-wizard-actions">
         {step > 1 && <button className="gm-button" type="button" disabled={!canGoToStep(step === 3 ? 2 : 1)} onClick={() => goToStep(step === 3 ? 2 : 1)}>← 上一步</button>}
         <p className="gm-action-hint" id={`${id}-gate`}>{step === 1 ? blankOriginal ? "可以先传采访素材，再从转写里挑选原话。" : scriptProblem || "稿件格式已检查，可以准备对应素材。" : step === 2 ? scriptProblem || issues[0] || matchingProblem || "素材已预处理，接下来选择效果；正式制作仍会复核。" : blockedReason || "先制作、再检查。生成完成不代表新闻事实已核验。"}</p>
-        {step < 3 ? <button type="button" className="gm-button gm-primary" aria-describedby={`${id}-gate`} disabled={!canGoToStep(step === 1 ? 2 : 3)} onClick={() => goToStep(step === 1 ? 2 : 3)}>下一步：{step === 1 ? "传素材" : "选效果"} <Icon name="arrow" /></button>
+        {nextTried && nextBlockReason && <p role="alert" className="gm-error gm-action-error" id={`${id}-gate-error`}>还不能进入下一步：{nextBlockReason}</p>}
+        {step < 3 ? <button type="button" className="gm-button gm-primary" aria-describedby={`${id}-gate`} aria-disabled={Boolean(nextBlockReason)} onClick={goNext}>下一步：{step === 1 ? "传素材" : "选效果"} <Icon name="arrow" /></button>
           : <button type="button" className="gm-button gm-primary gm-submit" aria-describedby={`${id}-gate`} disabled={!canSubmit} onClick={() => void submit()}>{locked ? "正在提交…" : "开始制作"}</button>}
       </footer>
     </fieldset>

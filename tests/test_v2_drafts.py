@@ -364,6 +364,34 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             self.manager.ensure_start_capacity()
 
+    async def test_concurrent_visitors_wait_for_the_draft_gate_instead_of_failing(self):
+        import asyncio
+        receipts = await asyncio.gather(*(self.service.create({"mode": "voiceover"}, owner_digest(f"visitor-{index}"))
+                                          for index in range(3)))
+        self.assertEqual(len({receipt["task_id"] for receipt in receipts}), 3)
+
+    async def test_start_limit_refusal_says_how_long_to_wait_and_a_local_limit_is_honoured(self):
+        ledger = self.service.ledger
+        ledger.accept("a", "owner", "ip", "hash", now=10000)
+        ledger.accept("b", "owner", "ip", "hash", now=10001)
+        with self.assertRaises(HTTPException) as caught:
+            ledger.accept("c", "owner", "ip", "hash", now=10002)
+        detail = caught.exception.detail
+        self.assertEqual(detail["code"], "start_budget")
+        self.assertEqual(detail["retry_after"], 3599)
+        self.assertEqual(caught.exception.headers["Retry-After"], "3599")
+        self.assertIn("约 60 分钟后", detail["message"]); self.assertIn("不需要重新上传", detail["message"])
+        # A local install that configured more starts per hour gets them (no hidden cap of 2).
+        ledger.accept("c", "owner", "ip", "hash", now=10003, session_limit=3)
+        with self.assertRaises(HTTPException):
+            ledger.accept("d", "owner", "ip", "hash", now=10004, session_limit=3)
+
+    def test_effective_session_start_limit_keeps_the_public_cap_only_in_production(self):
+        from backend.config import Settings
+        self.assertEqual(Settings.model_construct(app_env="development", anonymous_session_task_rate_limit_per_hour=10).effective_session_start_limit, 10)
+        self.assertEqual(Settings.model_construct(app_env="production", anonymous_session_task_rate_limit_per_hour=10).effective_session_start_limit, 2)
+        self.assertEqual(Settings.model_construct(app_env="production", anonymous_session_task_rate_limit_per_hour=1).effective_session_start_limit, 1)
+
     async def test_ledger_restart_sliding_nonrefund(self):
         ledger = self.service.ledger
         ledger.accept("a", "owner", "ip", "hash", now=10000)
@@ -702,6 +730,109 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
         imported = draft.draft_context["files"][0]
         self.assertEqual(self.store._source(self.store.authorize(imported["up_id"], imported["capability"])).read_bytes(), b"synthetic-video")
 
+    async def test_recovery_releases_the_failed_tasks_own_staging_copies_when_the_file_quota_is_full(self):
+        source, _, item = await self.recovery_fixture()
+        # One live staging copy already fills this session's quota, so a plain copy could never fit.
+        self.store.max_files = 1
+        view = await self.service.recover(source, {"step": 1})
+        draft = self.manager.get(view["task_id"])
+        self.assertNotIn(item["up_id"], self.store._records, "redundant staging copy is released")
+        self.assertEqual(draft.uploads[0].path.read_bytes(), b"synthetic-video")
+        self.assertEqual(self.store._source(self.store.authorize(*[draft.draft_context["files"][0][k] for k in ("up_id", "capability")])).read_bytes(), b"synthetic-video")
+        self.assertEqual((source.task_dir / "raw" / source.uploads[0].stored_name).read_bytes(), b"synthetic-video", "original task keeps its files")
+
+    async def test_recovery_can_carry_shot_reuse_consent_only_after_a_shortage(self):
+        source, _, _ = await self.recovery_fixture()
+        source.error_kind = "shortage"
+        plain = await self.service.recover(source, {"step": 1})
+        self.assertFalse(plain["shot_reuse_accepted"])
+        self.assertNotIn("shot_reuse", self.manager.get(plain["task_id"]).draft_context)
+        await self.service.delete(self.manager.get(plain["task_id"]))
+        view = await self.service.recover(source, {"step": 1, "allow_shot_reuse": True})
+        draft = self.manager.get(view["task_id"])
+        self.assertTrue(view["shot_reuse_accepted"])
+        self.assertEqual(draft.draft_context["shot_reuse"], {"accepted": True})
+        self.assertTrue(view["lifecycle_v2"], "the client needs this flag to pick cache-resume retry")
+
+    async def test_recovery_consent_is_refused_for_other_failures_original_mode_and_non_boolean_values(self):
+        source, _, _ = await self.recovery_fixture()
+        before = set(self.manager._tasks)
+        source.error_kind = "transient"
+        with self.assertRaises(HTTPException) as caught:
+            await self.service.recover(source, {"step": 1, "allow_shot_reuse": True})
+        self.assertEqual(caught.exception.detail["code"], "shot_reuse_not_applicable")
+        source.error_kind = "shortage"
+        with self.assertRaises(HTTPException) as caught:
+            await self.service.recover(source, {"step": 1, "mode": "original", "allow_shot_reuse": True})
+        self.assertEqual(caught.exception.detail["code"], "shot_reuse_not_applicable")
+        for bad in (1, "true", "yes"):
+            with self.assertRaises(HTTPException) as caught:
+                await self.service.recover(source, {"step": 1, "allow_shot_reuse": bad})
+            self.assertEqual(caught.exception.status_code, 422, bad)
+        self.assertEqual(set(self.manager._tasks), before, "a refused recovery creates nothing")
+
+    async def new_draft_for(self, source):
+        receipt = await self.service.create({"mode": "voiceover"}, source.owner_hash)
+        return self.manager.get(receipt["task_id"])
+
+    async def test_finished_tasks_staging_is_reclaimed_when_it_blocks_the_next_upload(self):
+        source, _, item = await self.recovery_fixture()
+        self.store.max_files = 1  # the finished work's staging copy fills this session's quota
+        draft = await self.new_draft_for(source)
+        receipt, new_item = await self.file(draft)
+        self.assertNotIn(item["up_id"], self.store._records, "the finished task's redundant staging was released")
+        self.assertIn(new_item["up_id"], self.store._records)
+        self.assertEqual((source.task_dir / "raw" / source.uploads[0].stored_name).read_bytes(), b"synthetic-video",
+                         "the finished task keeps its own copy")
+
+    async def test_staging_is_left_alone_when_there_is_room_or_it_is_still_needed(self):
+        source, _, item = await self.recovery_fixture()
+        draft = await self.new_draft_for(source)
+        await self.file(draft)
+        self.assertIn(item["up_id"], self.store._records, "nothing is released while the quota has room")
+        for label, change in (("running task", lambda: setattr(source, "status", TaskState.running)),
+                              ("missing task copy", lambda: (source.task_dir / "raw" / source.uploads[0].stored_name).unlink())):
+            with self.subTest(label):
+                change()
+                self.store.max_files = len([r for r in self.store._records.values() if r.owner_hash == hashlib.sha256(source.owner_hash.encode()).hexdigest()])
+                another = await self.new_draft_for(source)
+                with self.assertRaises(HTTPException) as caught:
+                    await self.service.add_file(another, {"name": "x.mp4", "size": 1}, "")
+                self.assertEqual(caught.exception.status_code, 429)
+                self.assertIn(item["up_id"], self.store._records, "never released: " + label)
+
+    async def test_only_the_same_owners_own_finished_staging_is_ever_reclaimed(self):
+        mine, _, mine_item = await self.recovery_fixture()
+        other, _, other_item = await self.recovery_fixture()
+        self.assertNotEqual(mine.owner_hash, other.owner_hash)
+        self.store.max_files = 1
+        draft = await self.new_draft_for(mine)
+        await self.file(draft)
+        self.assertNotIn(mine_item["up_id"], self.store._records)
+        self.assertIn(other_item["up_id"], self.store._records, "another owner's staging is untouched")
+
+    async def test_recovery_copies_do_not_consume_the_hourly_new_upload_budget(self):
+        source, _, _ = await self.recovery_fixture()
+        entries = len(self.store._budgets.entries)
+        # The fixture already created uploads this hour; a budget of exactly that many is now full.
+        with patch("backend.uploads.OWNER_CREATIONS_PER_HOUR", entries):
+            with self.assertRaises(HTTPException) as refused:
+                await self.store.create(name="x.mp4", size=1, sha256="0" * 64, owner=source.owner_hash)
+            self.assertEqual(refused.exception.status_code, 429, "ordinary new uploads are still limited")
+            view = await self.service.recover(source, {"step": 1})
+        self.assertEqual(self.manager.get(view["task_id"]).status, TaskState.draft)
+        self.assertEqual(len(self.store._budgets.entries), entries, "recovery adds no budget entries")
+
+    async def test_recovery_quota_shortage_is_reported_with_a_specific_code_and_creates_nothing(self):
+        source, _, _ = await self.recovery_fixture()
+        self.store.max_files = 0
+        before = set(self.manager._tasks)
+        with self.assertRaises(HTTPException) as caught:
+            await self.service.recover(source, {"step": 1})
+        self.assertEqual(caught.exception.status_code, 429)
+        self.assertEqual(caught.exception.detail["code"], "recovery_quota")
+        self.assertEqual(set(self.manager._tasks), before)
+
     async def test_recovery_rejects_unverified_or_foreign_source_without_draft(self):
         for failure in ("tamper", "missing", "owner", "path"):
             with self.subTest(failure=failure):
@@ -874,7 +1005,7 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
                 if limit == "disk":
                     stack.enter_context(patch.object(self.store, "_space", side_effect=HTTPException(507)))
                 else:
-                    stack.enter_context(patch.object(self.store, limit, 1))
+                    stack.enter_context(patch.object(self.store, limit, 0 if limit == "max_files" else 1))
                 copied = stack.enter_context(patch("backend.drafts._copy_verified", side_effect=AssertionError("No oversized copy")))
                 with self.assertRaises(HTTPException) as caught:
                     await self.service.recover(source, {"step": 1})
@@ -1024,6 +1155,75 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(before, self.service.ledger.counts(record.owner_hash, owner_digest("ip")))
         self.assertEqual(self.guard._reserved_bytes, 0)
         self.assertEqual([s.model_dump() for s in record.stages[:2]], completed)
+
+    async def shortage_retry_fixture(self):
+        record, cache = await self.retry_fixture()
+        record.error_kind = "shortage"
+        record.draft_context["retry_binding"] = _retry_binding(record, self.settings)
+        return record, cache
+
+    async def test_retry_with_shot_reuse_consent_is_recorded_and_resumes_without_changing_inputs(self):
+        record, cache = await self.shortage_retry_fixture()
+        cache.begin(6, "sig6")
+        cache.mark_retry_safe(6)
+        binding = record.draft_context["retry_binding"]
+        seen = {}
+        async def pipeline(execution, reporter, settings):
+            seen["consent"] = record.draft_context.get("shot_reuse")
+            raise RuntimeError("controlled local stop")
+        with patch("backend.task_manager.run_pipeline", side_effect=pipeline):
+            response = await self.service.retry(record, {"expected_revision": record.revision, "allow_shot_reuse": True})
+            await record.background
+        self.assertEqual(response["resume_from"], 3)
+        self.assertEqual(seen["consent"], {"accepted": True})
+        self.assertEqual(record.draft_context["shot_reuse"], {"accepted": True})
+        self.assertEqual(record.draft_context["retry_binding"], binding, "consent is not part of the input binding")
+
+    async def test_shot_reuse_consent_is_refused_unless_the_failure_was_a_shot_shortage(self):
+        record, _ = await self.shortage_retry_fixture()
+        record.error_kind = "transient"
+        with patch.object(self.manager, "enqueue_retry") as enqueue:
+            with self.assertRaises(HTTPException) as caught:
+                await self.service.retry(record, {"expected_revision": record.revision, "allow_shot_reuse": True})
+            enqueue.assert_not_called()
+        self.assertEqual(caught.exception.detail["code"], "shot_reuse_not_applicable")
+        self.assertNotIn("shot_reuse", record.draft_context)
+
+    async def test_shot_reuse_consent_must_be_the_exact_boolean_and_nothing_else(self):
+        record, _ = await self.shortage_retry_fixture()
+        for body in ({"expected_revision": record.revision, "allow_shot_reuse": "yes"},
+                     {"expected_revision": record.revision, "allow_shot_reuse": 1},
+                     {"expected_revision": record.revision, "allow_shot_reuse": True, "script": "x"},
+                     {"allow_shot_reuse": True}):
+            with patch.object(self.manager, "enqueue_retry") as enqueue, self.assertRaises(HTTPException) as caught:
+                await self.service.retry(record, body)
+            self.assertEqual(caught.exception.status_code, 422, body)
+            enqueue.assert_not_called()
+        self.assertNotIn("shot_reuse", record.draft_context)
+
+    async def test_failed_retry_rolls_the_shot_reuse_consent_back(self):
+        record, cache = await self.shortage_retry_fixture()
+        cache.begin(4, "uncertain-provider")  # a started provider receipt still blocks automatic resume
+        with patch.object(self.manager, "enqueue_retry") as enqueue, self.assertRaises(HTTPException) as caught:
+            await self.service.retry(record, {"expected_revision": record.revision, "allow_shot_reuse": True})
+        self.assertEqual(caught.exception.detail["code"], "retry_provider_uncertain")
+        enqueue.assert_not_called()
+        self.assertNotIn("shot_reuse", record.draft_context, "a refused retry must not leave a consent behind")
+
+    async def test_unconfirmed_stage_six_receipt_still_blocks_but_a_retry_safe_one_does_not(self):
+        record, cache = await self.shortage_retry_fixture()
+        cache.begin(6, "sig6")
+        with patch.object(self.manager, "enqueue_retry") as enqueue, self.assertRaises(HTTPException) as caught:
+            await self.service.retry(record, {})
+        self.assertEqual(caught.exception.detail["code"], "retry_provider_uncertain")
+        enqueue.assert_not_called()
+        cache.mark_retry_safe(6)
+        async def pipeline(execution, reporter, settings):
+            raise RuntimeError("controlled local stop")
+        with patch("backend.task_manager.run_pipeline", side_effect=pipeline):
+            response = await self.service.retry(record, {})
+            await record.background
+        self.assertEqual(response["resume_from"], 3)
 
     async def test_retry_uncertain_and_changed_sources_never_enqueue(self):
         record, cache = await self.retry_fixture()

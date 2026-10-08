@@ -160,6 +160,15 @@ for required_path in \
   fi
 done
 
+# The reviewed sample is never part of the archive. The host keeps it once at
+# /opt/golden-mic/samples (registry.json + default/); every release gets a copy so a
+# deploy never drops the demo. The server re-verifies every file's SHA-256 on use.
+SAMPLE_SOURCE=/opt/golden-mic/samples
+if [[ -f ${SAMPLE_SOURCE}/registry.json && ! -L ${SAMPLE_SOURCE} ]]; then
+  rm -rf -- "${TARGET}/backend/assets/samples"
+  cp -R --no-dereference -- "${SAMPLE_SOURCE}" "${TARGET}/backend/assets/samples"
+fi
+
 UV_BIN=$(command -v uv)
 PYTHON_BIN=$(command -v python3)
 install -d -o goldenmic -g goldenmic -m 0750 "${TARGET}/.venv"

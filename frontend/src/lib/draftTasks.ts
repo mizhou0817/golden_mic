@@ -27,9 +27,13 @@ export async function createDraftTask(mode: ProductionMode, signal: AbortSignal)
   }));
 }
 /** One promise for all picker/drop actions. An ambiguous POST is never replayed. */
+const REFUSED = new Set([409, 429, 503, 507]);
 export function draftTaskOnce(existing?: DraftAccess) {
   let pending: Promise<DraftAccess> | undefined = existing ? Promise.resolve(readDraftAccess(existing)!) : undefined;
-  return (mode: ProductionMode, signal: AbortSignal): Promise<DraftAccess> => pending ??= createDraftTask(mode, signal);
+  // An explicit refusal (busy, limit, draining, no space: nothing was created) is forgotten, so the next
+  // upload or retry can try again. An ambiguous failure (lost reply) is never replayed: it may have committed.
+  return (mode: ProductionMode, signal: AbortSignal): Promise<DraftAccess> => pending ??= createDraftTask(mode, signal)
+    .catch(error => { if (REFUSED.has((error as { status?: unknown } | null)?.status as number)) pending = undefined; throw error; });
 }
 /** Refresh is read-only: no create, complete, align, start or provider work. */
 export async function readDraftTask(access: DraftAccess, signal: AbortSignal): Promise<void> {

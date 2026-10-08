@@ -203,7 +203,7 @@ native crash or host teardown failure remains a failure; retain all artifacts.
 
 | Case | Real operations / evidence |
 |---|---|
-| V2-01 | Current heading `写稿`, default single A card then more modes, A/B 20-character minimum and 40-character title gate; actual sample GET (200 verified package, **503 legitimate absence**); numeric layout checks, no task |
+| V2-01 | Current heading `写稿`, all three mode cards always visible with A selected by default, A/B 20-character minimum and 40-character title gate; actual sample GET (200 verified package, **503 legitimate absence**); numeric layout checks, no task |
 | V2-02 | First file makes one draft; real scoped file receipt, 8 MiB chunk contract, preprocessing/ASR; saved `gm-modes-v1` refresh performs GET only with same task/file/upload IDs; no new create/complete/align/ASR; tokenless local file read 404; draft retained |
 | V2-03 | **Full eight-quote sample C exactly once**, seven synthetic inputs, all ten stages, native decoded 1080p frame, word-boundary trim `/apply`, real checks/PUT confirmations and MP4 Range retrieval; no TTS or repeated ASR; complete r0 hashes unchanged |
 | V2-04 | Short valid A, **four** b-roll inputs, all ten stages/tone TTS, text plus actual shot instruction in one `/apply`; two plan steps advance to internal revision **2**, with no published r1; checks and MP4 |

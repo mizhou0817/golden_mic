@@ -264,7 +264,7 @@ test('source contracts: explicit recording countdown, flush lifecycle, real cont
       assert.equal(h.calls.filter(c => c.init?.method && c.init.method !== 'GET').length, 0);
     } finally { h.stop(); }
   }
-  assert.match(source, /检查通过后才能导出/); assert.match(source, /开始导出/);
+  assert.match(source, /先勾选确认，再导出/); assert.match(source, /开始导出/); assert.match(source, /export-unresolved/);
   assert.match(css, /max-width: 1000px/); assert.match(css, /height: 6.5rem/); assert.match(css, /scroll-snap-type: x proximity/);
   assert.match(css, /var\(--teal, #237f4a\)/); assert.match(css, /var\(--gold, #f2b632\)/);
 });
@@ -415,6 +415,8 @@ function editorHarness(seed) {
       if (path.endsWith('/workbench/context')) return structuredClone(state.ctx);
       if (path.endsWith('/checks')) return structuredClone(state.checks);
       if (path.endsWith('/apply')) return applyReceipt();
+      if (path.endsWith('/exports') && init?.method === 'POST') return structuredClone(state.exportReply ?? { export_id: JOB, revision: state.ctx.revision, state: 'queued', output_id: null,
+        options: JSON.parse(init.body), error: null });
       if (path.endsWith('/restore')) return { task_id: TASK, current_revision: state.ctx.revision, revision: state.ctx.revision + 1, status: 'queued' };
       if (path.includes('/operations/')) return structuredClone(state.operation);
       if (path.endsWith('/versions/0')) return { revision: 0, report: { ...structuredClone(state.ctx.report), revision: 0 } };
@@ -439,7 +441,7 @@ test('editor multi-op commit keeps submission through intermediate revision, ref
       checks: [{ key: 'new', code: 'UNSEEN_HARD_BLOCK', level: 0, message: '新发现的问题需要处理', sentence_id: 1, checked: false, confirmable: true }] };
     h.visibility(true); h.visibility(false); await h.settle(); h.visibility(true);
     assert.equal(pend.readPending(TASK, h.storage).submitted, undefined); assert.deepEqual(plain(pend.readPending(TASK, h.storage).sentences), {});
-    assert.match(renderedText(h.tree()), /新发现的问题需要处理/); assert.equal(h.button('检查通过后才能导出').props.disabled, true);
+    assert.match(renderedText(h.tree()), /新发现的问题需要处理/); assert.equal(h.button('先勾选确认，再导出').props.disabled, true);
     assert.equal(h.calls.filter(c => c.path.endsWith('/apply')).length, 1);
     assert.equal(h.calls.filter(c => c.init?.method === 'PUT' || c.path.endsWith('/exports')).length, 0);
   } finally { h.stop(); }
@@ -487,10 +489,77 @@ test('stale pending edit does not hide or confirm an unseen server hard blocker 
       { key: 'new', code: 'NEW_UNKNOWN_HARD_BLOCK', level: 0, checked: false, confirmable: true, message: '新发现的阻止发布问题', sentence_id: 2, action: 'view' }] };
     h.visibility(true); h.visibility(false); await h.settle();
     assert.match(renderedText(h.tree()), /新发现的阻止发布问题/); assert.match(renderedText(h.tree()), /禁止自动覆盖/);
-    assert.equal(h.button('检查通过后才能导出').props.disabled, true);
+    // Unsent edits still block exporting outright, whatever the open checks say.
+    assert.equal(h.button('暂时不能导出').props.disabled, true);
     const summary = flat(h.tree()).find(n => n?.type === 'aside' && n.props['aria-labelledby'] === 'gm-rw-qc-summary-title');
     assert.equal(flat(summary).filter(n => n?.type === 'input' && n.props.type === 'checkbox').length, 0);
     assert.equal(h.calls.filter(c => c.init?.method === 'PUT' || c.init?.method === 'POST').length, 0);
+  } finally { h.stop(); }
+});
+const openGate = (extra = []) => ({ ...gate(), passed: false, blocking_count: 1, pending_count: 1, checks: [
+  { key: 'err', code: 'MATCH_FALLBACK', level: 0, message: '该播音单元使用了无语义保证的兜底镜头。', sentence_id: 2, checked: false, confirmable: false, action: 'view' },
+  { key: 'warn', code: 'LOW_MATCH_CONFIDENCE', level: 1, message: '匹配置信度偏低。', sentence_id: 0, checked: false, confirmable: true, action: 'view' }, ...extra] });
+const exportPosts = h => h.calls.filter(c => c.path.endsWith('/exports') && c.init?.method === 'POST');
+const primary = (h, label) => flat(h.tree()).find(n => n?.type === 'button' && n.props.className === 'gm-rw-primary' && renderedText(n) === label);
+const acceptBox = h => flat(h.tree()).find(n => n?.type === 'input' && n.props['data-control'] === 'export-accept-unresolved');
+test('export with open checks: they are listed first, the button stays off until accepted, then exactly one acknowledged POST', async () => {
+  const h = editorHarness(); h.state.checks = openGate();
+  try {
+    h.render(); await h.settle();
+    const text = renderedText(h.tree());
+    assert.match(text, /有 2 项检查没有通过/); assert.match(text, /无语义保证的兜底镜头/); assert.match(text, /匹配置信度偏低/);
+    assert.match(text, /第 3 句：/); assert.match(text, /错误/); assert.match(text, /待确认/);
+    assert.equal(h.button('先勾选确认，再导出').props.disabled, true);
+    const before = h.calls.length; h.button('先勾选确认，再导出').props.onClick(); await h.settle();
+    assert.equal(h.calls.length, before, 'a click before accepting sends nothing, not even a read');
+    assert.equal(acceptBox(h).props.checked, false);
+    acceptBox(h).props.onChange({ target: { checked: true } }); await h.settle();
+    assert.equal(h.button('仍然导出（带未通过的检查）').props.disabled, false);
+    h.button('仍然导出（带未通过的检查）').props.onClick(); await h.settle();
+    const posts = exportPosts(h); assert.equal(posts.length, 1);
+    assert.deepEqual(plain(JSON.parse(posts[0].init.body)), { fmt: 'mp4', aspect: '16:9', res: '1080p', sub: 'std', acknowledge_unresolved: true, expected_revision: h.state.ctx.revision });
+    assert.ok(h.calls.findIndex(c => c.path.endsWith('/checks')) < h.calls.findIndex(c => c.path.endsWith('/exports')), 'the gate is re-read right before the POST');
+  } finally { h.stop(); }
+});
+test('the acknowledgement does not survive a change in the open checks', async () => {
+  const h = editorHarness(); h.state.checks = openGate();
+  try {
+    h.render(); await h.settle(); acceptBox(h).props.onChange({ target: { checked: true } }); await h.settle();
+    // A new problem appears on the server between the user's tick and the click.
+    h.state.checks = openGate([{ key: 'late', code: 'NEW_ERROR', level: 0, message: '新冒出来的问题。', sentence_id: 1, checked: false, confirmable: false, action: 'view' }]);
+    h.button('仍然导出（带未通过的检查）').props.onClick(); await h.settle();
+    assert.equal(exportPosts(h).length, 0, 'nothing is exported for a list the user never saw');
+    assert.match(renderedText(h.tree()), /发生了变化|重新查看/);
+  } finally { h.stop(); }
+});
+test('a fully passing gate exports exactly as before, with no acknowledgement flag; an inconsistent not-passed gate with no listed check never exports', async () => {
+  const pass = editorHarness();
+  try {
+    pass.render(); await pass.settle();
+    assert.equal(primary(pass, '开始导出').props.disabled, false); assert.doesNotMatch(renderedText(pass.tree()), /项检查没有通过/);
+    primary(pass, '开始导出').props.onClick(); await pass.settle();
+    assert.equal(exportPosts(pass).length, 1); assert.equal('acknowledge_unresolved' in JSON.parse(exportPosts(pass)[0].init.body), false);
+  } finally { pass.stop(); }
+  const odd = editorHarness();
+  try {
+    odd.render(); await odd.settle();
+    odd.state.checks = { ...gate(), passed: false, blocking_count: 4, pending_count: 0, checks: [] };
+    primary(odd, '开始导出').props.onClick(); await odd.settle();
+    assert.equal(exportPosts(odd).length, 0);
+  } finally { odd.stop(); }
+});
+test('a job exported with open checks says so and stays downloadable while the work is otherwise ready', async () => {
+  const h = editorHarness(); h.state.checks = openGate();
+  h.state.exportReply = { export_id: JOB, revision: h.state.ctx.revision, state: 'succeeded', output_id: JOB, error: null,
+    options: { fmt: 'mp4', aspect: '16:9', res: '1080p', sub: 'std', expected_revision: h.state.ctx.revision, acknowledge_unresolved: true },
+    result: { bytes: 1234, duration: 3.5 }, unresolved: { blocking: 1, pending: 1, qc_blockers: true } };
+  try {
+    h.render(); await h.settle(); acceptBox(h).props.onChange({ target: { checked: true } }); await h.settle();
+    h.button('仍然导出（带未通过的检查）').props.onClick(); await h.settle();
+    const text = renderedText(h.tree());
+    assert.match(text, /这份文件是在检查未通过时导出的：错误 1 项、待确认 1 项，另有制作质检的阻断项/);
+    const link = flat(h.tree()).find(n => n?.type === 'a' && String(n.props.href).includes(`/exports/${JOB}/file`));
+    assert.ok(link, 'download link is offered for an acknowledged export');
   } finally { h.stop(); }
 });
 test('apply boundary enforces server row text, instruction, speaker role and identity limits before POST', async () => {

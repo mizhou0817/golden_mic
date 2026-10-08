@@ -284,12 +284,13 @@ async function queue(scenario) {
   const controllers = files.map(() => new AbortController()), sessions = new Map(), uploadsRef = { current: {} };
   const operations = { current: new Map(files.map((f, i) => [f.id, controllers[i]])) };
   const jobs = { current: files.map((f, i) => ({ itemId: f.id, file: f.file, controller: controllers[i], probe: true })) };
-  const filesRef = { current: files }, completed = [], observed = []; let errors = {}, failOnce = true;
+  const filesRef = { current: files }, completed = [], observed = [], blocks = []; let errors = {}, failOnce = true;
   const limits = { max_files: 20, max_upload_bytes: 500 * 1024 ** 2, max_total_upload_bytes: 5 * 1024 ** 3, max_script_length: 8000 };
   const context = { exports: {}, filesRef, uploadsRef, operations, jobs, mounted: { current: true }, transferRunning: { current: false },
     initialDraft: {}, draftAccessRef: { current: h.scope }, draftController: { current: null }, limits, cap: h.media.mediaLimits(limits),
     urls: { current: new Set() }, URL, releaseUrl() {}, setNotice() {}, setHashProgress() {}, setDraftAccess() {}, setUploads() {},
-    setUploadErrors(fn) { errors = fn(errors); }, errorMessage: () => 'STATIC action failed',
+    setUploadErrors(fn) { errors = fn(errors); }, errorMessage: () => 'STATIC action failed', uploadErrorText: () => scenario === 'capacity' ? 'REASON' : 'STATIC action failed',
+    isCapacityFailure: error => scenario === 'capacity' && error?.status === 429, setUploadBlock(value) { blocks.push(value); },
     sessionFor: key => sessions.get(key), rememberSession(s) { sessions.set(s.file_id, s); },
     updateFile(key, patch) { Object.assign(filesRef.current.find(f => f.id === key), patch); },
     reconcileServerProbe: h.uploads.reconcileServerProbe, transferComplete: h.uploads.transferComplete,
@@ -301,6 +302,7 @@ async function queue(scenario) {
       throw new h.media.BrowserProbeError('unsupported', 'STATIC unsupported');
     },
     async uploadFile(file, signal, callbacks, resume, scope, metadataOnly) {
+      if (scenario === 'capacity' && file.name === 'fixture-2.mkv') throw Object.assign(Error('quota'), { status: 429 });
       if (!resume) h.m.admitFiles(1);
       return h.uploads.uploadFile(file, signal, callbacks, resume, scope, metadataOnly);
     },
@@ -326,8 +328,46 @@ async function queue(scenario) {
     jobs.current.push({ itemId: f.id, file: f.file, controller, probe: false });
     await context.drain();
   }
-  return { h, context, files, completed, observed, errors: () => errors, manual };
+  return { h, context, files, completed, observed, blocks, errors: () => errors, manual, jobs, operations };
 }
+function wizardConsts(...names) {
+  return names.map(name => {
+    const found = [];
+    const visit = n => { if (ts.isVariableStatement(n) && n.declarationList.declarations.some(d => d.name.getText(wizardAst) === name)) found.push(n); ts.forEachChild(n, visit); };
+    visit(wizardAst); check(found.length === 1); return found[0].getText(wizardAst);
+  }).join('\n');
+}
+test('upload failures are explained in plain words by status; nothing raw is echoed and only capacity refusals pause the queue', () => {
+  const sandbox = {}; vm.runInNewContext(compile(wizardConsts('errorMessage', 'errorStatus', 'isCapacityFailure') + '\n' + declaration('uploadErrorText')
+    + '\nthis.text = uploadErrorText; this.capacity = isCapacityFailure; this.generic = errorMessage;'), sandbox);
+  const err = (status, message = '') => Object.assign(new Error(message), { status });
+  assert.match(sandbox.text(err(429, '当前会话最多保留 20 个文件，合计不超过 5 GiB。')), /当前会话最多保留 20 个文件.*请先移除不需要的素材.*我的作品/s);
+  assert.match(sandbox.text(err(413, 'Task upload budget exceeded')), /素材总量超过了服务器允许的上限/);
+  assert.doesNotMatch(sandbox.text(err(413, 'Task upload budget exceeded')), /Task upload budget/);
+  assert.match(sandbox.text(err(507, 'Insufficient shared upload/task storage')), /服务器磁盘空间不足/);
+  assert.doesNotMatch(sandbox.text(err(507, 'Insufficient shared upload/task storage')), /Insufficient/);
+  assert.equal(sandbox.text(err(429, 'x'.repeat(300))), sandbox.generic(), 'an oversized message is never shown');
+  for (const other of [err(500, 'boom'), err(404, 'x'), new Error('network down'), 'text', null, undefined]) assert.equal(sandbox.text(other), sandbox.generic());
+  for (const capacity of [429, 507, 413]) assert.equal(sandbox.capacity(err(capacity)), true, String(capacity));
+  for (const other of [err(500), err(401), err(404), err(409), err(422), new Error('x'), null, undefined, 'x', {}]) assert.equal(sandbox.capacity(other), false);
+});
+test('a capacity refusal pauses the queue: later files are not attempted one by one, each says why, and the reason is kept', async () => {
+  const q = await queue('capacity');
+  const [first, second, third] = q.files;
+  assert.equal(q.jobs.current.length, 0, 'nothing stays queued behind a refusal');
+  assert.equal(q.operations.current.has(second.id), false); assert.equal(q.operations.current.has(third.id), false, 'the dropped job no longer holds its slot');
+  assert.equal(q.errors()[first.id], undefined, 'the file before the refusal went through');
+  assert.equal(q.errors()[second.id], 'REASON');
+  assert.equal(q.errors()[third.id], '没有开始上传：REASON');
+  assert.deepEqual(plain(q.blocks), ['', 'REASON'], 'the pause reason is published; the earlier success had cleared any older one');
+  assert.equal(q.h.calls.some(c => c.path.includes('fixture-3')), false, 'the third file never reached the server');
+  assert.equal(q.context.uploadsRef.current && Object.keys(q.context.uploadsRef.current).length, 1);
+  // Explicit retry of a dropped file works as before (it is just a new job).
+  q.operations.current.set(third.id, new AbortController());
+  q.jobs.current.push({ itemId: third.id, file: third.file, controller: q.operations.current.get(third.id), probe: false });
+  await q.context.drain();
+  assert.equal(q.jobs.current.length, 0);
+});
 test('actual wizard queue plus actual TS upload: last invalid file leaves metadata-only peers; explicit continuation progresses all', async () => {
   const q = await queue('last-invalid');
   assert.equal(q.completed.length, 0);

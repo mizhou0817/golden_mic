@@ -13,7 +13,8 @@ export const parentPath = file => path.dirname(file);
 export const basename = file => path.basename(file);
 export const absolute = file => path.isAbsolute(file);
 export const samePath = (a, b) => path.relative(path.resolve(a), path.resolve(b)) === '';
-export const tempRoot = () => os.tmpdir();
+// macOS reports a symlinked tmpdir (/var -> /private/var); use the canonical path.
+export const tempRoot = () => fs.realpathSync(os.tmpdir());
 export const newInstance = () => randomUUID();
 export const say = text => process.stdout.write(text);
 export const bytesHash = bytes => createHash('sha256').update(bytes).digest('hex');

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { CreateWizard, defaultPreferences } from './CreateWizard';
+import ScriptAssistant from './ScriptAssistant';
 import type { CreateSubmission, Draft } from './CreateWizard';
 import Processing from './Processing';
 import ResultWorkbench from './ResultWorkbench';
@@ -18,7 +19,7 @@ import { readUploadBindings, readUploadTokens, validUploadId } from '../lib/uplo
 import { createSubmissionRecovery } from '../lib/submissionRecovery';
 import Icon from './ui/Icon';
 import IntroCard from './ui/IntroCard';
-import SampleView from './ui/SampleView';
+import SampleView, { type SampleTry } from './ui/SampleView';
 import './ui/tokens.css';
 import { v2Persistence } from '../lib/v2Persistence';
 import { historyChecksLabel, parseHistoryChecks } from '../lib/historyChecks';
@@ -34,6 +35,8 @@ const MAX_DRAFT_LENGTH = 512 * 1024;
 const MAX_CORE_LENGTH = 2 * 1024 * 1024;
 const MAX_SCRIPT_LENGTH = 100_000;
 type Page = WorkspaceScreen;
+/** submit() shows this right after the server accepts a work; it is cleared once the real status has been read. */
+const RECEIVED_NOTICE = '服务器已确认接收作品。正在核验实际制作状态；请勿重复提交。';
 type Route = { page: 'create' | 'gone'; invalid?: boolean; drawer?: boolean } | { page: 'work'; id: string } | { page: 'sample' };
 type WorkspaceConfig = { local_history: boolean; generative_fill_available: boolean };
 type Selection = { id: string; token?: string; title: string; mode?: ProductionMode; scope: AbortController; request: AppRequest };
@@ -298,7 +301,9 @@ const restoredDraftNote = (draft: Draft | null) => draft
  * Recompute each key: busy/uncertain states change the available controls. */
 function containDialogTab(event: React.KeyboardEvent<HTMLDialogElement>) {
   const dialog = event.currentTarget;
-  if (event.key !== 'Tab' || event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey
+  // macOS Safari only tabs onto buttons/links with Option+Tab; elsewhere Alt+Tab belongs to the OS.
+  const optionTab = event.altKey && typeof navigator !== 'undefined' && /^(Mac|iPhone|iPad)/.test(navigator.platform);
+  if (event.key !== 'Tab' || event.defaultPrevented || event.ctrlKey || (event.altKey && !optionTab) || event.metaKey
       || !dialog.open || !dialog.matches(':modal')) return;
   const available = Array.from(dialog.querySelectorAll<HTMLElement>('input, button, select, textarea, a[href], [tabindex]'))
     .filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && !element.closest('[inert]')
@@ -425,6 +430,8 @@ export default function Workspace() {
   const [task, setTask] = useState<TaskStatusResponse | null>(null);
   const [error, setError] = useState('invalid' in initial.route && initial.route.invalid ? '作品链接格式不正确，请从左侧作品列表重新打开。' : '');
   const [notice, setNotice] = useState(''); const [missing, setMissing] = useState<string | null>(null);
+  // The accepted work's real status has now been read: the "verifying" banner has done its job.
+  useEffect(() => { if (task?.status) setNotice(current => current === RECEIVED_NOTICE ? '' : current); }, [task?.task_id, task?.status]);
   const [missingReason, setMissingReason] = useState<GoneReason>('inaccessible');
   const [rename, setRename] = useState<RenameSpec | null>(null); const [duplicateChoice, setDuplicateChoice] = useState(false);
   const [limits, setLimits] = useState<PublicLimits | null>(null); const [limitsError, setLimitsError] = useState('');
@@ -454,6 +461,7 @@ export default function Workspace() {
     + (initial.draft.legacyFiles ? `旧版 ${initial.draft.legacyFiles} 个文件只有名称摘要，无法据此确认上传；请重新选择。` : ''));
   const [draftNeedsClear, setDraftNeedsClear] = useState(false);
   const [wizardSeed, setWizardSeed] = useState<Draft | null>(initial.draft.value);
+  const [wizardFiles, setWizardFiles] = useState<File[] | undefined>(undefined);
   const [wizardMounted, setWizardMounted] = useState(initial.route.page === 'create'); const wizardActive = useRef(wizardMounted);
   const [wizardKey, setWizardKey] = useState(0); const wizardGeneration = useRef(0); const firstDraftEmission = useRef(true);
   const [upload, setUpload] = useState<UploadProgress | null>(null); const [uploading, setUploading] = useState(false);
@@ -734,10 +742,10 @@ export default function Workspace() {
     }
   }
   function unmountWizard() { wizardActive.current = false; setWizardMounted(false); clearTimeout(draftTimer.current); }
-  function mountWizard(seed: Draft | null) {
+  function mountWizard(seed: Draft | null, files?: File[]) {
     // Every genuine remount gets its own callback generation, including the
     // first blank creator opened after a successfully submitted draft.
-    wizardGeneration.current++; setWizardKey(wizardGeneration.current);
+    wizardGeneration.current++; setWizardKey(wizardGeneration.current); setWizardFiles(files);
     firstDraftEmission.current = true; setWizardSeed(seed); setWizardStep(seed?.step ?? 1); wizardActive.current = true; setWizardMounted(true);
   }
   const cancelReads = useCallback(() => {
@@ -912,12 +920,14 @@ export default function Workspace() {
   function processingStarted() {
     selectedReadController.current?.abort(); setTask(null); setError(''); showPage('processing'); setTaskRetry(value => value + 1); refreshHistory();
   }
-  async function editFailedDraft(step: 1 | 2 = 1, mode?: ProductionMode) {
+  async function editFailedDraft(step: 1 | 2 = 1, mode?: ProductionMode, options: { allowShotReuse?: boolean } = {}) {
+    const reuse = options.allowShotReuse === true;
     const target = selectedRef.current;
-    const sourcePage = mode === undefined ? 'processing' : 'result';
+    // A failed task on the processing page may also switch mode (e.g. fall back to AI voiceover).
+    const sourcePage = mode === undefined || task?.status === 'failed' ? 'processing' : 'result';
     if (!target || actionLock.current || intentRef.current || pageRef.current !== sourcePage
         || target.scope.signal.aborted || !task || task.task_id !== target.id
-        || task.status !== (mode === undefined ? 'failed' : 'done') || mode !== undefined && (!isProductionMode(mode) || step !== 1)) return;
+        || task.status !== (sourcePage === 'processing' ? 'failed' : 'done') || mode !== undefined && (!isProductionMode(mode) || step !== 1)) return;
     const serial = generation.current;
     const isCurrent = () => alive.current && selectedRef.current === target && serial === generation.current
       && !target.scope.signal.aborted && !intentRef.current && pageRef.current === sourcePage;
@@ -927,6 +937,8 @@ export default function Workspace() {
       setError('缺少原任务的访问凭据，无法恢复。现有草稿保留；不会从报告或旧浏览器快照补造原稿。');
       return;
     }
+    if (reuse && (task.errorKind !== 'shortage' || task.mode === 'original')) return;
+    if (reuse && !window.confirm('允许画面重复出现吗？新草稿会记下这个选择：素材里互不相同的画面不够时，同一段素材会在不同时刻重复出现（不是定格补帧）。原作品不变，需要你确认后才会重新提交制作（可能产生费用）。')) return;
     if ((hasDraftContent(draftRef.current) || draftDirty.current || draftBlocked.current || draftNeedsClear)
         && !window.confirm('用这条任务提交时的原稿和素材清单替换当前创作草稿？另一份未提交草稿将被替换，服务器作品不变。')) return;
     if (!isCurrent()) return;
@@ -935,13 +947,13 @@ export default function Workspace() {
         if (!isCurrent()) return;
         // Exactly one POST. A lost/invalid receipt is ambiguous, never a retry.
         const value = await target.request<unknown>(`${pathFor(target.id)}/recover-draft`, {
-          method: 'POST', body: JSON.stringify({ step, ...(mode === undefined ? {} : { mode }) }), signal: target.scope.signal,
+          method: 'POST', body: JSON.stringify({ step, ...(mode === undefined ? {} : { mode }), ...(reuse ? { allow_shot_reuse: true } : {}) }), signal: target.scope.signal,
         });
         if (!isObject(value) || value.task_id === target.id || value.status !== 'draft' || value.accepted !== false
             || !isObject(value.recovery) || value.recovery.source_task_id !== target.id
             || value.recovery.task_id !== value.task_id || value.step !== step || !Array.isArray(value.files)
             || !value.files.length || value.files.length > 20
-            || mode !== undefined && value.mode !== mode) throw new Error('恢复回执无效。');
+            || mode !== undefined && value.mode !== mode || reuse && value.shot_reuse_accepted !== true) throw new Error('恢复回执无效。');
         const metadata = value.files.map(file => {
           if (!isObject(file) || file.status !== 'ready' || file.token !== value.access_token
               || file.access_token !== value.access_token || file.bytes !== file.size
@@ -976,7 +988,7 @@ export default function Workspace() {
         draftDirty.current = false; draftBlocked.current = false; setDraftPending(false); setDraftProblem(''); setDraftNeedsClear(false);
         setDraftSavedAt(savedAt); clearTimeout(draftTimer.current);
         mountWizard(seed); showPage('create'); writeHash('#create'); setDraftStatus(restoredDraftNote(seed));
-        setNotice('已保存独立恢复草稿，原任务保持不变。原稿、素材和已核验转录已复制，无需重选完整素材；未重复 ASR、扣制作次数或开始制作。请重新确认编辑后再提交。');
+        setNotice(`已保存独立恢复草稿，原任务保持不变。原稿、素材和已核验转录已复制，无需重选完整素材；未重复 ASR、扣制作次数或开始制作。${reuse ? '已记下“允许画面重复出现”：镜头不够时同一素材会在不同时刻重复使用。' : ''}请重新确认编辑后再提交。`);
       });
     } catch (failure) {
       if (isCurrent()) {
@@ -1055,30 +1067,34 @@ export default function Workspace() {
     try { await action(); }
     finally { actionLock.current = false; if (alive.current) setBusy(false); }
   }
-  function retryOriginal() {
+  // allowShotReuse: the user explicitly accepts repeated footage after a "not enough distinct shots" failure.
+  function retryOriginal(options: { allowShotReuse?: boolean } = {}) {
+    const reuse = options.allowShotReuse === true;
     const target = selectedRef.current;
     if (!target || actionLock.current || intentRef.current || pageRef.current !== 'processing'
         || target.scope.signal.aborted || !task || task.task_id !== target.id || task.status !== 'failed') return;
     const v2 = task.lifecycle_v2 === true;
     if (v2 ? task.retry_same_supported !== true : task.revision !== 0) return;
-    if (task.errorKind && !['network', 'transient'].includes(task.errorKind)) return;
+    if (reuse ? !v2 || task.errorKind !== 'shortage' || task.mode === 'original'
+      : task.errorKind && !['network', 'transient'].includes(task.errorKind)) return;
     if (!serviceReady) { setError('制作服务尚未就绪，请先重新检查服务。不会提交重试。'); return; }
     const serial = generation.current;
     const isCurrent = () => alive.current && selectedRef.current === target && serial === generation.current
       && !target.scope.signal.aborted && !intentRef.current && pageRef.current === 'processing';
-    setDialog({ title: v2 ? '继续这次制作？' : '用原素材重新制作？',
-      text: v2 ? '先核验已完成步骤的缓存，再从未完成处继续。同一作品只提交一次重试，不重新上传，不新增提交次数；无法安全续作时会停止。'
-        : '将使用服务器保存的原稿和原素材，从第一步重新运行，不是断点续作。AI 服务可能再次收费；只会在你确认后提交一次。', confirm: v2 ? '再试一次' : '确认重新制作',
+    setDialog({ title: reuse ? '接受重复使用画面吗？' : v2 ? '继续这次制作？' : '用原素材重新制作？',
+      text: reuse ? '你的素材里互不相同的画面不够，没法让每一句话都配上不同的镜头。选择“接受并继续”后，同一段素材会在不同时刻重复出现（同一场景的不同片段，不是定格补帧）；素材实在不够时会循环使用这些真实片段、优先用最相关的画面，保证能做完，借用的画面会在检查里标出，做完后可以在结果页换画面。已完成的前几步不会重做，只从“给每句话找画面”继续，可能产生少量 AI 费用。不想重复画面，请取消，回去删减稿子或多传素材。'
+        : v2 ? '先核验已完成步骤的缓存，再从未完成处继续。同一作品只提交一次重试，不重新上传，不新增提交次数；无法安全续作时会停止。'
+        : '将使用服务器保存的原稿和原素材，从第一步重新运行，不是断点续作。AI 服务可能再次收费；只会在你确认后提交一次。', confirm: reuse ? '接受并继续' : v2 ? '再试一次' : '确认重新制作',
       action: () => { if (!isCurrent()) return Promise.resolve(); return mutate(async () => {
         let current: TaskStatusResponse;
         try { current = parseTask(await target.request<unknown>(pathFor(target.id))); }
         catch { if (isCurrent()) setError('暂时无法确认任务状态。请先重新读取状态，没有提交重试。'); return; }
         if (!isCurrent()) return;
         if (current.task_id !== target.id || current.status !== 'failed' || current.revision !== task.revision || (v2 ? current.lifecycle_v2 !== true || current.retry_same_supported !== true : current.lifecycle_v2 === true || current.revision !== 0)
-            || current.errorKind && !['network', 'transient'].includes(current.errorKind)) throw new Error('任务状态已经变化，请返回并重新读取状态。');
+            || (reuse ? current.errorKind !== 'shortage' : current.errorKind && !['network', 'transient'].includes(current.errorKind))) throw new Error('任务状态已经变化，请返回并重新读取状态。');
         let accepted = false;
         try {
-          const receipt = await target.request<unknown>(`${pathFor(target.id)}/retry`, { method: 'POST', body: JSON.stringify({ expected_revision: current.revision }) });
+          const receipt = await target.request<unknown>(`${pathFor(target.id)}/retry`, { method: 'POST', body: JSON.stringify({ expected_revision: current.revision, ...(reuse ? { allow_shot_reuse: true } : {}) }) });
           accepted = isObject(receipt) && receipt.task_id === target.id && (receipt.id === undefined || receipt.id === target.id)
             && receipt.status === 'queued' && (receipt.accepted === undefined || receipt.accepted === true)
             && (v2 ? receipt.revision === undefined || receipt.revision === current.revision : receipt.revision === current.revision);
@@ -1228,6 +1244,18 @@ export default function Workspace() {
     }
     setDrawer(false); setIntroDismissed(false); preference('introDismissed', false);
   }
+  function trySample(value: SampleTry) {
+    // Same reset as "新建空白", then the sample's script, mode and real clips go into a fresh draft.
+    if ((hasDraftContent(draftRef.current) || draftDirty.current || draftBlocked.current || draftNeedsClear)
+        && !window.confirm('用范例自己做一遍会替换当前的创作草稿，并释放已选择的素材和录音。已有服务器作品不会被删除。继续？')) return;
+    cancelReads(); unmountWizard(); setSample(false); draftSuppressed.current = true; draftRef.current = null; draftSaved.current = ''; draftDirty.current = false;
+    clearDraftCache(); select(null); setTask(null); setUpload(null); setError(''); setMissing(null); setDrawer(false); setDialog(null);
+    draftSuppressed.current = false; showPage('create');
+    mountWizard({ script: value.script, mode: value.mode, step: 1, preferences: defaultPreferences(value.mode),
+      files: [], elements: {}, sentenceChecks: {} }, value.files);
+    writeHash('#create');
+    setDraftStatus(`已放入范例稿件和 ${value.files.length} 段范例素材，素材正在后台上传。核对稿件后点“下一步：传素材”，之后和平时一样操作。`);
+  }
   function openSample(confirmed = false) {
     if (!confirmed && !canLeave()) return;
     leaveCreator(); cancelReads(); unmountWizard(); select(null); setTask(null);
@@ -1331,7 +1359,8 @@ export default function Workspace() {
       {/* Keep this exact subtree mounted only across create -> upload -> failed
           submit. Moving it inside a page conditional would discard real Files. */}
       {wizardMounted && limits && configResolved && <div className="shell-wizard-host" hidden={page !== 'create' || !!intent}>
-        <CreateWizard key={wizardKey} limits={limits} initialDraft={wizardSeed} generativeAllowed={config?.generative_fill_available === true}
+        <CreateWizard key={wizardKey} limits={limits} initialDraft={wizardSeed} initialFiles={wizardFiles} generativeAllowed={config?.generative_fill_available === true}
+          scriptAssistant={context => <ScriptAssistant {...context} />}
           intro={!introDismissed && wizardStep === 1 ? <IntroCard onStart={dismissIntro} onSample={() => openSample()} /> : undefined}
           busy={uploading || busy} serviceReady={serviceReady} onDraft={value => receiveDraft(value, wizardKey)} onSubmit={submit} onError={setError} />
       </div>}
@@ -1341,7 +1370,7 @@ export default function Workspace() {
       {!intent && page === 'processing' && <Processing task={task} upload={upload} uploading={uploading} error={error} now={now} title={title}
         mode={activeMode} busy={busy} onCancel={deleteSelected} onRetry={retryOriginal} onEdit={editFailedDraft} onNew={() => newBlank(true)}
         onRefresh={() => { setTaskRetry(value => value + 1); refreshHistory(); }} />}
-      {!intent && page === 'result' && sample && <SampleView onBack={() => navigate('create')} />}
+      {!intent && page === 'result' && sample && <SampleView onBack={() => navigate('create')} onTry={trySample} />}
       {!intent && page === 'result' && selection && task?.status === 'done' && <>
         <div className="shell-actions shell-result-tools"><span>{title}</span><button type="button" onClick={() => {
           const url = new URL(hashFor(selection.id), location.origin); const serial = generation.current;

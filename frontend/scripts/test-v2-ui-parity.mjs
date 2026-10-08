@@ -85,10 +85,13 @@ test('SSR empty A is StepBar → Intro → step card with exact opening copy and
   assert.ok(html.indexOf('aria-label="制作步骤"') < html.indexOf('aria-label="使用引导"'));
   assert.ok(html.indexOf('aria-label="使用引导"') < html.indexOf('class="gm-wizard-card"'));
   assert.equal((html.match(/<h1\b/g) ?? []).length, 1);
-  assert.match(html, /第一行是标题。/); assert.match(html, /把新闻稿粘贴到这里……/);
+  assert.match(html, /第一行是标题。/); assert.match(html, /直接粘贴新闻稿到这里，或自己写/);
   assert.match(html, /0 \/ 3000 字/); assert.doesNotMatch(html, /0 \/ 8000/);
-  assert.equal((html.match(/class="gm-mode-card"/g) ?? []).length, 1);
-  assert.match(html, /data-collapsed="true"/);
+  // All three modes are shown from the start, nothing is collapsed; AI voiceover is the pre-selected default.
+  assert.equal((html.match(/class="gm-mode-card"/g) ?? []).length, 3);
+  assert.doesNotMatch(html, /data-collapsed|gm-mode-more|更多制作方式/);
+  assert.match(html, /<button type="button" aria-pressed="true" class="gm-mode-card"[^>]*>(?:(?!<\/button>)[\s\S])*AI 配音/);
+  assert.equal((html.match(/aria-pressed="true" class="gm-mode-card"/g) ?? []).length, 1);
   const tip = html.match(/<details class="gm-tip">[\s\S]*?<\/details>/)?.[0];
   assert.ok(tip); assert.equal((tip.match(/<li>/g) ?? []).length, 4);
   assert.match(tip, /制作后请核对实际读音/); assert.doesNotMatch(tip, /AI 会读对/);

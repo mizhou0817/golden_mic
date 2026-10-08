@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import nodeTest from 'node:test';
 import { request } from 'node:http';
 import { connect } from 'node:net';
-import { mkdtempSync, writeFileSync, readFileSync, unlinkSync, linkSync, mkdirSync, rmSync } from 'node:fs';
+import { realpathSync, mkdtempSync, writeFileSync, readFileSync, unlinkSync, linkSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +10,7 @@ import { validateOrigin, matchesDownload, downloadGuard, startDownloadTransport,
 
 const direct = !!process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 // Each execution gets a fresh safe receipt; no raw assertion/HTTP error escapes.
-const evidence = direct ? mkdtempSync(join(tmpdir(), 'gm-final-download-units-')) : null;
+const evidence = direct ? mkdtempSync(join(realpathSync(tmpdir()), 'gm-final-download-units-')) : null;
 const outcomes = [];
 const test = (name, fn) => { if (direct) nodeTest(name, async () => {
   let passed = false;
@@ -132,7 +132,7 @@ test('owned regular file exact size bytes hash removal and hardlink denial', asy
   try {
     assert.deepEqual(inspectOwnedFile(file, dir, bytes), { bytes: bytes.length, sha256: digest(bytes) });
     assert.throws(() => inspectOwnedFile(file, dir, Buffer.from('wrong')));
-    assert.throws(() => inspectOwnedFile(file, tmpdir(), bytes));
+    assert.throws(() => inspectOwnedFile(file, realpathSync(tmpdir()), bytes));
     linkSync(file, alias); assert.throws(() => inspectOwnedFile(file, dir, bytes)); unlinkSync(alias);
     assert.deepEqual(await cleanupDownload({ failure: async () => null, path: async () => file, delete: async () => unlinkSync(file) }), { kind: 'success', deleteRejected: false });
   } finally { rmSync(dir, { recursive: true, force: true }); }

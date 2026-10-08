@@ -53,12 +53,12 @@ async function trim(page: Page, index: number) {
 }
 function writes(m: V2Run) { return m.observations.filter(o => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(o.method)); }
 
-test('V2-01 current shell, collapsed modes, real sample availability and responsive create', { tag: ['@v2', '@shell'] }, async ({ v2: m, page }) => {
+test('V2-01 current shell, all three modes visible, real sample availability and responsive create', { tag: ['@v2', '@shell'] }, async ({ v2: m, page }) => {
   await creator(page, 'voiceover');
   const cards = page.getByRole('group', { name: '制作模式', exact: true });
-  await expect(cards.getByRole('button')).toHaveCount(1);
-  await page.getByRole('button', { name: /^更多制作方式/ }).click();
   await expect(cards.getByRole('button')).toHaveCount(3);
+  await expect(page.locator('.gm-mode-more')).toHaveCount(0);
+  await expect(cards.getByRole('button', { name: /AI 配音/ })).toHaveAttribute('aria-pressed', 'true');
   await scriptBox(page).fill('标题\n太短');
   await expect(page.getByRole('button', { name: '下一步：传素材', exact: true })).toBeDisabled();
   await scriptBox(page).fill('题'.repeat(41) + '\n色块画面缓缓移动，测试图案清晰可见。');

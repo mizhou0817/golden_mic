@@ -50,6 +50,12 @@ _VISUAL_STOP_TERMS = {
     "引来众多品尝者",
     "科技感十足",
     "特色小吃",
+    "人气十足",
+    "十足",
+    "欢迎",
+    "正浓",
+    "涌动",
+    "亮相",
 }
 
 
@@ -81,6 +87,12 @@ class EntityVerifier(Protocol):
 
 class MatchingError(RuntimeError):
     """Raised when semantic matching cannot produce a complete plan."""
+
+
+class ShotShortageError(MatchingError):
+    """Not enough distinct usable shots; the user can trim the script or add footage."""
+
+    error_kind = "shortage"
 
 
 @dataclass
@@ -456,7 +468,9 @@ def _classify_visual_intent(
 
 def extract_retrieval_terms(text: str) -> list[str]:
     normalized = re.sub(r"[“”‘’《》()（）]", "", text)
-    raw_terms = [term.strip() for term in re.split(r"[\s，。！？；：、,/]+", normalized) if term.strip()]
+    # Connector words split "腊肉腊肠等传统年货" into "腊肉腊肠" and "传统年货", so a clip described
+    # as "烟熏腊肠" can still be recognised by "腊肠" instead of needing the whole clause verbatim.
+    raw_terms = [term.strip() for term in re.split(r"[\s，。！？；：、,/]+|等|和|与|及|的|也|在|同样|一直", normalized) if term.strip()]
     terms: list[str] = []
     for raw_term in raw_terms:
         term = _clean_visual_entity(raw_term)
@@ -508,6 +522,8 @@ async def build_match_plan(
     excluded_shot_ids: set[int] | None = None,
     editing_brief: str = "",
     output_path: Path | None = None,
+    shot_reuse_window_seconds: float | None = None,
+    shot_reuse_best_effort: bool = False,
 ) -> list[MatchPlanItem]:
     if not sentences:
         raise MatchingError("没有可供匹配的文稿句子。")
@@ -781,7 +797,11 @@ async def build_match_plan(
         else await llm_provider.rerank(rerank_items)
     )
     progress(0.85, f"LLM 已一次性精排 {len(decisions)} 个视觉节拍")
-    plan = apply_beat_decisions(sentences, available_shots, candidates_by_beat, decisions)
+    plan = apply_beat_decisions(
+        sentences, available_shots, candidates_by_beat, decisions,
+        shot_reuse_window_seconds=shot_reuse_window_seconds,
+        shot_reuse_best_effort=shot_reuse_best_effort,
+    )
     write_json_atomic(
         output_path or task_dir / "match_plan.json",
         [item.model_dump(mode="json") for item in plan],
@@ -1335,6 +1355,9 @@ def apply_beat_decisions(
     shots: Sequence[AnnotatedShot],
     candidates_by_beat: dict[tuple[int, int], list[MatchCandidate]],
     decisions: Sequence[RerankDecision],
+    *,
+    shot_reuse_window_seconds: float | None = None,
+    shot_reuse_best_effort: bool = False,
 ) -> list[MatchPlanItem]:
     expected_keys = [
         (sentence.sentence_id, beat.beat_id)
@@ -1435,7 +1458,10 @@ def apply_beat_decisions(
         )
 
     assignments = _diversify_beat_assignments(assignments, len(shots))
-    assignments = _enforce_global_unique_shots(assignments, shots)
+    assignments = _enforce_global_unique_shots(
+        assignments, shots, reuse_window_seconds=shot_reuse_window_seconds,
+        best_effort=shot_reuse_best_effort,
+    )
     beats_by_sentence: dict[int, list[BeatMatch]] = {
         sentence.sentence_id: [] for sentence in sentences
     }
@@ -1587,6 +1613,9 @@ def _diversify_beat_assignments(
 def _enforce_global_unique_shots(
     assignments: list[_BeatAssignment],
     shots: Sequence[AnnotatedShot],
+    *,
+    reuse_window_seconds: float | None = None,
+    best_effort: bool = False,
 ) -> list[_BeatAssignment]:
     """Guarantee every beat maps to a distinct shot (matches EDL/QC capacity 1).
 
@@ -1613,9 +1642,80 @@ def _enforce_global_unique_shots(
                 utility += 0.0005
             options.append(CapacityOption(resource_id=candidate.shot_id, utility=utility))
         options_by_item.append(options)
-    solved = solve_capacity_assignment(options_by_item, {shot_id: 1 for shot_id in shot_id_set})
+    capacities = {shot_id: 1 for shot_id in shot_id_set}
+    solved = solve_capacity_assignment(options_by_item, capacities)
+    reuse_capacities: dict[int, int] | None = None
+    if solved is None and reuse_window_seconds:
+        # The user accepted repeated footage. A shot may serve several beats, but only
+        # as many as it has non-overlapping windows of the needed length; the caller
+        # then cuts such a shot into that many distinct windows (distinct shot ids), so
+        # no downstream uniqueness rule is relaxed. Related shots are reused before any
+        # unrelated shot is borrowed.
+        reuse_capacities = {
+            shot.shot_id: max(1, int(shot.duration // reuse_window_seconds)) for shot in shots
+        }
+        solved = solve_capacity_assignment(options_by_item, reuse_capacities)
+    widened = False
     if solved is None:
-        raise MatchingError("视觉节拍无法形成一对一全局分配，无法保证每个镜头只使用一次。")
+        # Each beat only ranks a short candidate list, so overlapping lists can be
+        # infeasible even when there are enough distinct shots overall. Widen every
+        # beat that is not entity-bound to the remaining shots at a clearly lower
+        # utility: they are used only when needed, and are flagged as low-confidence
+        # fallbacks (never presented as a confident match) so they stay reviewable.
+        widened = True
+        for assignment, options in zip(assignments, options_by_item, strict=True):
+            if assignment.match.requires_entity_coverage:
+                continue
+            known = {option.resource_id for option in options}
+            floor = min((option.utility for option in options), default=0.0) - 1.0
+            options.extend(
+                CapacityOption(resource_id=shot_id, utility=floor)
+                for shot_id in sorted(shot_id_set - known)
+            )
+        solved = solve_capacity_assignment(options_by_item, reuse_capacities or capacities)
+    if solved is None and best_effort:
+        # Last resort, only after the user accepted repeated footage: every beat may take any shot, in any
+        # number. Related shots still win (their utility is higher) and use is spread by the solver's reuse
+        # penalty; whatever is borrowed from outside a beat's own candidates is flagged as a low-confidence
+        # fallback. The caller then lays the footage out so no frame is frozen or invented.
+        widened = True
+        for assignment, options in zip(assignments, options_by_item, strict=True):
+            known = {option.resource_id for option in options}
+            # The beat's own semantic candidates that only failed the strict entity wording rule
+            # still beat unrelated footage by far: "腊肉腊肠" should land on the cured-meat clip.
+            own = [candidate for candidate in assignment.match.candidates
+                   if candidate.shot_id in shot_id_set and candidate.shot_id not in known]
+            options.extend(
+                CapacityOption(resource_id=candidate.shot_id, utility=_diversity_candidate_score(candidate) - 0.5)
+                for candidate in own
+            )
+            known |= {candidate.shot_id for candidate in own}
+            # Far below: repeating related footage (reuse penalty below) always wins over unrelated footage.
+            floor = min((option.utility for option in options), default=0.0) - 100.0
+            options.extend(
+                CapacityOption(resource_id=shot_id, utility=floor)
+                for shot_id in sorted(shot_id_set - known)
+            )
+        # Repeats only when they clearly pay off: distinct footage first whenever there is enough.
+        solved = solve_capacity_assignment(
+            options_by_item, {shot_id: len(assignments) for shot_id in shot_id_set}, reuse_penalty=0.35,
+        )
+    if solved is None:
+        if reuse_capacities is not None:
+            raise ShotShortageError(
+                f"镜头不足：即使允许重复使用，现有素材的总时长也只够 {sum(reuse_capacities.values())} 段画面，"
+                f"而需要 {len(assignments)} 段。请删减稿子，或多传几个视频/更长的素材。"
+            )
+        if len(shot_id_set) < len(assignments):
+            raise ShotShortageError(
+                f"镜头不足，无法形成一对一全局分配：需要 {len(assignments)} 个互不重复的画面，"
+                f"但只有 {len(shot_id_set)} 个可用镜头。请删减稿子，或多传几个不同场景的视频。"
+            )
+        raise ShotShortageError(
+            "视觉节拍无法形成一对一全局分配，无法保证每个镜头只使用一次：镜头数量够，"
+            "但提到具体人物/地点的句子在素材里找不到足够多互不重复的对应画面（镜头不足以对应）。"
+            "请删减或改写这些句子，或补传拍到这些人物/地点的视频。"
+        )
     for assignment, shot_id in zip(assignments, solved, strict=True):
         if assignment.match.shot_id == shot_id:
             continue
@@ -1623,8 +1723,18 @@ def _enforce_global_unique_shots(
             (item for item in assignment.match.candidates if item.shot_id == shot_id),
             None,
         )
+        if candidate is None and widened:
+            candidate = MatchCandidate(shot_id=shot_id, similarity=0.0)
+            assignment.match = assignment.match.model_copy(
+                update={"candidates": [*assignment.match.candidates, candidate]}
+            )
         if candidate is not None:
             _replace_assignment(assignment, candidate)
+            entity_unmet = assignment.match.requires_entity_coverage and not (candidate.matched_terms or candidate.verified_terms)
+            if widened and (entity_unmet or candidate.combined_score == 0.0 and candidate.similarity == 0.0):
+                assignment.match = assignment.match.model_copy(
+                    update={"is_fallback": True, "confidence": min(assignment.match.confidence, 0.34)}
+                )
     return assignments
 
 

@@ -9,7 +9,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 export const env = process.env;
 export const ROOT = path.resolve(fileURLToPath(new URL('../../../', import.meta.url)));
-export const tempRoot = () => os.tmpdir();
+export const tempRoot = () => fs.realpathSync(os.tmpdir());
 export const joinPath = (...parts) => path.join(...parts);
 export const resolvePath = (...parts) => path.resolve(...parts);
 export const parentPath = file => path.dirname(file);

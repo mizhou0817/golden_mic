@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { launchBrowser } from './browser.mjs';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
@@ -15,7 +16,6 @@ const tree = ts.createSourceFile('CreateWizard.tsx', source, ts.ScriptTarget.Lat
 const print = ts.createPrinter();
 function find(predicate) { let found; const visit = n => { if (predicate(n)) { assert.equal(found, undefined); found = n; } ts.forEachChild(n, visit); }; visit(tree); assert.ok(found); return found; }
 const grid = find(n => ts.isJsxElement(n) && n.openingElement.attributes.properties.some(p => ts.isJsxAttribute(p) && p.name.text === 'className' && p.initializer?.text === 'gm-mode-cards'));
-const more = find(n => ts.isJsxElement(n) && n.openingElement.attributes.properties.some(p => ts.isJsxAttribute(p) && p.name.text === 'className' && p.initializer?.text === 'gm-small-button gm-mode-more'));
 const icon = find(n => ts.isFunctionDeclaration(n) && n.name?.text === 'Icon');
 const emit = n => print.printNode(ts.EmitHint.Unspecified, n, tree);
 const compile = text => ts.transpileModule(text, { fileName: 'actual.tsx', compilerOptions: {
@@ -29,12 +29,12 @@ test('640px media rule changes the mode grid alone; 600px general mobile rules r
   const mobile = ast.nodes.find(n => n.type === 'atrule' && n.params === '(max-width:600px)');
   assert.ok(mobile.nodes.length > 10); assert.ok(!mobile.nodes.some(n => n.selector.includes('.gm-mode-cards')));
 });
-test('offline Edge runtime: expanded actual mode cards at 601/620/640/641px and 16/20px; bounds and native focus', async () => {
+test('offline Edge runtime: always-visible actual mode cards at 601/620/640/641px and 16/20px; bounds and native focus', async () => {
   let browser, context, stage = 'launch', errors = 0, requests = 0;
   const evidence = [];
   try {
     const { chromium } = require('playwright');
-    browser = await chromium.launch({ channel: 'msedge', headless: true,
+    browser = await launchBrowser({ headless: true,
       args: ['--disable-background-networking', '--disable-component-update', '--no-first-run'] });
     context = await browser.newContext({ offline: true, serviceWorkers: 'block', acceptDownloads: false });
     await context.route('**/*', route => { requests++; return route.abort(); });
@@ -52,24 +52,22 @@ test('offline Edge runtime: expanded actual mode cards at 601/620/640/641px and 
       const iconExports={};(function(exports,require){${iconCode}\n})(iconExports,()=>({default:{icon:'icon'}}));
       const {MODE_CARDS}=modeExports,SharedIcon=iconExports.default;
       ${compile(`const {useState}=React; ${emit(icon)}
-        function Fixture(){const [modeMore,setModeMore]=useState(false),[mode,setMode]=useState('voiceover');
+        function Fixture(){const [mode,setMode]=useState('voiceover');
           const id='actual',audioBusy=false,chooseMode=setMode;
-          return <section className="gm-create-wizard"><div className="gm-wizard-card">${emit(grid)}${emit(more)}</div></section>;}
+          return <section className="gm-create-wizard"><div className="gm-wizard-card">${emit(grid)}</div></section>;}
         const root=ReactDOM.createRoot(document.getElementById('root'));
         window.mount=()=>ReactDOM.flushSync(()=>root.render(<Fixture key={Math.random()}/>)); window.mount();`)}
     ` });
     for (const font of [16, 20]) for (const width of [601, 620, 640, 641]) {
       stage = `${width}/${font}`; await page.setViewportSize({ width, height: 900 });
       await page.evaluate(font => { document.documentElement.style.fontSize = font + 'px'; window.mount(); }, font);
-      const toggle = page.locator('.gm-mode-more'), cards = page.locator('.gm-mode-card');
-      assert.equal(await cards.count(), 1);
-      stage = `${width}/${font}/expand`; await toggle.focus(); await page.keyboard.press('Space');
-      assert.equal(await cards.count(), 3); assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+      const cards = page.locator('.gm-mode-card');
+      // All three production modes are always on the page; AI voiceover is the default and nothing is hidden behind a toggle.
+      assert.equal(await cards.count(), 3); assert.equal(await page.locator('.gm-mode-more').count(), 0);
+      assert.equal(await cards.nth(0).getAttribute('aria-pressed'), 'true');
       stage = `${width}/${font}/focus`;
-      await page.keyboard.press('Shift+Tab');
-      assert.equal(await cards.nth(2).evaluate(e => e === document.activeElement && e.matches(':focus-visible')), true);
-      await page.keyboard.press('Shift+Tab');
-      assert.equal(await cards.nth(1).evaluate(e => e === document.activeElement), true);
+      await cards.nth(0).focus(); await page.keyboard.press('Tab');
+      assert.equal(await cards.nth(1).evaluate(e => e === document.activeElement && e.matches(':focus-visible')), true);
       await page.keyboard.press('Enter'); assert.equal(await cards.nth(1).getAttribute('aria-pressed'), 'true');
       await page.keyboard.press('Tab'); assert.equal(await cards.nth(2).evaluate(e => e === document.activeElement), true);
       await page.keyboard.press('Space'); assert.equal(await cards.nth(2).getAttribute('aria-pressed'), 'true');

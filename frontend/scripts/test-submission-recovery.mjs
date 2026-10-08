@@ -429,3 +429,10 @@ for (const failure of [401, 403, 404, 410]) test(`restored upload ${failure} use
   assert.equal(Object.keys(state.uploads).length, 0); assert.ok(!seed.files[0].file);
   same(seed.uploadBindings, draft().uploadBindings);
 });
+
+test('the accepted-work banner is exactly the one the status effect clears', () => {
+  const match = /const RECEIVED_NOTICE = '([^']+)';/.exec(source);
+  assert.ok(match, 'RECEIVED_NOTICE is declared');
+  assert.ok(source.includes(`setNotice('${match[1]}')`), 'submit shows the same text, so the banner cannot stay forever');
+  assert.match(source, /setNotice\(current => current === RECEIVED_NOTICE \? '' : current\)/);
+});

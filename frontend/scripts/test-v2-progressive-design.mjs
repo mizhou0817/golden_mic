@@ -188,7 +188,7 @@ test('VM empty C and title-only C can discover upload, but not skip to effects',
   for (const script of ['', '新闻标题']) {
     const w = harness(draft({ script, step: 1, files: [], uploadBindings: [], uploadIds: [], uploadTokens: {} }));
     await w.settle(); assert.equal(w.picker(), undefined);
-    w.click('下一步：传素材'); assert.equal(w.button('下一步：选效果').props.disabled, true);
+    w.click('下一步：传素材'); assert.equal(w.button('下一步：选效果').props['aria-disabled'], true);
     assert.equal(w.all().filter(n => n.type === 'input' && n.props.type === 'file').length, 1);
     w.click('从转写挑句子'); assert.equal(w.focuses, 2);
     assert.ok(w.requests.every(c => !c.init.method)); w.unmount();
@@ -227,7 +227,7 @@ test('VM restored checked source rows do GET-only verification, no complete/alig
   assert.deepEqual(w.requests.map(c => c.path), [taskRoot, `${taskRoot}/files`, `${taskRoot}/files/server_1`]);
   assert.ok(w.requests.every(c => !c.init.method && c.scope.token === TOKEN));
   assert.ok(w.all(w.picker()).find(n => n.type === 'input').props.checked);
-  assert.equal(w.button('下一步：选效果').props.disabled, true); w.unmount();
+  assert.equal(w.button('下一步：选效果').props['aria-disabled'], true); w.unmount();
 });
 test('VM folding during pending upload retains read signal and mounted upload controls', async () => {
   let finish; const pending = new Promise(resolve => { finish = resolve; });
@@ -251,7 +251,7 @@ for (const asr of ['今天社区活动正式开始', '今年我们还请了舞�
   const unsafe = asr === '今年我们还请了舞狮队' ? '今年我们请舞狮队' : asr + '并且完全免费';
   const w = harness(draft({ script: `标题\n${unsafe}` }), { asr }); await w.settle();
   w.fold(false); w.click('重新核对'); w.clock.advance(600); await w.settle();
-  assert.equal(w.button('下一步：选效果').props.disabled, true);
+  assert.equal(w.button('下一步：选效果').props['aria-disabled'], true);
   w.button('下一步：选效果').props.onClick(); w.flush();
   assert.equal(w.all().some(n => n.props?.className === 'gm-submit'), false);
   w.fold(true); assert.equal(w.submissions.length, 0);
@@ -261,7 +261,7 @@ for (const asr of ['今天社区活动正式开始', '今年我们还请了舞�
 test('VM real source selection keeps match debounce unchanged and permits explicitly verified C', async () => {
   const w = harness(); await w.settle(); w.pick(0, true); w.fold(false);
   w.clock.advance(599); await w.settle(); assert.equal(w.requests.filter(c => c.init.method).length, 0);
-  w.clock.advance(1); await w.settle(); assert.equal(w.button('下一步：选效果').props.disabled, false);
+  w.clock.advance(1); await w.settle(); assert.equal(w.button('下一步：选效果').props['aria-disabled'], false);
   w.click('下一步：选效果'); w.click('开始制作'); await w.settle();
   assert.equal(w.submissions.length, 1); assert.equal(w.submissions[0].mode, 'original');
   assert.deepEqual(w.submissions[0].sentences[0].source_hint, { upload_id: UP, seg_id: 'same' }); w.unmount();
@@ -306,7 +306,7 @@ test('VM stale ready UI cannot start after explicit GET refresh fails', async ()
   });
   await w.settle(); w.click('下一步：选效果'); assert.equal(w.button('开始制作').props.disabled, false);
   w.click('← 上一步'); fail = true; w.click('重新读取状态'); await w.settle();
-  assert.equal(w.button('下一步：选效果').props.disabled, true); assert.equal(w.submissions.length, 0);
+  assert.equal(w.button('下一步：选效果').props['aria-disabled'], true); assert.equal(w.submissions.length, 0);
   assert.ok(w.requests.every(c => !c.init.method)); w.unmount();
 });
 test('scoped incomplete server authority never unlocks restored transcription or adds writes', async () => {
@@ -321,7 +321,7 @@ test('scoped incomplete server authority never unlocks restored transcription or
     try {
       await w.settle(); w.clock.advance(10000); await w.settle();
       assert.equal(w.picker(), undefined, key);
-      assert.equal(w.button('下一步：选效果').props.disabled, true, key);
+      assert.equal(w.button('下一步：选效果').props['aria-disabled'], true, key);
       assert.equal(w.submissions.length, 0);
       assert.deepEqual(w.requests.map(c => c.path), [taskRoot, `${taskRoot}/files`, `${taskRoot}/files/server_1`]);
       assert.ok(w.requests.every(c => !c.init.method && c.scope.token === TOKEN));
