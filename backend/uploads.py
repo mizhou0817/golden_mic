@@ -452,13 +452,26 @@ class UploadStore:
 
     @property
     def reserved_bytes(self) -> int:
-        return sum(self._reservation(record.size) for record in self._records.values()) + self._orphans * self._reservation(MAX_FILE_BYTES)
+        # Only uploads that still have work ahead (receiving, assembly, PCM, ASR) reserve space. A finished
+        # upload's bytes are already on disk and in the real free-space figure; reserving them again made
+        # hundreds of finished uploads look like tens of GB and refused new uploads on a disk with room.
+        pending = ("uploading", "probed", "processing")
+        return (sum(self._reservation(record.size) for record in self._records.values() if record.status in pending)
+                + self._orphans * self._reservation(MAX_FILE_BYTES))
 
     @staticmethod
     def _reservation(size: int) -> int:
         # Includes chunks + assembly, one retry temp, PCM and bounded metadata.
         # Intentionally conservative: never overcommit already received uploads.
         return 2 * size + CHUNK_SIZE + MAX_PCM_BYTES + 2 * MAX_JSON_BYTES + MAX_THUMB_BYTES
+
+    def space_shortfall(self, additional: int = 0, extra_reserved: int = 0) -> int:
+        """Bytes still missing for `additional` more data (<= 0 means it fits)."""
+        try:
+            free = shutil.disk_usage(_safe_path(self.root, directory=True)).free
+        except OSError:
+            return 0
+        return self.settings.minimum_free_disk_bytes + self.reserved_bytes + extra_reserved + additional - free
 
     def _space(self, additional: int = 0) -> None:
         try:

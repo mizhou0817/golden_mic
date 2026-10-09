@@ -30,9 +30,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from .admission import AdmissionLedger, owner_digest
 from .media_input import prepare_media_inputs
 from .models import EditingPreferences, TaskState
+from .operations import InsufficientDiskSpaceError
 from .production_modes import (Mode, SentenceInput, Speaker, align_quotes, parse_sentences,
                                quote_text_is_contiguous)
-from .storage import create_task_dir, write_json_atomic
+from .storage import create_task_dir, write_json_atomic, write_text_log
 from .task_manager import TaskManager, TaskRecord
 from .task_operations import drain_task, _operation as task_operation
 from .uploads import (CHUNK_SIZE, IO_BLOCK, UploadStore, _blocking, _check_stop,
@@ -587,6 +588,85 @@ class DraftService:
                 "shot_reuse_accepted": (record.draft_context.get("shot_reuse") or {}).get("accepted") is True,
                 "created_at": record.created_at.isoformat(), "updated_at": record.updated_at.isoformat()}
 
+    async def _storage_shortfall(self, size: int) -> int:
+        capacity = await self.guard.snapshot()
+        return (self.settings.minimum_free_disk_bytes + capacity.reserved_bytes + self.uploads.reserved_bytes
+                + self.uploads._reservation(size) - capacity.free_bytes)
+
+    async def free_space_for(self, record: TaskRecord, size: int) -> dict[str, int]:
+        """The disk is short for a new upload: overwrite the oldest material, oldest first, only as much as needed.
+
+        1. staging copies of finished works (they keep their own copy);
+        2. clips of other drafts, least recently used first (their text stays; the draft being edited is never touched);
+        3. the oldest finished works themselves (as retention expiry would, just earlier).
+        Running work is never touched. Called inside the drafts gate.
+        """
+        freed = {"staging": 0, "draft_clips": 0, "works": 0}
+
+        async def fits() -> bool:
+            return await self._storage_shortfall(size) <= 0
+
+        terminal = {TaskState.done, TaskState.failed, TaskState.cancelled}
+        finished = sorted((task for task in self.manager._tasks.values() if task.status in terminal and task.lifecycle_v2
+                           and not task.local_only and self.ledger.accepted(task.task_id)), key=lambda task: task.updated_at)
+        for task in finished:
+            materialized = {asset.upload_id: asset for asset in task.uploads}
+            for item in task.draft_context.get("files", []):
+                live, asset = self.uploads._records.get(item.get("up_id")), materialized.get(item.get("up_id"))
+                if live is None or asset is None or not (task.task_dir / "raw" / asset.stored_name).is_file():
+                    continue
+                try:
+                    await self.uploads.delete(live.id, item.get("capability"))
+                    freed["staging"] += 1
+                except (HTTPException, OSError):
+                    continue
+            if await fits():
+                return self._log_freed(record, freed)
+        drafts = sorted((task for task in self.manager._tasks.values() if task.status == TaskState.draft and task.lifecycle_v2
+                         and task.task_id != record.task_id), key=lambda task: task.updated_at)
+        for draft in drafts:
+            for item in list(draft.draft_context.get("files", [])):
+                try:
+                    if item.get("up_id") in self.uploads._records:
+                        await self.uploads.delete(item["up_id"], item.get("capability"))
+                except (HTTPException, OSError):
+                    continue
+                draft.draft_context["files"].remove(item)
+                freed["draft_clips"] += 1
+            self.manager._persist_record(draft)
+            if await fits():
+                return self._log_freed(record, freed)
+        for task in finished:
+            if self.manager.get(task.task_id) is not task or task.status not in terminal:
+                continue
+            try:
+                await self._remove_work(task, "task_retention_expiry")
+                freed["works"] += 1
+            except (HTTPException, OSError, RuntimeError):
+                continue
+            if await fits():
+                break
+        return self._log_freed(record, freed)
+
+    def _log_freed(self, record: TaskRecord, freed: dict[str, int]) -> dict[str, int]:
+        if any(freed.values()):
+            write_text_log(record.task_dir, f"服务器存储不足，已按时间顺序清理最早的素材：完成作品的上传副本 {freed['staging']} 个、"
+                                            f"其他草稿的素材 {freed['draft_clips']} 个、最早的已完成作品 {freed['works']} 个。")
+        return freed
+
+    async def _remove_work(self, record: TaskRecord, reason: str) -> None:
+        """The removal step of delete(), for callers already inside the drafts gate."""
+        for item in list(record.draft_context.get("files", [])):
+            try:
+                await self.uploads.delete(item["up_id"], item["capability"])
+            except HTTPException as exc:
+                if exc.status_code != 404:
+                    raise
+            record.draft_context["files"].remove(item)
+            self.manager._persist_record(record)
+        self.ledger.tombstone(record.task_id, record.owner_hash, record.access_token_hash, reason)
+        await self.manager.cancel_and_delete(record.task_id)
+
     async def reclaim_finished_staging(self, owner: str, size: int, *, keep: str | None = None) -> int:
         """Free upload staging that only finished tasks still hold, when it blocks a new upload.
 
@@ -675,9 +755,10 @@ class DraftService:
                 raise HTTPException(422, "Too many files")
             if sum(self.uploads.read(f["up_id"], f["capability"])["bytes"] for f in files) + payload.size > self.uploads.max_total_bytes:
                 raise HTTPException(413, "Task upload budget exceeded")
-            capacity = await self.guard.snapshot()
-            if capacity.free_bytes < self.settings.minimum_free_disk_bytes + capacity.reserved_bytes + self.uploads.reserved_bytes + self.uploads._reservation(payload.size):
-                raise HTTPException(507, "Insufficient shared upload/task storage")
+            if await self._storage_shortfall(payload.size) > 0:
+                await self.free_space_for(record, payload.size)
+                if await self._storage_shortfall(payload.size) > 0:
+                    raise HTTPException(507, "Insufficient shared upload/task storage")
             await self.reclaim_finished_staging(record.owner_hash, payload.size, keep=record.task_id)
             receipt = await self.uploads.create(name=payload.name, size=payload.size,
                 sha256=payload.sha256 or "0" * 64, owner=record.owner_hash, content_type=payload.content_type)
@@ -1062,6 +1143,13 @@ class DraftService:
             # Include the upload store's outstanding commitments in this
             # reservation; ordinary legacy starts see it through the same guard.
             requested = total + math.ceil(self.uploads.reserved_bytes / self.settings.task_disk_reservation_multiplier)
+            try:
+                probe = self.guard.reserve(requested)
+                await probe.__aenter__()
+                await probe.__aexit__(None, None, None)
+            except InsufficientDiskSpaceError:
+                # Short of disk to start: overwrite the oldest material first (see free_space_for), then try once more.
+                await self.free_space_for(record, math.ceil(requested * self.settings.task_disk_reservation_multiplier / 2))
             async with self.reserve(requested) as reservation:
                 assets, cached = await self.uploads.materialize(ids, tokens, record.task_dir)
                 for snapshot, original in zip(snapshots, cached, strict=True):

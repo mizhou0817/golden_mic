@@ -256,6 +256,30 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.status_code, 422)
         self.assertFalse(self.service.ledger.accepted(record.task_id))
 
+    async def test_start_short_of_disk_overwrites_the_oldest_material_and_then_starts(self):
+        from backend.operations import InsufficientDiskSpaceError
+        record, _ = await self.draft()
+        await self.ready(record)
+        original, calls = self.service.guard.reserve, []
+
+        def reserve(size):
+            calls.append(size)
+            if len(calls) == 1:
+                raise InsufficientDiskSpaceError("数据盘剩余空间不足")
+            return original(size)
+        async def prepare(directory, assets, options, voice, settings):
+            return assets
+        async def finish(record):
+            record.status = TaskState.failed
+            await self.manager._release_disk_reservation(record)
+        freed = AsyncMock(return_value={"staging": 1, "draft_clips": 0, "works": 0})
+        with patch.object(self.service.guard, "reserve", side_effect=reserve), patch.object(self.service, "free_space_for", new=freed), \
+                patch("backend.drafts.prepare_media_inputs", side_effect=prepare), patch.object(self.manager, "_run", side_effect=finish):
+            result = await self.service.start(record, {"script": "新闻标题\n\n今天介绍新的公共服务，让生活更加便利。"}, "ip")
+            await record.background
+        freed.assert_awaited_once()
+        self.assertTrue(result["accepted"], "after the cleanup the work starts instead of failing with 507")
+
     async def test_start_once_then_explicit_retry_capability(self):
         record, _ = await self.draft()
         await self.ready(record)
@@ -850,6 +874,40 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
                 await self.service.add_file(draft, {"name": "x.mp4", "size": 1}, "")
         self.assertEqual(caught.exception.status_code, 429)
         self.assertIn(other_item["up_id"], self.store._records)
+
+    async def test_finished_uploads_reserve_no_disk_space_only_unfinished_ones_do(self):
+        source, _, item = await self.recovery_fixture()
+        live = self.store._records[item["up_id"]]
+        self.assertNotIn(live.status, ("uploading", "probed", "processing"))
+        before = self.store.reserved_bytes
+        draft = await self.new_draft_for(source)
+        await self.service.add_file(draft, {"name": "pending.mp4", "size": 1000}, "")  # still uploading
+        self.assertEqual(self.store.reserved_bytes - before, self.store._reservation(1000), "only the unfinished upload reserves")
+
+    async def test_short_storage_first_releases_finished_works_copies_and_stops_when_it_fits(self):
+        source, _, item = await self.recovery_fixture()
+        draft = await self.new_draft_for(source)
+        shortage = lambda size: 1 if item["up_id"] in self.store._records else -1  # fits once that copy is gone
+        with patch.object(self.service, "_storage_shortfall", new=AsyncMock(side_effect=shortage)):
+            _, new_item = await self.file(draft)
+        self.assertNotIn(item["up_id"], self.store._records, "the finished work's redundant copy was overwritten first")
+        self.assertIsNotNone(self.manager.get(source.task_id), "the finished work itself is kept while copies suffice")
+        self.assertIn(new_item["up_id"], self.store._records)
+
+    async def test_short_storage_then_clears_old_draft_clips_and_the_oldest_works_but_never_the_current_draft(self):
+        source, _, _ = await self.recovery_fixture()
+        old = await self.new_draft_for(source)
+        _, old_item = await self.file(old)
+        current = await self.new_draft_for(source)
+        _, current_item = await self.file(current)
+        with patch.object(self.service, "_storage_shortfall", new=AsyncMock(return_value=1)):  # never enough
+            with self.assertRaises(HTTPException) as caught:
+                await self.service.add_file(current, {"name": "x.mp4", "size": 1}, "")
+        self.assertEqual(caught.exception.status_code, 507)
+        self.assertEqual(old.draft_context["files"], [], "older drafts gave up their clips")
+        self.assertIsNone(self.manager.get(source.task_id), "the oldest finished work was removed")
+        self.assertIn(current_item["up_id"], self.store._records, "the draft being edited keeps its clips")
+        self.assertIsNotNone(self.manager.get(current.task_id))
 
     async def test_recovery_copies_do_not_consume_the_hourly_new_upload_budget(self):
         source, _, _ = await self.recovery_fixture()

@@ -1055,7 +1055,7 @@ export default function Workspace() {
         // A clear refusal (4xx, e.g. the hourly start limit) created nothing; only an unknown outcome
         // (network failure, timeout, server error) may have created a work and needs the history check.
         const status = (failure as { status?: unknown } | null)?.status;
-        const refused = typeof status === 'number' && status >= 400 && status < 500;
+        const refused = typeof status === 'number' && (status >= 400 && status < 500 || status === 507);
         draftSuppressed.current = false; setUploadUncertain(!refused); showPage('create');
         setError(refused ? `${errorText(failure)} 本页稿件和素材都保留着，没有创建作品。`
           : `${errorText(failure)} 本页稿件和已选择文件仍保留；请先核对作品历史，不会自动重新上传。`); refreshHistory();
