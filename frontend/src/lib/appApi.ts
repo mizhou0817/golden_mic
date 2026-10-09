@@ -288,7 +288,9 @@ export function createAppRequest(access: Access): AppRequest {
     const signals = [access.signal, init.signal].filter((s): s is AbortSignal => !!s);
     signals.forEach(s => { if (s.aborted) abort(); s.addEventListener('abort', abort, { once: true }); });
     // AI writing is one slow model call; everything else keeps the short JSON timeout.
-    const timer = setTimeout(abort, init.body instanceof FormData ? 30 * 60_000 : init.body instanceof Blob ? 120_000 : url === '/api/script/assist' ? 170_000 : 30_000);
+    // A file piece gets time for its size even on a slow uplink (8 KB/s), not a flat 120 s.
+    const timer = setTimeout(abort, init.body instanceof FormData ? 30 * 60_000 : init.body instanceof Blob ? 120_000 + Math.ceil(init.body.size / 8)
+      : url === '/api/script/assist' ? 170_000 : 30_000);
     try {
       if (controller.signal.aborted) throw new DOMException('已取消', 'AbortError');
       const uploadScope = access.taskId === undefined && access.token === undefined && (

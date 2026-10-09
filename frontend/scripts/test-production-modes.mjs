@@ -507,17 +507,40 @@ test('reselecting a ready upload verifies content before emitting any ready stat
   assert.equal(emitted, 0); assert.equal(h.calls.length, 1);
 });
 
-test('ambiguous PUT or completion failure is never automatically replayed', async () => {
-  for (const failingMethod of ['PUT', 'POST']) {
-    let acknowledged = failingMethod === 'POST'; const failure = new Error('Synthetic disconnect');
+test('an ambiguous completion is never replayed; a dropped piece is resent only after the server says it is missing', async () => {
+  // Completion (POST) may already have started server work: never replayed.
+  { const failure = new Error('Synthetic disconnect');
     const h = uploadsHarness((path, init) => {
-      if (init.method === failingMethod) throw failure;
-      if (init.method === 'PUT') { acknowledged = true; return {}; }
-      return snapshot({ status: 'uploading', chunks: acknowledged ? [0] : [], progress: acknowledged ? 100 : 0 });
+      if (init.method === 'POST') throw failure;
+      return snapshot({ status: 'uploading', chunks: [0], progress: 100 });
     });
     await assert.rejects(h.api.uploadFile(file(), signal(), { onSession() {}, onSnapshot() {} }, session()), error => error === failure);
-    assert.equal(h.calls.filter(call => call.init.method === failingMethod).length, 1);
-  }
+    assert.equal(h.calls.filter(call => call.init.method === 'POST').length, 1); }
+  // A piece that keeps failing (slow/dropped connection) is resent a bounded number of times, each after a status check.
+  { const failure = new Error('Synthetic disconnect');
+    const h = uploadsHarness((path, init) => {
+      if (init.method === 'PUT') throw failure;
+      return snapshot({ status: 'uploading', chunks: [], progress: 0 });
+    });
+    await assert.rejects(h.api.uploadFile(file(), signal(), { onSession() {}, onSnapshot() {} }, session()), error => error === failure);
+    assert.equal(h.calls.filter(call => call.init.method === 'PUT').length, h.api.CHUNK_ATTEMPTS); }
+  // The reply was lost but the server stored the piece: it is not sent again, and the upload completes.
+  { let stored = false;
+    const h = uploadsHarness((path, init) => {
+      if (init.method === 'PUT') { stored = true; throw new Error('Synthetic lost reply'); }
+      return snapshot({ status: init.method === 'POST' ? 'probing' : 'uploading', chunks: stored ? [0] : [], progress: stored ? 100 : 0 });
+    });
+    await h.api.uploadFile(file(), signal(), { onSession() {}, onSnapshot() {} }, session());
+    assert.equal(h.calls.filter(call => call.init.method === 'PUT').length, 1, 'no duplicate send');
+    assert.equal(h.calls.filter(call => call.init.method === 'POST').length, 1); }
+  // A clear refusal (the piece changed) is never resent.
+  { const refusal = Object.assign(new Error('Chunk changed'), { status: 409 });
+    const h = uploadsHarness((path, init) => {
+      if (init.method === 'PUT') throw refusal;
+      return snapshot({ status: 'uploading', chunks: [], progress: 0 });
+    });
+    await assert.rejects(h.api.uploadFile(file(), signal(), { onSession() {}, onSnapshot() {} }, session()), error => error === refusal);
+    assert.equal(h.calls.filter(call => call.init.method === 'PUT').length, 1); }
 });
 
 test('polling waits exactly 2s, releases abort listeners and never overlaps GETs', async () => {

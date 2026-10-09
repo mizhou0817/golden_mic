@@ -413,6 +413,13 @@ export async function deleteUploadFile(session: UploadSession, signal: AbortSign
  * Retry always GETs chunk acknowledgements and checks the full incremental hash;
  * a ready/processing upload needs no File at all, and no ASR is restarted here.
  */
+export const CHUNK_ATTEMPTS = 3;
+/** Network failure, timeout or a busy/erroring server: the piece may simply be resent. */
+export function retryableChunkFailure(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status !== "number" || status >= 500 || status === 408 || status === 429;
+}
+
 export async function uploadFile(file: File | undefined, signal: AbortSignal, callbacks: UploadCallbacks,
   resume?: UploadSession, scope?: DraftAccess, metadataOnly = false): Promise<UploadSnapshot> {
   aborted(signal);
@@ -455,8 +462,21 @@ export async function uploadFile(file: File | undefined, signal: AbortSignal, ca
       const start = index * UPLOAD_CHUNK_BYTES, end = Math.min(file.size, start + UPLOAD_CHUNK_BYTES);
       const base = putPath(active.upload_id, active.put_url, active);
       const path = base.endsWith("/{index}") ? base.replace("{index}", String(index)) : `${base}/${index}`;
-      await requestFor(signal, active)<unknown>(path, { method: "PUT", headers: { ...headers(active.upload_id, active.access_token),
-        "Content-Type": "application/octet-stream", "Content-Range": `bytes ${start}-${end - 1}/${file.size}` }, body: file.slice(start, end) });
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await requestFor(signal, active)<unknown>(path, { method: "PUT", headers: { ...headers(active.upload_id, active.access_token),
+            "Content-Type": "application/octet-stream", "Content-Range": `bytes ${start}-${end - 1}/${file.size}` }, body: file.slice(start, end) });
+          break;
+        } catch (error) {
+          // A slow or dropped connection (timeout, network, server busy) is retried twice on its own; a clear
+          // refusal (e.g. the piece changed) is not. The server is asked first: a lost reply may have stored it.
+          if (signal.aborted || attempt >= CHUNK_ATTEMPTS || !retryableChunkFailure(error)) throw error;
+          await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+          aborted(signal);
+          const state = await getUploadStatus(active.upload_id, active.access_token, signal, active);
+          if (state.chunks.includes(index)) break;
+        }
+      }
       aborted(signal);
       // A successful response acknowledges this one chunk, not all file bytes.
       chunks.add(index);
