@@ -1329,7 +1329,9 @@ def evaluate_mode_checks(
         actual_level = template["level"] if level is None else level
         issues.append({
             "code": code, "severity": "error" if actual_level == 0 else "warning",
-            "message": template["message"].format(**values), "sentence_id": sentence_id,
+            # Readable numbers in messages: 0.84, not 0.8400000000000003.
+            "message": template["message"].format(**{key: format(round(value, 2), "g") if isinstance(value, float) else value
+                                                     for key, value in values.items()}), "sentence_id": sentence_id,
             "level": actual_level, "action": template["action"],
         })
 

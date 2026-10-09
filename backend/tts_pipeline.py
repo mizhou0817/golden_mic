@@ -1564,10 +1564,16 @@ async def normalize_mode_unit(
             source, _receipt = await _prepare_enhanced_recording(task_dir, timing, Path(directory), 0)
         else:
             source = reference
-        loudness = await _two_pass_loudnorm_filter(
-            task_dir, source, target_lufs=-20.0, target_lra=5.0,
-            true_peak_dbfs=-3.5, strict=True,
-        )
+        try:
+            loudness = await _two_pass_loudnorm_filter(
+                task_dir, source, target_lufs=-20.0, target_lra=5.0,
+                true_peak_dbfs=-3.5, strict=True,
+            )
+        except TTSProcessingError:
+            # Too short or too quiet to measure (loudness needs 0.4 s of audible sound): keep the real level
+            # unchanged instead of stopping the whole work. QC lists it as unmeasurable before export.
+            loudness = "anull"
+            write_text_log(task_dir, f"第 {timing.sentence_id + 1} 句音频过短或过轻，无法测量响度，保持原音量（导出前会提示核对）。")
         await run_logged_command([
             "ffmpeg", "-y", "-i", str(source), "-map", "0:a:0", "-vn", "-af",
             f"{NARRATION_AUDIO_FORMAT},{loudness},aresample=48000",
@@ -1580,8 +1586,11 @@ async def normalize_mode_unit(
         "audio_path": output_path.relative_to(task_dir).as_posix(),
         "duration": after / NARRATION_SAMPLE_RATE, "start": 0.0, "end": after / NARRATION_SAMPLE_RATE,
     }))
-    if abs(measured.integrated_lufs + 20.0) > 2.0 or measured.true_peak_dbfs > -3.0:
-        raise TTSProcessingError("逐句模式音频没有达到 -20±2 LUFS / -3 dBTP，不能宣称达标。")
+    if measured.integrated_lufs is None or measured.true_peak_dbfs is None \
+            or abs(measured.integrated_lufs + 20.0) > 2.0 or measured.true_peak_dbfs > -3.0:
+        # Not claimed as compliant: the quality check reports this unit (MODE_UNIT_AUDIO_OUT_OF_RANGE or
+        # MODE_UNIT_LOUDNESS_UNMEASURABLE) before export, but the work still finishes.
+        write_text_log(task_dir, f"第 {timing.sentence_id + 1} 句音频未达到 -20±2 LUFS / -3 dBTP，已保留并在质量检查中提示。")
     return measured
 
 
@@ -1599,13 +1608,13 @@ async def measure_mode_unit(task_dir: Path, timing: SentenceTiming) -> SentenceT
         "-f", "null", "NUL" if os.name == "nt" else "/dev/null",
     ], task_dir, "复测逐句模式响度和真峰值")
     measurement = _parse_loudnorm_measurement(stderr)
-    if measurement is None:
-        raise TTSProcessingError("逐句模式音频无法测量响度或峰值。")
     duration = after / NARRATION_SAMPLE_RATE
     if any(word.start < 0 or word.end > duration + 1 / NARRATION_SAMPLE_RATE for word in timing.words):
         raise TTSProcessingError("真实词时间超出处理后的音频，禁止推算或拉伸时间。")
     return timing.model_copy(update={
         "audio_path": output_path.relative_to(task_dir).as_posix(),
         "duration": duration, "start": 0.0, "end": duration,
-        "integrated_lufs": measurement["input_i"], "true_peak_dbfs": measurement["input_tp"],
+        # None = unmeasurable (too short/quiet); QC reports it instead of treating unknown as compliant.
+        "integrated_lufs": measurement["input_i"] if measurement else None,
+        "true_peak_dbfs": measurement["input_tp"] if measurement else None,
     })
