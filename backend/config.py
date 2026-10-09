@@ -348,9 +348,11 @@ class Settings(BaseSettings):
 
     @property
     def effective_session_start_limit(self) -> int:
-        """Starts per browser session per hour. Production keeps the public-site cap of 2; a local install uses its own setting."""
-        value = self.anonymous_session_task_rate_limit_per_hour
-        return min(2, value) if self.app_env == "production" else value
+        """Starts per browser session per hour, as configured (the field itself is capped at 20).
+
+        Production used to force 2, which stopped a normal user after two works in an hour; the operator's
+        ANONYMOUS_SESSION_TASK_RATE_LIMIT_PER_HOUR now applies everywhere (with the per-IP/global limits)."""
+        return self.anonymous_session_task_rate_limit_per_hour
 
     @property
     def is_production(self) -> bool:

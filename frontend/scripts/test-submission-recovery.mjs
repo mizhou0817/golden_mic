@@ -287,6 +287,15 @@ test('rejected creation never saves a recovery snapshot or discards current draf
   assert.equal(f.storage.writes.length, 0); assert.equal(w.refs.draft, input); assert.equal(w.refs.setUploadUncertain, true);
 });
 
+test('a clear refusal (e.g. the hourly start limit) shows its reason and does not claim a work may exist', async () => {
+  const f = fixture(), input = draft();
+  const refusal = Object.assign(new Error('这一小时内开始制作的次数已经用完（每小时最多 10 次）。约 5 分钟后可以再点“开始制作”。'), { status: 429 });
+  const w = workspace(f, { currentDraft: input, upload: async () => { throw refusal; } });
+  w.globals.pageRef.current = 'create'; await assert.rejects(w.submit(submission(input)));
+  assert.equal(w.refs.setUploadUncertain, false, 'nothing was created, so no "the server may have created a work" banner');
+  assert.equal(f.storage.writes.length, 0); assert.equal(w.refs.draft, input);
+});
+
 test('accepted creation plus quota failure stays successful; refresh cannot claim durable recovery', async () => {
   const f = fixture(), input = draft(); f.storage.setItem = blocked;
   const w = workspace(f, { currentDraft: input }); w.globals.pageRef.current = 'create'; await w.submit(submission(input));

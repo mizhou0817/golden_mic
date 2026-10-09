@@ -1052,8 +1052,13 @@ export default function Workspace() {
       setNotice('服务器已确认接收作品。正在核验实际制作状态；请勿重复提交。');
     } catch (failure) {
       if (alive.current && serial === generation.current) {
-        draftSuppressed.current = false; setUploadUncertain(true); showPage('create');
-        setError(`${errorText(failure)} 本页稿件和已选择文件仍保留；请先核对作品历史，不会自动重新上传。`); refreshHistory();
+        // A clear refusal (4xx, e.g. the hourly start limit) created nothing; only an unknown outcome
+        // (network failure, timeout, server error) may have created a work and needs the history check.
+        const status = (failure as { status?: unknown } | null)?.status;
+        const refused = typeof status === 'number' && status >= 400 && status < 500;
+        draftSuppressed.current = false; setUploadUncertain(!refused); showPage('create');
+        setError(refused ? `${errorText(failure)} 本页稿件和素材都保留着，没有创建作品。`
+          : `${errorText(failure)} 本页稿件和已选择文件仍保留；请先核对作品历史，不会自动重新上传。`); refreshHistory();
       }
       throw failure;
     } finally {

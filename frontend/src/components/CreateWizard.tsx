@@ -107,7 +107,13 @@ function Icon({ name }: { name: "mic" | "mic-bubble" | "bubble" | "cloud-up" | "
   return <SharedIcon name={names[name]} />;
 }
 const sentenceKey = (text: string, index: number) => `${index}:${text}`;
-const errorMessage = (_error: unknown) => "操作未完成。请核对当前状态后重试；不会自动重复提交。";
+/** The real reason when it is one of our own fixed, safe sentences (decoded server refusals such as the hourly
+ * start limit, or the app's own checks); never raw browser/network text. */
+const errorMessage = (error: unknown) => {
+  const text = (error as { message?: unknown } | null)?.message;
+  return typeof text === "string" && text.length <= 300 && /[\u4e00-\u9fff]/.test(text) && !/https?:|\/[a-z]+\//i.test(text)
+    ? text : "操作未完成。请核对当前状态后重试；不会自动重复提交。";
+};
 const errorStatus = (error: unknown): number | undefined => {
   const status = (error as { status?: unknown } | null)?.status;
   return typeof status === "number" ? status : undefined;

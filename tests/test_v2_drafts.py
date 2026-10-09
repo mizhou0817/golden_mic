@@ -386,10 +386,11 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HTTPException):
             ledger.accept("d", "owner", "ip", "hash", now=10004, session_limit=3)
 
-    def test_effective_session_start_limit_keeps_the_public_cap_only_in_production(self):
+    def test_effective_session_start_limit_follows_the_operators_setting_in_every_environment(self):
+        # Production used to force 2 starts an hour, which bounced a normal user back to 选效果.
         from backend.config import Settings
         self.assertEqual(Settings.model_construct(app_env="development", anonymous_session_task_rate_limit_per_hour=10).effective_session_start_limit, 10)
-        self.assertEqual(Settings.model_construct(app_env="production", anonymous_session_task_rate_limit_per_hour=10).effective_session_start_limit, 2)
+        self.assertEqual(Settings.model_construct(app_env="production", anonymous_session_task_rate_limit_per_hour=10).effective_session_start_limit, 10)
         self.assertEqual(Settings.model_construct(app_env="production", anonymous_session_task_rate_limit_per_hour=1).effective_session_start_limit, 1)
 
     async def test_ledger_restart_sliding_nonrefund(self):
