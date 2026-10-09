@@ -505,6 +505,7 @@ BROLL_FALLBACK_TEXT = {
     "no_speech": "素材里没有足够安静的空镜（环境声较大），旁白画面改用了没有人讲话的片段。",
     "any": "素材里几乎处处有人讲话，旁白画面用了有人讲话的片段（声音已换成旁白）；请看看画面是否合适。",
     "quote_overlap": "空镜不够，部分旁白画面用了原声句子附近的片段；请看看画面是否重复。",
+    "gap_fill": "有原声句到了素材结尾，句间的短暂停顿用同一段素材里的其他真实画面补上了；请看看衔接是否自然。",
 }
 
 
@@ -536,6 +537,60 @@ def _pool_shots(shots: Sequence[Shot], snapshots: Sequence[dict[str, Any]], cloc
             if hi - lo >= 1.0:
                 result.append(shot.model_copy(update={"shot_id": len(result), "start": lo, "end": hi, "duration": hi - lo}))
     return result
+
+
+def _distinct_repeat_ids(edl: list[EDLItem], shots: Sequence[AnnotatedShot], shots_by_id: dict[int, AnnotatedShot],
+                         options: dict[int, SegmentRenderOptions], manifest: dict[str, Any], repeatable: set[int] | None = None) -> None:
+    """Every repeated use of the same real footage (identical script lines such as three "人", or a pause filled
+    from a quote's own file) gets its own shot id, like any reused window, so the one-use-per-id rules hold.
+    The frames stay exactly the same real frames; nothing is frozen or invented."""
+    seen: set[int] = set()
+    for entry in edl:
+        for index, clip in enumerate(entry.clips):
+            if clip.shot_id in seen and clip.shot_id in shots_by_id and (repeatable is None or clip.shot_id in repeatable):
+                parent = shots_by_id[clip.shot_id]
+                found = next(((key, value) for key, value in manifest["source_clocks"].items()
+                              if value["source_index"] == parent.source_index), None)
+                if found is None:
+                    continue
+                upload_id, clock = found
+                offset = clock["norm_source_offset"]
+                def free(candidate: int) -> bool:
+                    # A copy made by an earlier render of this same footage is reused, not duplicated again.
+                    existing = shots_by_id.get(candidate)
+                    return candidate not in seen and candidate != clip.shot_id and (
+                        existing is None or existing.norm_path == parent.norm_path)
+                variant, new_id = 1, -1
+                while not free(new_id):
+                    new_id = _physical_shot_id(manifest, upload_id, clip.in_time + offset, clip.out_time + offset, variant)
+                    variant += 1
+                if new_id not in shots_by_id:
+                    copy = parent.model_copy(update={"shot_id": new_id})
+                    if isinstance(shots, list):
+                        shots.append(copy)
+                    shots_by_id[new_id] = copy
+                options[new_id] = options.get(clip.shot_id, SegmentRenderOptions())
+                entry.clips[index] = clip.model_copy(update={"shot_id": new_id})
+            seen.add(entry.clips[index].shot_id)
+
+
+def _gap_fill(pool: Sequence[AnnotatedShot], shots_by_id: dict[int, AnnotatedShot], quote_shot: AnnotatedShot,
+              quote_start: float, seconds: float, manifest: dict[str, Any]) -> tuple[AnnotatedShot | None, float]:
+    """Real footage for a short pause after a quote that ends at its file's end, when no unused B-roll is left."""
+    need = seconds + 1 / _FPS
+    reused = next((s for s in pool if s.media_origin == "source" and s.duration >= need), None)
+    if reused is not None:
+        return reused, reused.start
+    clock = next((value for value in manifest["source_clocks"].values() if value["source_index"] == quote_shot.source_index), None)
+    floor = max(0.0, (clock["prepared_start"] - clock["norm_source_offset"]) if clock else 0.0)
+    if quote_start - floor >= need:
+        # The moment just before the quote, from the same file: the closest real picture there is.
+        begin = math.floor((quote_start - need) * _FPS) / _FPS
+        return quote_shot, max(floor, begin)
+    for other in sorted(shots_by_id.values(), key=lambda s: -s.duration):
+        if other.media_origin == "source" and other.duration >= need:
+            return other, other.start
+    return None, 0.0
 
 
 def _usable_broll(pool: Sequence[AnnotatedShot]) -> bool:
@@ -1471,13 +1526,28 @@ def build_mode_edl(
                 # A different physical B-roll range for a gap must not consume a
                 # previously used shot, including a jump-cover already allocated.
                 gap_shot = next((s for s in pool if s.shot_id not in used and s.duration >= remaining + 1 / _FPS), None)
-                if gap_shot is None:
-                    raise MatchingError(f"第 {item.sentence_id + 1} 句到源文件末尾，缺少覆盖 {remaining:.3f} 秒句间隔的真实画面；请补空镜或调整原声范围。")
-                used.add(gap_shot.shot_id)
+                if gap_shot is not None:
+                    used.add(gap_shot.shot_id)
+                    gap_start = gap_shot.start
+                else:
+                    # No unused B-roll (common in 只用原声). Fill the short pause with real footage anyway, in
+                    # order: used B-roll again -> this source just before the quote -> any other source.
+                    # Never frozen or invented; flagged for review before export.
+                    gap_shot, gap_start = _gap_fill(pool, shots_by_id, shot, start, remaining, manifest)
+                    if gap_shot is None:
+                        raise MatchingError(f"第 {item.sentence_id + 1} 句到源文件末尾，缺少覆盖 {remaining:.3f} 秒句间隔的真实画面；请补空镜或调整原声范围。")
+                    manifest.setdefault("broll_fallback", "gap_fill")
+                    rendering_receipts.append({"gap_fill": item.sentence_id, "shot": gap_shot.shot_id, "start": gap_start,
+                                               "duration": remaining, "audio_changed": False})
                 clips.append(EDLClip(shot_id=gap_shot.shot_id, src=gap_shot.norm_path,
-                                     in_time=gap_shot.start, out_time=gap_shot.start + remaining))
-                options[gap_shot.shot_id] = SegmentRenderOptions(color_consistency=preferences.color_consistency)
+                                     in_time=gap_start, out_time=gap_start + remaining))
+                options.setdefault(gap_shot.shot_id, SegmentRenderOptions(color_consistency=preferences.color_consistency))
         edl.append(EDLItem(sentence_id=item.sentence_id, clips=clips, timeline_start=timing.start, timeline_end=timing.end + timing.gap_after))
+    # Original-sound footage may always repeat (it is the user's own script); B-roll only with consent to reuse.
+    repeatable = {item.shot_id for item in plan if item.kind == "quote"}
+    if (manifest.get("shot_reuse") or {}).get("accepted"):
+        repeatable |= set(shots_by_id)
+    _distinct_repeat_ids(edl, shots, shots_by_id, options, manifest, repeatable)
     manifest["jumpcuts"] = [cut.model_dump(mode="json") for cut in cuts]
     manifest["jumpcut_rendering"] = rendering_receipts
     manifest["rows"] = _rows(plan)
