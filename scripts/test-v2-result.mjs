@@ -265,7 +265,7 @@ test('source contracts: explicit recording countdown, flush lifecycle, real cont
     } finally { h.stop(); }
   }
   assert.match(source, /检查通过后才能导出/); assert.match(source, /开始导出/);
-  assert.match(css, /max-width: 1000px/); assert.match(css, /height: 6.5rem/); assert.match(css, /scroll-snap-type: x proximity/);
+  assert.match(css, /max-width: 1000px/); assert.match(css, /height: 8.5rem/); assert.match(css, /scroll-snap-type: x proximity/);
   assert.match(css, /var\(--teal, #237f4a\)/); assert.match(css, /var\(--gold, #f2b632\)/);
 });
 

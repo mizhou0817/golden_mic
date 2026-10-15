@@ -143,7 +143,7 @@ test('SSR shell keeps sorted history presentation bounded to 100 without a dupli
   assert.equal((sidebar.match(/<strong>TITLE_/g) ?? []).length, 100);
   assert.match(sidebar, /按标题 ↕/); assert.doesNotMatch(sidebar, /TITLE_100/);
 });
-test('CSS parsed contracts retain 960px canvas, rem font inheritance, one-third folded A and gold focus', () => {
+test('CSS parsed contracts retain 960px canvas, rem font inheritance, full-width folded A and gold focus', () => {
   const shell = postcss.parse(read('src/styles.css')), modes = postcss.parse(read('src/styles/modes.css'));
   const module = postcss.parse(read('src/components/ui/Primitives.module.css'));
   const value = (css, selector, property) => { let result; css.walkRules(selector, rule => rule.walkDecls(property, d => { result = d.value; })); return result; };
@@ -151,7 +151,7 @@ test('CSS parsed contracts retain 960px canvas, rem font inheritance, one-third 
   assert.equal(value(modes, '.gm-create-wizard', 'max-width'), '960px');
   assert.equal(value(module, '.intro', 'max-width'), '960px');
   assert.equal(value(modes, '.gm-create-wizard', 'font'), 'inherit');
-  assert.doesNotMatch(read('src/styles/modes.css'), /data-collapsed=true.*grid-template-columns/);
+  assert.equal(value(modes, '.gm-create-wizard .gm-mode-cards[data-collapsed=true]', 'grid-template-columns'), 'minmax(0,1fr)');
   const grid = []; modes.walkRules('.gm-create-wizard .gm-mode-cards', r => { if (r.parent.type === 'root') r.walkDecls('grid-template-columns', d => grid.push(d.value)); });
   assert.deepEqual(grid, ['repeat(3,minmax(0,1fr))']);
   assert.match(read('src/styles/modes.css'), /focus-visible \{ outline: .1875rem solid var\(--gm-gold\)/);

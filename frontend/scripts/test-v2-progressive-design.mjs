@@ -266,14 +266,21 @@ test('VM real source selection keeps match debounce unchanged and permits explic
   assert.equal(w.submissions.length, 1); assert.equal(w.submissions[0].mode, 'original');
   assert.deepEqual(w.submissions[0].sentences[0].source_hint, { upload_id: UP, seg_id: 'same' }); w.unmount();
 });
-test('VM A/B/C effects remain visible, no invented advanced fold; choices survive back/forward', async () => {
+test('VM A/B/C keep every effect in native more-settings, common choices outside; values survive back/forward', async () => {
   for (const mode of ['voiceover', 'mixed', 'original']) {
     const w = harness(draft({ mode, script: '社区新闻\n今天社区居民在广场共同参加现场活动', preferences: modes.defaultModePreferences(mode) }));
     await w.settle(); if (mode === 'original') { w.click('重新核对'); w.clock.advance(600); await w.settle(); }
     w.click('下一步：选效果');
     const visibleControls = nodes(w.tree).filter(({ node }) => node.props.role === 'switch' || node.props.role === 'group');
     assert.ok(visibleControls.length >= 8);
-    assert.ok(visibleControls.every(({ ancestors }) => !ancestors.some(n => n.type === 'details')));
+    const settings = w.all().find(n => n.type === 'details' && n.props.className === 'gm-advanced-settings');
+    assert.ok(settings); assert.equal(settings.props.open, undefined, 'native closed by default');
+    assert.equal(settings.props.children[0].type, 'summary');
+    assert.ok(visibleControls.filter(({ node }) => node.props.role === 'switch')
+      .every(({ ancestors }) => ancestors.includes(settings)), 'all original effect switches remain mounted inside');
+    assert.ok(visibleControls.filter(({ node }) => ['字幕样式', '谁来配音', '旁白谁来读', '原声段的字幕'].includes(node.props['aria-label']))
+      .every(({ ancestors }) => !ancestors.some(n => n.type === 'details')), 'common choices stay immediately available');
+    assert.equal(w.all().find(n => n.props.className === 'gm-wizard-actions').type, 'footer');
     for (const name of ['背景音乐', '画面慢慢推近', '新闻台标和片尾板', '开头结尾淡入淡出', '颜色统一', '现场原声降噪']) assert.ok(w.button(name));
     w.click('大字清晰'); w.click('背景音乐'); const before = plain(w.drafts.at(-1).preferences);
     w.click('← 上一步'); w.click('下一步：选效果'); assert.deepEqual(w.drafts.at(-1).preferences, before);

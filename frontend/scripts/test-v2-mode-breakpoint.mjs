@@ -27,7 +27,9 @@ test('640px media rule changes the mode grid alone; 600px general mobile rules r
   assert.equal(small[0].nodes[0].selector, '.gm-create-wizard .gm-mode-cards');
   assert.deepEqual(small[0].nodes[0].nodes.map(n => [n.prop, n.value]), [['grid-template-columns', 'minmax(0,1fr)']]);
   const mobile = ast.nodes.find(n => n.type === 'atrule' && n.params === '(max-width:600px)');
-  assert.ok(mobile.nodes.length > 10); assert.ok(!mobile.nodes.some(n => n.selector.includes('.gm-mode-cards')));
+  assert.ok(mobile.nodes.length > 10);
+  assert.ok(mobile.nodes.filter(n => n.selector.includes('.gm-mode-cards')).every(n => n.selector.includes('[data-collapsed=true]')),
+    '600px rules adjust only the folded recommendation, never the expanded three-mode breakpoint');
 });
 test('offline Edge runtime: expanded actual mode cards at 601/620/640/641px and 16/20px; bounds and native focus', async () => {
   let browser, context, stage = 'launch', errors = 0, requests = 0;
@@ -89,7 +91,7 @@ test('offline Edge runtime: expanded actual mode cards at 601/620/640/641px and 
       });
       console.log(JSON.stringify({ width, font, facts }));
       assert.equal(facts.columns, width <= 640 ? 1 : 3); assert.equal(facts.overflow, 0); assert.equal(facts.pageOverflow, false);
-      assert.equal(facts.padding, `${font * 1.5}px`, '601+ does not activate 600px general padding');
+      assert.equal(facts.padding, `${font * 1.75}px`, '601+ retains the roomy desktop card padding');
       assert.equal(facts.focusVisible, true); assert.ok(facts.outlineWidth >= 3); assert.equal(facts.outlineStyle, 'solid');
       if (width <= 640) for (let i = 1; i < 3; i++) { assert.equal(facts.cards[i].x, facts.cards[0].x); assert.ok(facts.cards[i].y >= facts.cards[i-1].y + facts.cards[i-1].height); }
       else { assert.equal(facts.cards[0].y, facts.cards[2].y); assert.ok(facts.cards[1].x >= facts.cards[0].right); }

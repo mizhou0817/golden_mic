@@ -120,7 +120,9 @@ export default function Processing({ task, upload, uploading, error, now, title,
       <p>{measured(upload.loaded) ? bytes(upload.loaded) : '已传大小待确认'}{measured(upload.total) ? ` / ${bytes(upload.total)}` : ''} · {upload.finishedAt != null ? '传输结束，接收状态以服务器为准' : '正在传输'}</p>
       <progress aria-label="素材整体上传进度" max={100} value={uploadPercent} />
     </div><span className={styles.time}>{measured(upload.startedAt) && measured(upload.finishedAt ?? now) ? seconds(Math.max(0, ((upload.finishedAt ?? now) - upload.startedAt) / 1000)) : ''}</span></div>}
-    <ol className={styles.stages} aria-label={`${MODE_LABELS[mode]}的十步制作阶段`} data-testid="processing-stages">{stages.map(({ n, name }) => {
+    <details className={styles.stepDetails} open={failed || !!error}>
+      <summary>查看制作步骤</summary>
+      <ol className={styles.stages} aria-label={`${MODE_LABELS[mode]}的十步制作阶段`} data-testid="processing-stages">{stages.map(({ n, name }) => {
         const stage = !uploading ? task?.stages.find(item => item.number === n) : undefined;
         const state: DisplayState = stage?.status ?? (uploading ? 'pending' : 'unknown');
         return <li key={n} data-stage={n} data-state={state} data-animated={state === 'running' && running} aria-current={currentNumber === n ? 'step' : undefined}>
@@ -130,6 +132,7 @@ export default function Processing({ task, upload, uploading, error, now, title,
           <span className={styles.time}>{state === 'done' && measured(stage?.elapsed_seconds) ? seconds(stage.elapsed_seconds) : ''}</span>
         </li>;
       })}</ol>
+    </details>
     {!failed && task?.status !== 'done' && <footer className={styles.footer}><p>{uploading ? '停止上传不等于撤销服务器已接收的作品；停止后请核对“我的作品”。' : '可以先去做别的，回来在“我的作品”里找它。取消并删除无法撤销。'}</p>
       <button type="button" className={styles.danger} data-control="processing-cancel" onClick={onCancel} disabled={busy}>{uploading ? '停止上传' : '取消并删除'}</button></footer>}
   </section>;

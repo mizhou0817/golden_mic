@@ -63,6 +63,84 @@ function nodes(element) {
   return [element, ...children.flatMap(nodes)];
 }
 
+test('native steps disclosure is closed for ordinary running, queued and uploading, without unmounting rows', () => {
+  for (const patch of [{}, { task: makeTask({ status: 'queued' }) }, { uploading: true, task: null },
+    { uploading: true, task: makeTask({ status: 'failed' }) }]) {
+    const tree = nodes(Processing(props(patch))), disclosures = tree.filter(n => n.type === 'details');
+    assert.equal(disclosures.length, 1);
+    const details = disclosures[0], children = React.Children.toArray(details.props.children);
+    assert.equal(details.props.open, false);
+    assert.equal(children[0].type, 'summary'); assert.equal(children[0].props.children, '查看制作步骤');
+    assert.equal(children[1].type, 'ol'); assert.equal(children[1].props['data-testid'], 'processing-stages');
+    assert.equal(nodes(details).filter(n => n.type === 'li').length, 10);
+    assert.match(render(patch), /<details class="stepDetails"><summary>查看制作步骤<\/summary><ol/);
+    assert.equal(details.props.onToggle, undefined); assert.equal(children[0].props.onClick, undefined);
+  }
+});
+test('failed, cancelled, connection and recovery attention initially open the native steps disclosure', () => {
+  for (const patch of [{ task: makeTask({ status: 'failed' }) }, { task: makeTask({ status: 'cancelled' }) },
+    { error: 'private raw error' }, { task: null, error: 'private raw error' },
+    { uploading: true, error: 'private raw error' }, { error: RECOVERY_UNAVAILABLE }]) {
+    const details = nodes(Processing(props(patch))).find(n => n.type === 'details');
+    assert.equal(details.props.open, true); assert.equal(nodes(details).filter(n => n.type === 'li').length, 10);
+    assert.match(render(patch), /<details class="stepDetails" open="">/);
+    assert.doesNotMatch(render(patch), /private raw error/);
+  }
+});
+for (const mode of ['voiceover', 'mixed', 'original']) test(`${mode}: disclosure retains all ten authoritative row states, names and attributes`, () => {
+  const states = ['done', 'failed', 'running', 'pending', 'unknown', 'pending', 'done', 'failed', 'running', 'unknown'];
+  const stages = makeTask().stages.filter(s => states[s.number - 1] !== 'unknown')
+    .map(s => ({ ...s, status: states[s.number - 1] })).reverse();
+  for (const patch of [{}, { task: makeTask({ mode, stages, status: 'failed', current_stage: 3 }) }, { error: 'offline' }]) {
+    const tree = nodes(Processing(props({ task: makeTask({ mode, stages, current_stage: 3 }), ...patch })));
+    const details = tree.find(n => n.type === 'details');
+    const list = nodes(details).find(n => n.type === 'ol'), rows = nodes(list).filter(n => n.type === 'li');
+    assert.match(list.props['aria-label'], /的十步制作阶段$/); assert.equal(rows.length, 10);
+    rows.forEach((row, index) => {
+      assert.equal(row.props['data-stage'], index + 1); assert.equal(row.props['data-state'], states[index]);
+      assert.equal(row.props['data-animated'], states[index] === 'running' && !patch.task && !patch.error);
+      assert.equal(row.props['aria-current'], index === 2 ? 'step' : undefined);
+      assert.ok(nodes(row).some(n => n.type === 'span' && n.props.children === rules.modes[mode].stages[index].name));
+    });
+  }
+});
+test('all errors, notices, progress, upload and action controls remain outside the steps disclosure', () => {
+  const cases = [{}, { task: makeTask({ status: 'queued' }) },
+    { uploading: true, task: null, upload: { loaded: 80, total: 100, startedAt: 0 } },
+    { error: RECOVERY_UNAVAILABLE }, { error: 'HTTP 500 /api/private Traceback secret' },
+    { task: makeTask({ status: 'cancelled' }), onNew: noop },
+    ...['qc', 'shortage', 'quote_missing', 'network', 'transient'].map(errorKind => ({ task: makeTask({ status: 'failed', errorKind }) })),
+    { task: makeTask({ plan: { idx: 0, steps: [{ op: 'voice', run: [7] }, { op: 'render', run: [9] }] } }) }];
+  const seenControls = new Set();
+  for (const patch of cases) {
+    const tree = nodes(Processing(props(patch))), inside = new Set(nodes(tree.find(n => n.type === 'details')));
+    for (const node of tree) {
+      const role = node.props?.role, id = node.props?.['data-testid'];
+      if (node.props?.['data-control']) seenControls.add(node.props['data-control']);
+      if (node.type === 'button' || node.type === 'footer' || ['alert', 'status', 'progressbar'].includes(role)
+        || ['processing-upload', 'processing-plan'].includes(id) || node.props?.className === 'reassurance') {
+        assert.ok(!inside.has(node), `${node.type} ${id ?? role ?? ''} must remain outside details`);
+      }
+    }
+    assert.doesNotMatch(render(patch), /HTTP|\/api\/private|Traceback|secret/);
+  }
+  assert.deepEqual([...seenControls].sort(), ['processing-cancel', 'processing-delete', 'processing-edit-materials',
+    'processing-edit-script', 'processing-new', 'processing-refresh', 'processing-retry']);
+});
+test('presentation stays hook-free with light token borders, native marker and visible keyboard focus', () => {
+  const source = read('src/components/Processing.tsx'), css = postcss.parse(read('src/components/Processing.module.css'));
+  assert.doesNotMatch(source, /\buse[A-Z]\w*\s*\(/);
+  const declarations = selector => css.nodes.find(n => n.type === 'rule' && n.selector === selector).nodes;
+  for (const selector of ['.version', '.progressCard', '.upload', '.stepDetails']) {
+    assert.ok(declarations(selector).some(d => d.prop === 'border' && d.value === '1px solid var(--line)'));
+  }
+  assert.ok(!declarations('.version').some(d => d.prop === 'transform'));
+  assert.ok(!declarations('.progressCard').some(d => d.prop === 'box-shadow'));
+  assert.ok(!declarations('.progress').some(d => d.prop === 'border'));
+  assert.ok(declarations('.processing button:focus-visible,.stepDetails summary:focus-visible').some(d => d.prop === 'outline'));
+  assert.ok(!declarations('.stepDetails summary').some(d => ['display', 'list-style'].includes(d.prop)));
+});
+
 test('A-4 title/version, 64px microphone with exactly four wave groups and ten simple rows', () => {
   const html = render(); assert.match(html, /<h1[^>]*>现场报道<\/h1>/); assert.match(html, />初版<\/span>/);
   assert.equal((html.match(/<g /g) ?? []).length, 4); assert.equal((html.match(/data-stage="/g) ?? []).length, 10);

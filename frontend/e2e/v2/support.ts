@@ -385,11 +385,17 @@ export async function effects(page: Page) {
     makeDirectory(parentPath(target)); writeJSON(target, { ...gate, disabled: await next.isDisabled() });
     throw error;
   }
+  const settings = page.locator('details.gm-advanced-settings');
+  await expect(settings).not.toHaveAttribute('open');
+  await settings.locator(':scope > summary').click();
+  await expect(settings).toHaveAttribute('open', '');
   for (const name of ['背景音乐', '画面慢慢推近', '新闻台标和片尾板', '开头结尾淡入淡出', '颜色统一', '现场原声降噪']) {
     const control = page.getByRole('switch', { name, exact: true });
     if (await control.getAttribute('aria-checked') === 'true') await control.click();
     await expect(control).toHaveAttribute('aria-checked', 'false');
   }
+  await settings.locator(':scope > summary').click();
+  await expect(settings).not.toHaveAttribute('open');
 }
 export async function submit(m: V2Run, page: Page, id: string) {
   m.confirmations.set(page, /制作新闻视频/);
@@ -477,7 +483,11 @@ export async function exportFile(m: V2Run, page: Page, id: string, revision: num
   await expect(dialog).toBeVisible();
   const labels = { mp4: '视频 MP4', gif: '动图 GIF', mp3: '音频 MP3', srt: '字幕 SRT', png: '封面图' };
   await dialog.getByRole('button', { name: labels[format], exact: true }).click();
-  if (format === 'mp4') await dialog.getByRole('combobox', { name: '清晰度', exact: true }).selectOption('1080');
+  if (format === 'mp4') {
+    const settings = dialog.locator('details.gm-rw-export-settings');
+    if (!await settings.evaluate(node => (node as HTMLDetailsElement).open)) await settings.locator(':scope > summary').click();
+    await dialog.getByRole('combobox', { name: '清晰度', exact: true }).selectOption('1080');
+  }
   const waiting = responseFor(page, `/api/tasks/${id}/exports`);
   await dialog.getByRole('button', { name: '开始导出', exact: true }).click();
   const response = await waiting; invariant(response.status() === 202, 'actual export submission');

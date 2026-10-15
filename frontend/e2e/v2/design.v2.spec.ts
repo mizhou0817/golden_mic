@@ -160,6 +160,7 @@ test.describe('current design: one owned short-A lifecycle', () => {
     await expect.poll(async () => (await pendingSlot()).includes(EDIT)).toBe(true);
     const savedPending = await pendingSlot(), beforeRename = writes().length;
     await page.getByRole('button', { name: '大字', exact: true }).click();
+    await page.locator('.gm-rw-more-actions > summary').click();
     const rename = page.getByRole('button', { name: '重命名', exact: true });
     const dialog = page.getByRole('dialog', { name: '重命名作品', exact: true });
     const layout = [];
@@ -214,6 +215,7 @@ test.describe('current design: one owned short-A lifecycle', () => {
   test('VD-03 exact keep-copy and C recover-draft preserve capabilities, bindings and source without ASR/start', async () => {
     const before = await m.identity(), savedPending = await pendingSlot();
     // ResultWorkbench's dirty-editor departure confirm precedes native copy UI.
+    await page.locator('.gm-rw-more-actions > summary').click();
     m.confirmations.set(page, /^还有待应用修改。修改会保留/);
     await page.getByRole('button', { name: '复制一份', exact: true }).click();
     const choice = page.getByRole('dialog', { name: '复制一份', exact: true });
@@ -246,6 +248,7 @@ test.describe('current design: one owned short-A lifecycle', () => {
     const copyHashes = m.hashes(copy.task_id); expect(copyHashes['final.mp4']).toBe(r0['final.mp4']);
     expect(await pendingSlot()).toBe(savedPending); await unchangedSource();
     await page.goto(`/tasks/${source}`); await result(page); await expect(pending()).toBeVisible();
+    await page.locator('.gm-rw-more-actions > summary').click();
     m.confirmations.set(page, /^还有待应用修改。修改会保留/);
     await page.getByRole('button', { name: '复制一份', exact: true }).click();
     await choice.getByRole('radio', { name: /^改为 C/ }).check();

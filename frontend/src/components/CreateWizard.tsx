@@ -1041,7 +1041,8 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
     {mode === "original" && <button type="button" className="gm-small-button" onClick={() => { setPickOpen(true); goToStep(1); }}>从转写挑句子</button>}
     <button type="button" className="gm-small-button gm-push" disabled={preview.pending || readyUploadIds.length !== files.length || !files.length}
       onClick={() => { setAlignmentEnabled(true); invalidatePreview(); setPreviewRetry(value => value + 1); }}>重新核对</button></div>
-    <p className="gm-muted gm-small">85% 起为“对上了”，60%–85% 为“不太确定”，低于 60% 或无出处不能继续。分数来自服务器文本匹配，不是声音质量或事实认证。</p>
+    <p className="gm-muted gm-small">请结合原素材试听，确认每句都是现场说过的话。没有找到出处的句子需要先处理。</p>
+    <details className="gm-preference-details"><summary>匹配结果怎么看</summary><p>85% 起为“对上了”，60%–85% 为“不太确定”，低于 60% 或无出处不能继续。分数来自服务器文本匹配，不是声音质量或事实认证。</p></details>
     {preview.error && preview.key === previewKey && <p className="gm-error" role="alert">原话核对失败：{preview.error} 不会重复转写素材；可点“重新核对”。</p>}
     {!quoteRows.length && <p className="gm-muted">{mode === "mixed" ? "暂无原声句，可回写稿把现场原话标成“同期”。" : "先上传采访，从转写里挑选至少一句原话。"}</p>}
     {quoteRows.map(sentence => {
@@ -1080,7 +1081,7 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
         <span className="gm-step-badge">第 {step} 步</span>
         <header className="gm-card-heading"><h1 ref={heading} tabIndex={-1}>{["写稿", "传素材", "选效果"][step - 1]}</h1>
           <p>{step === 1 ? mode === "mixed" ? "第一行是标题；人说的话写成「同期 姓名（身份）：…」。" : mode === "original" ? "第一行是标题；下面每行一句原话。" : "第一行是标题。"
-            : step === 2 ? mode === "voiceover" ? "为稿件内容准备真实、相关的画面。" : "上传真实采访，对上原话和说话人。" : "按制作需求选择字幕和画面效果。"}</p></header>
+            : step === 2 ? mode === "voiceover" ? "上传与稿件相关的视频或照片，手机拍的也可以。" : "上传真实采访，对上原话和说话人。" : "默认设置就能开始，需要时再调整。"}</p></header>
 
         {step === 1 && <>
           <div id={`${id}-modes`} className="gm-mode-cards" data-collapsed={!modeMore && mode === "voiceover"} role="group" aria-label="制作模式">{MODE_CARDS.filter(card => modeMore || mode !== "voiceover" || card.mode === "voiceover").map(card => <button type="button" key={card.mode} aria-pressed={mode === card.mode}
@@ -1092,7 +1093,7 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
           </button>)}</div>
           {mode === "voiceover" && <button type="button" className="gm-small-button gm-mode-more" aria-expanded={modeMore} aria-controls={`${id}-modes`} onClick={() => setModeMore(value => !value)}>{modeMore ? "收起 ▴" : "更多制作方式：旁白 + 原声 / 只用原声 ▾"}</button>}
           {transcriptPicker}
-          <label className="gm-sr-only" htmlFor={`${id}-script`}>新闻稿（第一行标题，下一行正文）</label>
+          <label className="gm-field-label gm-script-label" htmlFor={`${id}-script`}>新闻稿（第一行标题，下一行正文）</label>
           <textarea id={`${id}-script`} className="gm-script" value={script} onChange={(event) => changeScript(event.target.value)}
             placeholder={mode === "original" ? "把从采访里挑出来的原话贴到这里，一句一行。还没有稿？先去第 2 步传素材，转写完回来挑句子" : mode === "mixed" ? "把稿子粘贴到这里；受访者的话写成「同期 王红（市集主办方）：…」" : "把新闻稿粘贴到这里……"} aria-describedby={`${id}-script-hint ${id}-gate`} aria-invalid={charCount > 0 && !scriptValid} />
           <div className="gm-row gm-script-status" id={`${id}-script-hint`} aria-live="polite">
@@ -1102,7 +1103,8 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
           </div>
           {charCount > MODE_LIMITS.script_soft_chars && <p className="gm-warning">稿件超过 {MODE_LIMITS.script_soft_chars} 字的建议长度，建议精简；服务器硬上限 {cap.maxScript} 字。</p>}
           {analysis.longSentences.length > 0 && <div className="gm-warning">有 {analysis.longSentences.length} 句超过 30 字：{analysis.longSentences.slice(0, 6).map((item) => `第 ${item.index + 1} 句 ${item.chars} 字`).join("、")}。建议在意思完整的地方拆句。</div>}
-          {mode !== "original" && script.trim() && <section className="gm-elements"><div className="gm-element-summary"><h2>五要素</h2>
+          {mode !== "original" && script.trim() && <details className="gm-writing-tools"><summary>写稿小帮手 <span className="gm-muted gm-small">核对要素、准备拍摄清单 · 选填</span></summary>
+          <section className="gm-elements"><div className="gm-element-summary"><h2>五要素</h2>
             {ELEMENT_RULES.map(({ key, label }) => <button key={key} type="button" className="gm-element-chip" data-confirmed={confirmedElements.has(key)}
               aria-pressed={confirmedElements.has(key)} onClick={() => setElements(current => ({ ...current, [key]: {
                 confirmed: !confirmedElements.has(key), evidence: analysis.sentences.some((text, index) => sentenceKey(text, index) === current[key]?.evidence)
@@ -1126,7 +1128,7 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
                 </div>;
               })}
             </details>
-          </section>}
+          </section>
           {mode === "voiceover" && analysis.sentences.length > 0 && <section className="gm-shot-plan">
             <div className="gm-row"><h2>拍摄清单 · {analysis.sentences.length} 条</h2><span className="gm-muted gm-small">可选 · 按稿件准备对应画面</span>
               <button className="gm-small-button gm-push" type="button" aria-expanded={shotListOpen} onClick={() => setShotListOpen(!shotListOpen)}>{shotListOpen ? "收起" : "展开"}</button>
@@ -1137,6 +1139,7 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
             {shotListOpen && <ol className="gm-shot-list">{analysis.sentences.map((text, index) => <li key={index}><p>{text}</p><strong>{shotAdvice(text)}</strong></li>)}</ol>}
             {manualCopy && <label className="gm-field-label">自动复制不可用，请全选后复制<textarea readOnly value={shotText} onFocus={(event) => event.currentTarget.select()} /></label>}
           </section>}
+          </details>}
           {mode !== "voiceover" && analysis.rows.length > 0 && <section className="gm-sentence-plan"><h2>句子清单</h2>
             <p className="gm-muted gm-small">{summaryLine}</p>
             {analysis.rows.map(sentence => {
@@ -1179,8 +1182,8 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
             const durationError = item.duration != null && item.duration > cap.maxDuration;
             const upload = uploadFor(item.id), uploadError = uploadErrors[item.id], hash = hashProgress[item.id];
             const thumbnail = item.thumbnail || (upload && uploadTokens[upload.id] ? uploadMediaUrl(upload, uploadTokens[upload.id], "thumb", sessionFor(item.id)) : null);
-            const stateText = !upload ? hash ? `正在计算文件摘要 · ${formatBytes(hash.bytes)} / ${formatBytes(hash.total)}` : item.status === "reselect" ? "等待核实或重选原文件" : "等待上传"
-              : upload.status === "uploading" ? `已确认上传 ${upload.progress.toFixed(1)}% · ${upload.chunks.length} 个分片`
+            const stateText = !upload ? hash ? `正在准备上传 · ${formatBytes(hash.bytes)} / ${formatBytes(hash.total)}` : item.status === "reselect" ? "等待核实或重选原文件" : "等待上传"
+              : upload.status === "uploading" ? `已确认上传 ${upload.progress.toFixed(1)}%`
                 : upload.status === "probing" ? "正在检查素材…" : upload.status === "transcribing" ? "正在听采访并转写…"
                   : upload.status === "failed" ? uploadUsable(upload) ? "转写失败，画面已通过检查；不能充当原话出处" : "素材预处理失败"
                     : upload.has_speech === true ? `有人说话 · 转写 ${upload.transcript.length} 句` : upload.has_speech === null ? "已处理 · 人声情况未确认" : "已处理 · 没有可用人声";
@@ -1212,34 +1215,33 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
           {mode === "original" && <>{transcriptPicker}<button type="button" className="gm-small-button" onClick={() => goToStep(1)}>← 回写稿检查标题和原话</button></>}
           {matchCards}{speakerEditor}
           {noSpeech && <p className="gm-error" role="alert">这批素材没有可用人声。“只用原声”不能制作，请上传采访素材。</p>}
-          {mode !== "original" && !!files.length && <section className="gm-sufficiency"><div className="gm-row"><h2>拍摄充足度 <span>仅作估算</span></h2><strong className={estimate.enough ? "gm-teal-text" : "gm-danger-text"}>{estimate.enough ? "数量 / 时长初估够用" : "建议再补拍"}</strong></div>
+          {mode !== "original" && !!files.length && <section className="gm-sufficiency"><div className="gm-row"><h2>素材够用吗？ <span>仅作估算</span></h2><strong className={estimate.enough ? "gm-teal-text" : "gm-danger-text"}>{estimate.enough ? "数量 / 时长初估够用" : "建议再补拍"}</strong></div>
             <progress max={100} value={estimate.percent} aria-label="拍摄充足度估算" />
-            <p className="gm-small">旁白约 {formatDuration(estimate.narrationSeconds)}，素材可用约 {formatDuration(estimate.seconds)}；普通视频按每 12 秒约 1 个镜头、逐个向下取整且至少 1 个，照片和已确认有人声的视频各按 1 个；初估 {estimate.possibleShots} 个，旁白 {narrationRows.length} 句。{mode === "mixed" && `另有原声 ${quoteRows.length} 段${quotesComplete ? `，约 ${formatDuration(quoteSeconds)}` : "，时长待匹配"}。`}</p>
+            <p className="gm-small">旁白约 {formatDuration(estimate.narrationSeconds)}，素材可用约 {formatDuration(estimate.seconds)}。{mode === "mixed" && `另有原声 ${quoteRows.length} 段${quotesComplete ? `，约 ${formatDuration(quoteSeconds)}` : "，时长待匹配"}。`}</p>
             {estimate.unknownSpeechVideos > 0 && <p className="gm-muted gm-small">{estimate.unknownSpeechVideos} 个视频人声状态未确认，暂按普通视频估算，不代表无人声；确认后估算可能降低。</p>}
             <p className="gm-muted gm-small">这不是镜头检测或内容匹配；一个长视频不一定有多个不同镜头。实际可用镜头须由服务端分析，可能仍需补拍，不能保证制作成功。</p>
-            <h3>每句话都拍到了吗？ <span className="gm-muted gm-small">可选自查，不是 AI 已确认</span></h3>
+            <details className="gm-preference-details"><summary>查看估算依据</summary><p className="gm-small">普通视频按每 12 秒约 1 个镜头、逐个向下取整且至少 1 个，照片和已确认有人声的视频各按 1 个；初估 {estimate.possibleShots} 个，旁白 {narrationRows.length} 句。</p></details>
+            <details className="gm-sentence-review"><summary>每句话都拍到了吗？ <span className="gm-muted gm-small">可选自查，不是 AI 已确认</span></summary>
             <div className="gm-sentence-checks">{narrationRows.slice(0, sentListOpen ? 60 : 12).map(({ text, idx: index }) => <button type="button" className="gm-check-row" key={sentenceKey(text, index)}
               onClick={() => setSentenceChecks(current => { const next = { ...current }, key = sentenceKey(text, index); if (!(key in next)) next[key] = true; else if (next[key]) next[key] = false; else delete next[key]; return next; })}>
               <span><b>{index + 1}.</b> {text}</span><strong>{sentenceChecks[sentenceKey(text, index)] === true ? "拍到了 ✓" : sentenceChecks[sentenceKey(text, index)] === false ? "没拍到 ✕" : "点一下确认"}</strong>
             </button>)}</div>
             {narrationRows.length > 12 && <button type="button" className="gm-small-button" aria-expanded={sentListOpen} onClick={() => setSentListOpen(value => !value)}>{sentListOpen ? "收起" : `展开全部 ${Math.min(60, narrationRows.length)} 句`}</button>}
             {narrationRows.length > 60 && <p className="gm-muted gm-small">这里仅列前 60 句，完整稿件仍会参与制作。</p>}
+            </details>
           </section>}
           <p className="gm-muted gm-small">请选择有权使用的素材；涉及可识别的人物或声音时，请自行核实必要授权并保护隐私。本页不会自动核验素材权利。</p>
           <details className="gm-tip"><summary><Icon name="clapper-mic" /> 小贴士 · 多拍一点不同的画面</summary><ul><li>远景、中景、特写都拍一点，每个场景录 10–20 秒。</li><li>采访先征得同意，让对方把一句话说完；原声是否采用以实际匹配结果为准。</li><li>视频无法读取时，可用“兼容性最好”模式重新拍摄，或转换格式。</li><li>新增或移除文件后，请重新检查素材与稿件的对应关系。</li></ul></details>
         </>}
 
         {step === 3 && <>
+          <div className="gm-settings-intro"><Icon name="check" /><div><strong>不用懂剪辑，先用当前设置就好</strong><p className="gm-muted gm-small">配音和字幕在这里选。音乐、语速等放在“更多设置”，不展开也会保留已选项。</p></div></div>
           <div className="gm-preference-groups">
-            {mode !== "original" && <><Chips label={mode === "mixed" ? "旁白谁来读" : "谁来配音"} value={voice} options={[["ai", "AI 播音"], ["self", "我自己读"]]} disabled={audioBusy}
-              description={voice === "self" ? legacyWholeVoice ? "旧草稿整篇录音恢复：请重新选择原录音。" : "做好后逐句录音。先用 AI 播音生成，再替换需要自己读的句子。" : mode === "mixed" ? "AI 只读旁白句；原声句使用已匹配的现场声音。" : "AI 朗读全部正文；素材人声不会自动代替旁白。"} onChange={(value) => { clearVoice(); setVoice(value); }} />
-              <Chips label="播音速度" value={preferences.pacing} options={[["slow", "慢一点"], ["normal", "正常"], ["fast", "快一点"]]} description={`AI 目标 ${cpm} 字 / 分，实际以成片为准；自录音不承诺自动变速。`} onChange={(pacing) => setPreferences((current) => ({ ...current, pacing }))} /></>}
-            <Chips label="整体感觉" value={preferences.tone} options={[["solemn", "庄重"], ["neutral", "中性"], ["energetic", "明快"]]} onChange={(tone) => setPreferences((current) => ({ ...current, tone }))} />
+            {mode !== "original" && <Chips label={mode === "mixed" ? "旁白谁来读" : "谁来配音"} value={voice} options={[["ai", "AI 播音"], ["self", "我自己读"]]} disabled={audioBusy}
+              description={voice === "self" ? legacyWholeVoice ? "旧草稿整篇录音恢复：请重新选择原录音。" : "做好后逐句录音。先用 AI 播音生成，再替换需要自己读的句子。" : mode === "mixed" ? "AI 只读旁白句；原声句使用已匹配的现场声音。" : "AI 朗读全部正文；素材人声不会自动代替旁白。"} onChange={(value) => { clearVoice(); setVoice(value); }} />}
             <Chips label="字幕样式" value={captionStyle} options={[["news", "新闻标准"], ["big", "大字清晰"], ["none", "不要字幕"]]} description={captionNote + (mode !== "voiceover" ? " 原声段字幕另行控制，按实际说的话显示。" : "")} onChange={(caption_style) => setPreferences((current) => ({ ...current, caption_style }))} />
-            {mode !== "voiceover" && <><Chips label="跳切怎么处理" value={preferences.jump_cut_cover ?? "broll"} options={[["broll", "自动插空镜"], ["zoom", "轻微推近"], ["hard", "直接硬切"]]}
-              description="当前还未完成镜头分析，不能承诺有可用空镜；无已分配空镜时由服务器降级为轻微推近并提示。" onChange={jump_cut_cover => setPreferences(current => ({ ...current, jump_cut_cover }))} />
-              <Chips label="原声段的字幕" value={preferences.quote_caption === "asr" ? "spoken" : preferences.quote_caption ?? "spoken"} options={[["spoken", "按实际说的话"], ["none", "不显示原声字幕"]]}
-                description="不把改写的稿子冒充采访原话；隐藏显示不删除转写和审计。" onChange={quote_caption => setPreferences(current => ({ ...current, quote_caption }))} /></>}
+            {mode !== "voiceover" && <Chips label="原声段的字幕" value={preferences.quote_caption === "asr" ? "spoken" : preferences.quote_caption ?? "spoken"} options={[["spoken", "按实际说的话"], ["none", "不显示原声字幕"]]}
+              description="不把改写的稿子冒充采访原话；隐藏显示不删除转写和审计。" onChange={quote_caption => setPreferences(current => ({ ...current, quote_caption }))} />}
           </div>
           <p className="gm-caption-policy">字幕选择不替代新闻事实核对或素材授权，不改变质量检查与字幕审计，也不能关闭必需的“AI生成示意画面”标注。</p>
           {usingWholeVoice && <section className="gm-voice-panel"><h2>我的整篇播音</h2><p>{mode === "mixed" ? "请只连贯读完所有旁白句，不读原声句和标题。" : "请连贯读完正文，不读标题。"}试听确认没有漏句、杂音或截尾。</p>
@@ -1256,7 +1258,17 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
               <div className="gm-row"><a className="gm-small-button" href={voiceUrl} download={ownVoice.name}>下载这份录音</a><button type="button" className="gm-small-button" onClick={clearVoice}>移除录音</button></div></>}
             <p className="gm-muted gm-small">录音目前仅在本页。提交会把真实音频交给制作服务；不代表已上传或完成对齐。服务不支持时须明确报错，不能静默替换成 AI 配音。刷新需重新选择音频。</p>
           </section>}
-          {/* Handoff A-3 renders this grid directly, not behind an advanced toggle. */}
+          {speakerEditor}
+          {mode !== "original" && generativeAllowed && preferences.generative_fill && <p className="gm-warning">本次已开启 AI 示意画面补充，可能产生额外费用，并保留必需的 AI 标注。可在“更多设置”中关闭。</p>}
+          <details className="gm-advanced-settings"><summary>更多设置 <span className="gm-muted gm-small">语速、音乐、画面效果 · 选填</span></summary>
+          <p className="gm-settings-summary">当前：{mode !== "original" ? `${({ slow: "慢速播音", normal: "正常语速", fast: "快速播音" } as const)[preferences.pacing]} · ` : ""}{preferences.background_music ? "有背景音乐" : "无背景音乐"}{preferences.custom_instructions ? " · 已填写剪辑要求" : ""}。收起设置不会撤销修改。</p>
+          <div className="gm-preference-groups">
+            {mode !== "original" && <Chips label="播音速度" value={preferences.pacing} options={[["slow", "慢一点"], ["normal", "正常"], ["fast", "快一点"]]} description={`AI 目标 ${cpm} 字 / 分，实际以成片为准；自录音不承诺自动变速。`} onChange={(pacing) => setPreferences((current) => ({ ...current, pacing }))} />}
+            <Chips label="整体感觉" value={preferences.tone} options={[["solemn", "庄重"], ["neutral", "中性"], ["energetic", "明快"]]} onChange={(tone) => setPreferences((current) => ({ ...current, tone }))} />
+            {mode !== "voiceover" && <Chips label="跳切怎么处理" value={preferences.jump_cut_cover ?? "broll"} options={[["broll", "自动插空镜"], ["zoom", "轻微推近"], ["hard", "直接硬切"]]}
+              description="连续两段采访衔接时，用其他相关画面过渡。没有可用空镜时，服务器会改为轻微推近并提示；不会凭空补出真实场景。" onChange={jump_cut_cover => setPreferences(current => ({ ...current, jump_cut_cover }))} />}
+          </div>
+          {/* Native disclosure keeps every setting mounted and preserves the existing draft values. */}
           <div className="gm-effect-grid">{effects.map(([key, label, hint]) => <section key={key} className="gm-effect-card" data-active={preferences[key]}>
             <button type="button" className="gm-switch-button" role="switch" aria-checked={preferences[key]} aria-describedby={`${id}-${key}-hint`} onClick={() => setPreferences((current) => ({ ...current, [key]: !current[key] }))}><strong>{label}</strong><span className="gm-switch-track" aria-hidden="true"><span /></span></button>
             <p id={`${id}-${key}-hint`} className="gm-muted gm-small">{hint}{mode === "mixed" && key === "background_music" ? " 原声段落音乐自动压低。" : mode === "mixed" && key === "motion_effects" ? " 此开关只作用于旁白画面；跳切推近由单独选项控制。" : ""}</p>
@@ -1276,7 +1288,6 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
               <p id={`${id}-generative-hint`} className="gm-muted gm-small">{generativeAllowed ? "服务器已配置此能力，可选且默认关闭。" : "服务器尚未配置此能力，不能开启。"} 仅可用于非事实性的示意画面，须保留“AI生成示意画面”标注，不能代替真实新闻证据；可能产生额外费用，实际可用性与质量要求仍由服务器检查。</p>
             </section>}
           </div>
-          {speakerEditor}
           <details className="gm-preference-details"><summary>效果说明与处理范围</summary><dl>
             <dt>字幕</dt><dd>新闻标准沿用原字幕样式；大字清晰将旁白字号放大到 1.5 倍；不要字幕只省略旁白显示，不删除标题、审计或强制披露。</dd>
             <dt>现场原声降噪</dt><dd>尝试减轻现场原声和自录配音里的噪声，不改变 AI 播音；请试听成片，不承诺修复失真或缺失的语音。</dd>
@@ -1284,6 +1295,7 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
           </dl></details>
           <label className="gm-field-label gm-custom-label" htmlFor={`${id}-custom`}>想对 AI 剪辑师说的话 <span className="gm-muted gm-small">选填 · {preferences.custom_instructions.length} / 500 字</span></label>
           <textarea id={`${id}-custom`} maxLength={500} rows={3} value={preferences.custom_instructions} placeholder="想对 AI 剪辑师说的话（选填），例如：多用有人笑的画面" onChange={(event) => setPreferences((current) => ({ ...current, custom_instructions: event.target.value }))} />
+          </details>
           <details className="gm-preference-details"><summary>本次提交清单 · {files.length} 个素材{usingWholeVoice && ownVoice ? " + 1 份整篇录音" : ""}</summary>
             <p className="gm-muted gm-small">素材需全部完成上传与预处理才能制作，将复用已有转写，不因点击制作而重复上传。{legacyWholeVoice ? "旧草稿整篇录音提交时另行上传。" : "选择我自己读：做好后逐句录音。"}</p>
             <ul>{files.map(item => <li key={item.id}>{item.name} · {formatBytes(item.size)} · {uploadUsable(uploadFor(item.id)) ? "服务器已接收" : "仍待处理"}{item.note ? ` · 备注：${item.note}` : ""}</li>)}</ul>

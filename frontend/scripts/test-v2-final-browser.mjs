@@ -309,6 +309,7 @@ if (direct && process.env.GM_FINAL_BROWSER === '1') test('native Edge: independe
     cases.push('UI-export-button-mock-success-native-anchor-SRT-transport-headers-exact-bytes-hash');
 
     stage = 'acknowledged-delete'; await dialog.getByRole('button', { name: '关闭', exact: true }).click();
+    await page.locator('.gm-rw-more-actions > summary').click();
     approvedConfirm = true; await page.getByRole('button', { name: '删除', exact: true }).click();
     const confirm = page.getByRole('dialog', { name: '取消并永久删除作品？', exact: true });
     await confirm.waitFor(); deleteBudget = 1; await confirm.getByRole('button', { name: '永久删除', exact: true }).click();

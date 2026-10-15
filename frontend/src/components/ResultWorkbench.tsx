@@ -787,7 +787,8 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
     return badges;
   };
   return <section className="gm-rw" aria-label="作品结果工作台" aria-busy={loading || !!busy} tabIndex={-1} onKeyDown={e => {
-    if (e.target instanceof HTMLElement && e.target.closest('input,textarea,select,button,a,[contenteditable=true]')) return;
+    // Native disclosures own Space/Enter; do not turn their activation into playback.
+    if (e.target instanceof HTMLElement && e.target.closest('input,textarea,select,button,a,summary,[contenteditable=true]')) return;
     if (e.altKey || e.ctrlKey || e.metaKey || exportOpen) return;
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
     else if (row && ['ArrowLeft', 'ArrowRight', 'Delete', 'Backspace'].includes(e.key)) stripKey(e as unknown as KeyboardEvent<HTMLButtonElement>, rows.indexOf(row));
@@ -800,18 +801,22 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
             <span className="gm-rw-badge" data-tone={canExport ? 'olive' : 'warning'}>{gateLabel}</span>
             <span className="gm-rw-badge">{MODE_LABELS[mode]}</span>
           </div>
+          <details className="gm-rw-version-details"><summary>版本记录 <span>{(version ?? revision) === 0 ? '初版' : `版本 ${version ?? revision}`}{historical ? ' · 正在回看' : ''}</span></summary>
           <div className="gm-rw-versions"><span>{props.sample ? '范例作品 · 只读' : owner ? '我的作品' : '只读作品'}</span>
             {(context?.versions ?? []).map(v => <button key={v.revision} aria-pressed={(version ?? revision) === v.revision}
               disabled={disabled || dirty} onClick={() => { setSelected(null); void reload(v.revision); }}>{v.revision === 0 ? '初版' : `版本 ${v.revision}`}</button>)}
             {owner && historical && <button disabled={disabled || dirty || state !== 'done'} onClick={restore}>恢复这个版本</button>}
           </div>
+          </details>
         </div>
         <div className="gm-rw-actions">
+          {owner && <details className="gm-rw-more-actions"><summary>更多操作</summary><div className="gm-rw-actions">
           {owner && props.onRename && <button disabled={disabled || historical} onClick={props.onRename}>重命名</button>}
           {owner && props.onDuplicate && <button disabled={disabled || historical} onClick={() => navigate(props.onDuplicate!)}>复制一份</button>}
           {owner && <button className="gm-rw-danger" disabled={disabled} onClick={() => {
             if (window.confirm('永久删除作品及其媒体？此操作不可撤销。')) navigate(props.onDelete);
           }}>删除</button>}
+          </div></details>}
           {owner && <button className="gm-rw-primary" disabled={disabled || historical} onClick={() => setExportOpen(true)}>导出 / 分享</button>}
         </div>
       </header>
@@ -852,7 +857,7 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
           </section>
 
           <section ref={storyboardPanel} className="gm-rw-card gm-rw-storyboard">
-            <div className="gm-rw-section-head"><h2>故事板</h2><span>一格一句话，宽=时长 · 点一格就能改它 · 第 <b>{row ? rows.indexOf(row) + 1 : 0}</b> / {rows.length} 句</span></div>
+            <div className="gm-rw-section-head"><h2>逐句查看</h2><span>点选一句，查看画面或修改内容 · 第 <b>{row ? rows.indexOf(row) + 1 : 0}</b> / {rows.length} 句</span></div>
             <div className="gm-rw-overview" aria-hidden="true">{rows.map(r => <span key={r.sentence_id} style={{ flex: Math.max(.1, r.duration) }} className={r.sentence_id === row?.sentence_id ? 'is-selected' : ''} />)}</div>
             {!rows.length && <p>暂无可用句子报告，未生成示例内容。</p>}
             <div className="gm-rw-strip" role="group" aria-label="句子选择">
@@ -949,7 +954,7 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
                 onToNarration={selected => rememberQuote(row.sentence_id, 'narration', selected)} onSpeaker={patchSpeaker} onListen={() => listenTo(row.sentence_id)} />}
               {owner && !historical && context && !rowIsQuote && mode !== 'original' && <fieldset disabled={!editable || draft.deleted.includes(row.sentence_id)}>
                 <div className="gm-rw-edit-group">
-                  <h3>① 改这句话</h3>
+                  <h3>改文字或配音</h3>
                   <div className="gm-rw-actions"><button type="button" onClick={() => setEditText(pending.text ?? row.sentence)}><Icon name="pencil" size={15} /> 改字</button>
                     <button type="button" onClick={() => void startRecording()}>我来读</button></div>
                   {editable && !draft.deleted.includes(row.sentence_id) && <label className="gm-rw-file">或上传音频<input type="file" accept=".webm,.ogg,.wav,.mp3,.m4a" onChange={e => { chooseFile(e.target.files?.[0]); e.target.value = ''; }} /></label>}
@@ -958,7 +963,7 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
                     <button type="button" onClick={() => patchSentence(row.sentence_id, { file: undefined, recording: undefined })}>移除录音</button></div>}
                 </div>
                 <div className="gm-rw-edit-group">
-                  <h3>② 换个画面 <small>· 只改画面，旁白字幕不变 · 还有 {candidates.length} 个没用过的镜头</small></h3>
+                  <h3>换个画面 <small>旁白、字幕不变 · 还有 {candidates.length} 个可选镜头</small></h3>
                   <div className="gm-rw-replace"><input aria-label="想要什么画面" maxLength={500} placeholder="想要什么画面？例如：人多热闹 / 汽车" value={instruction} onChange={e => setInstruction(e.target.value)} />
                     <button type="button" className="gm-rw-primary" disabled={!instruction.trim()} onClick={() => { patchSentence(row.sentence_id, { instruction: instruction.trim(), shot_id: undefined }); setInstruction(''); }}>记下换画面</button></div>
                   <p className="gm-rw-muted">也可以直接选一个：</p>
@@ -980,7 +985,7 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
             <aside className="gm-rw-sentence-tools">
               {owner && !historical && context && <>
                 <div className="gm-rw-delete-group">
-                  <h3>③ 不要这句 <small>· 其他句子照原样，至少留一句</small></h3>
+                  <h3>不要这句 <small>其他句子照原样，至少留一句</small></h3>
                   <label className="gm-rw-check"><input type="checkbox" checked={draft.deleted.includes(row.sentence_id)}
                     disabled={!editable || (!draft.deleted.includes(row.sentence_id) && rows.length - draft.deleted.length <= 1)}
                     onChange={e => toggleDeleted(row.sentence_id, e.target.checked)} />删掉第 {rows.indexOf(row) + 1} 句</label>
@@ -1015,13 +1020,18 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
 
       {owner && <dialog ref={exportDialog} className="gm-rw-export" aria-labelledby="gm-rw-export-title" onCancel={() => setExportOpen(false)}>
         <div className="gm-rw-section-head"><h2 id="gm-rw-export-title">导出 / 分享</h2><button onClick={() => setExportOpen(false)}>关闭</button></div>
-        <p>生成独立文件，不覆盖成片。所有发布前检查通过、待修改内容已处理，才能导出。</p>
-        <p className="gm-rw-muted">竖屏与正方形会居中裁切，请留意人物是否完整。标准字幕保留原成片；改变字幕样式后的包装效果请检查导出文件。</p>
+        <p>想保存到电脑或发给别人？选“视频 MP4”即可。生成独立文件，不覆盖成片。</p>
+        <p className="gm-rw-muted">所有发布前检查通过、待修改内容已处理，才能导出；完成后还需点击下载。</p>
         <fieldset disabled={!!busy || exporting || loading || checksLoading}><legend>导出选项</legend>
           <div className="gm-rw-format"><h3>导出什么</h3>{SIMPLE_EXPORT_FORMATS.map(f => <button key={f} type="button" aria-pressed={options.format === f} onClick={() => setOptions(o => normalizeExport({ ...o, format: f }))}>{({ mp4: '视频 MP4', gif: '动图 GIF', mp3: '音频 MP3', srt: '字幕 SRT', png: '封面图' } as const)[f]}</button>)}</div>
-          {options.format === 'mp4' && <><label>清晰度<select value={options.resolution} onChange={e => setOptions(o => ({ ...o, resolution: Number(e.target.value) as ExportOptions['resolution'] }))}>{[720, 1080].map(n => <option value={n} key={n}>{n}p</option>)}</select></label>
-            <label>画幅<select value={options.aspect} onChange={e => setOptions(o => ({ ...o, aspect: e.target.value as ExportOptions['aspect'] }))}>{['16:9', '9:16', '1:1'].map(a => <option key={a}>{a}</option>)}</select></label></>}
-          {options.format === 'mp4' && <label>字幕<select value={options.subtitles} onChange={e => setOptions(o => ({ ...o, subtitles: e.target.value as ExportOptions['subtitles'] }))}>{exportSupport(options.format).subtitles.map(s => <option value={s} key={s}>{({ standard: '标准', large: '大字', none: '无字幕' } as Record<string, string>)[s]}</option>)}</select></label>}
+          {options.format === 'mp4' && <>
+            <p className="gm-rw-export-summary">{options.resolution}p · {({ '16:9': '横屏', '9:16': '竖屏', '1:1': '正方形' } as const)[options.aspect]} · {({ standard: '标准字幕', large: '大字字幕', none: '无字幕' } as const)[options.subtitles]}</p>
+            <details className="gm-rw-export-settings"><summary>调整清晰度、画面比例和字幕</summary><div className="gm-rw-export-grid">
+              <label>清晰度<select aria-label="清晰度" value={options.resolution} onChange={e => setOptions(o => ({ ...o, resolution: Number(e.target.value) as ExportOptions['resolution'] }))}>{[720, 1080].map(n => <option value={n} key={n}>{n === 1080 ? '高清' : '标准'}（{n}p）</option>)}</select></label>
+              <label>画幅<select aria-label="画幅" value={options.aspect} onChange={e => setOptions(o => ({ ...o, aspect: e.target.value as ExportOptions['aspect'] }))}>{(['16:9', '9:16', '1:1'] as const).map(a => <option value={a} key={a}>{({ '16:9': '横屏，适合电脑', '9:16': '竖屏，适合手机', '1:1': '正方形' } as const)[a]}（{a}）</option>)}</select></label>
+              <label>字幕<select aria-label="字幕" value={options.subtitles} onChange={e => setOptions(o => ({ ...o, subtitles: e.target.value as ExportOptions['subtitles'] }))}>{exportSupport(options.format).subtitles.map(s => <option value={s} key={s}>{({ standard: '标准', large: '大字', none: '无字幕' } as Record<string, string>)[s]}</option>)}</select></label>
+            </div><p className="gm-rw-muted">竖屏与正方形会居中裁切，请留意人物是否完整。标准字幕保留原成片；改变字幕样式后的包装效果请检查导出文件。</p></details>
+          </>}
         </fieldset>
         {options.format === 'gif' && <p>GIF 只取前 6 秒，没有声音，适合发群里做预告。</p>}
         {options.format === 'mp3' && <p>{mode === 'original' ? '只导出现场原声，可以当广播稿。' : '只导出配音和现场原声，可以当广播稿。'}不含背景音乐。</p>}

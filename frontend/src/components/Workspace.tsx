@@ -1343,13 +1343,13 @@ export default function Workspace() {
         onRefresh={() => { setTaskRetry(value => value + 1); refreshHistory(); }} />}
       {!intent && page === 'result' && sample && <SampleView onBack={() => navigate('create')} />}
       {!intent && page === 'result' && selection && task?.status === 'done' && <>
-        <div className="shell-actions shell-result-tools"><span>{title}</span><button type="button" onClick={() => {
+        <details className="shell-result-tools"><summary>作品链接</summary><div className="shell-actions"><span>链接不公开授予访问权限，请用保存过此作品的浏览器打开。</span><button type="button" onClick={() => {
           const url = new URL(hashFor(selection.id), location.origin); const serial = generation.current;
           void navigator.clipboard?.writeText(url.href).then(() => {
             if (alive.current && generation.current === serial) setNotice('已复制不含令牌的作品链接。仍需在持有凭据的浏览器或服务器允许的本机工作区打开。');
           }).catch(() => { if (alive.current && generation.current === serial) setNotice('无法写入剪贴板，请复制浏览器地址栏中的作品链接。'); });
           if (!navigator.clipboard) setNotice('此浏览器不支持剪贴板写入，请复制地址栏中的作品链接。');
-        }}>复制作品链接</button></div>
+        }}>复制作品链接</button></div></details>
         <ResultWorkbench taskId={selection.id} accessToken={selection.token} title={title} request={selection.request} onProcessing={processingStarted} onChanged={refreshSelected}
           onChecksChange={onChecksChange} onUnavailable={onUnavailable} onMutationStateChange={onMutationStateChange} onDelete={deleteSelected} onNew={() => newBlank(true)} onError={setError} onDuplicate={duplicate} onRename={openRename} />
         <details className="shell-panel shell-media-fallback"><summary>报告暂不可用？直接下载成片</summary><p>只请求当前作品的已保存成片。服务器仍会校验访问权限；不会重新制作。</p><a href={taskMedia(selection.id, selection.token, task.revision, true)} download="新闻成片.mp4" referrerPolicy="no-referrer">下载当前成片</a></details>
