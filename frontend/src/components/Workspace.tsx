@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { containDialogTab } from '../lib/dialogFocus';
 import { CreateWizard, defaultPreferences } from './CreateWizard';
 import type { CreateSubmission, Draft } from './CreateWizard';
 import Processing from './Processing';
@@ -293,31 +294,6 @@ const hasDraftContent = (draft: Draft | null) => !!draft && (!!draft.script.trim
 const restoredDraftNote = (draft: Draft | null) => draft
   ? `稿件、模式和素材清单已保留。${draft.uploadBindings?.length ? '已完成上传的素材核对通过后无需重选；未传完的文件仍需重选。' : '尚未上传的素材需重新选择。'}${draft.voice === 'self' || draft.ownVoice ? '整篇配音录音未存入浏览器，仍需重选或重录。' : ''}`
   : '草稿保存在此浏览器，包含稿件、模式、素材清单和上传凭据，不保存媒体文件。';
-
-/** Keep ordinary Tab inside our open modal instead of visiting browser chrome.
- * Recompute each key: busy/uncertain states change the available controls. */
-function containDialogTab(event: React.KeyboardEvent<HTMLDialogElement>) {
-  const dialog = event.currentTarget;
-  if (event.key !== 'Tab' || event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey
-      || !dialog.open || !dialog.matches(':modal')) return;
-  const available = Array.from(dialog.querySelectorAll<HTMLElement>('input, button, select, textarea, a[href], [tabindex]'))
-    .filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && !element.closest('[inert]')
-      && element.checkVisibility({ visibilityProperty: true }) && element.getClientRects().length > 0);
-  const stops = available.filter(element => {
-    const radio = element as HTMLInputElement;
-    if (radio.type !== 'radio' || !radio.name) return true;
-    const group = available.filter(candidate => {
-      const other = candidate as HTMLInputElement;
-      return other.type === 'radio' && other.name === radio.name && other.form === radio.form;
-    });
-    return element === (group.find(candidate => (candidate as HTMLInputElement).checked) ?? group[0]);
-  });
-  const index = stops.indexOf(dialog.ownerDocument.activeElement as HTMLElement);
-  if (!stops.length || index < 0 || (event.shiftKey ? index === 0 : index === stops.length - 1)) {
-    event.preventDefault();
-    (event.shiftKey ? stops[stops.length - 1] ?? dialog : stops[0] ?? dialog).focus({ preventScroll: true });
-  }
-}
 
 /** Native modal: inert background, focus containment, Escape, no repeat on failure. */
 function ConfirmDialog({ spec, onClose, onError }: { spec: DialogSpec; onClose: () => void; onError: (text: string) => void }) {
@@ -1295,7 +1271,7 @@ export default function Workspace() {
       </div>
     </header>
     <aside className="shell-sidebar">{navigation}</aside>
-    <dialog ref={drawerRef} id="workspace-navigation" className="shell-drawer" aria-label="工作区导航菜单" onCancel={event => { event.preventDefault(); setDrawer(false); }}>
+    <dialog ref={drawerRef} tabIndex={-1} onKeyDown={containDialogTab} id="workspace-navigation" className="shell-drawer" aria-label="工作区导航菜单" onCancel={event => { event.preventDefault(); setDrawer(false); }}>
       <button type="button" className="shell-drawer-close" aria-label="关闭导航菜单" onClick={() => setDrawer(false)}><span aria-hidden="true">×</span></button>{navigation}
     </dialog>
     <main id="main-content" className="shell-main" data-page={page} tabIndex={-1}>

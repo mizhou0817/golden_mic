@@ -233,6 +233,14 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
   const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingGeneration = useRef(0);
   const submitLock = useRef(false);
+  const submitErrorFocus = useRef(false);
+  const errorAlert = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!localError || !submitErrorFocus.current) return;
+    submitErrorFocus.current = false;
+    errorAlert.current?.focus({ preventScroll: true });
+    errorAlert.current?.scrollIntoView({ block: "center" });
+  }, [localError]);
   const heading = useRef<HTMLHeadingElement>(null);
   const previousStep = useRef(step);
   const callbacks = useRef({ onDraft, onError });
@@ -985,7 +993,10 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
         ...(initialDraft?.legacyRestore === true ? { legacyRestore: true } : {}),
         ...(usingWholeVoice ? { ownVoice } : {}),
       });
-    } catch (error) { reportError(errorMessage(error)); }
+    } catch (error) {
+      submitErrorFocus.current = true;
+      reportError(errorMessage(error));
+    }
     finally { submitLock.current = false; if (mounted.current) setSubmitting(false); }
   }
 
@@ -1073,7 +1084,7 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
         <span className="gm-step-number">{number < step ? <Icon name="check" /> : number}</span><span>{label}</span></button>;
     })}</nav>
     {step === 1 && intro}
-    {localError && <div className="gm-error" role="alert">{localError}</div>}
+    {localError && <div ref={errorAlert} tabIndex={-1} className="gm-error" role="alert">{localError}</div>}
     <div className="gm-sr-only" role="status" aria-live="polite">{notice}</div>
     <fieldset className="gm-wizard-fieldset" disabled={locked}>
       <legend className="gm-sr-only">填写新闻稿、素材与效果</legend>

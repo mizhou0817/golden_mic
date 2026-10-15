@@ -212,8 +212,9 @@ test('offline native simple UI', { timeout: 150000 }, async t => {
           }
           await body({ page, button, toggle, layout, visible, check, m, boundary, recheck });
           stage = `${name}-safety`;
-          const observed = await page.evaluate(() => ({ denials: window.boundaryDenials, submissions: window.observed.submissions.length }));
+          const observed = await page.evaluate(() => ({ denials: window.boundaryDenials, submissions: window.observed.submissions.length, errors: window.observed.errors }));
           totals.deviceDenials += observed.denials; totals.submissions += observed.submissions; m.submits = observed.submissions;
+          check(observed.errors === (options.submitFailure ? 1 : 0), 'unexpected-error-callback');
           check(observed.denials === 0 && m.denied === 0 && m.pageErrors === 0 && m.downloads === 0 && boundary.alignBudget === 0, 'offline-boundary');
           check(m.layoutFailures === 0, firstLayoutFailure);
         } catch (error) {
@@ -287,6 +288,7 @@ test('offline native simple UI', { timeout: 150000 }, async t => {
         check(await page.evaluate(before => JSON.stringify(window.observed.draft.preferences) === before, before), 'navigation-preferences');
         check(!await detail.evaluate(e => e.open), 'navigation-native-default');
         check(await page.evaluate(() => window.observed.submissions.length) === 0 && m.alignPosts === (mode === 'voiceover' ? 0 : 1), 'no-automatic-submit');
+        if (mode === 'voiceover') await page.setViewportSize({ width: 320, height: 568 });
         await button('开始制作').click();
         await page.waitForFunction(() => window.observed.submissions.length === 1);
         check(await page.evaluate(({ before, TOKEN, UP, mode, CUSTOM }) => {
@@ -295,7 +297,16 @@ test('offline native simple UI', { timeout: 150000 }, async t => {
             && s.draftTaskToken === TOKEN && s.uploadIds.length === 1 && s.uploadIds[0] === UP && s.source_voice_preferred === false
             && !Object.hasOwn(s, 'ownVoice') && s.files.length === 0 && s.asset_options[0].note === '保留备注';
         }, { before, TOKEN, UP, mode, CUSTOM }), 'submit-payload');
-        if (mode === 'voiceover') { await visible(page.getByRole('alert')); check(!await detail.evaluate(e => e.open), 'failure-outside-collapsed-settings'); }
+        if (mode === 'voiceover') {
+          await visible(page.getByRole('alert'));
+          const alert = await page.getByRole('alert').evaluate(e => {
+            const r = e.getBoundingClientRect(); return { inView: r.top >= 0 && r.bottom <= innerHeight,
+              focused: e === document.activeElement };
+          });
+          console.log(JSON.stringify({ submitFailureAlertInViewport: alert.inView, submitFailureAlertFocused: alert.focused }));
+          check(alert.inView && alert.focused, 'submit-failure-offscreen-or-unfocused');
+          check(!await detail.evaluate(e => e.open), 'failure-outside-collapsed-settings');
+        }
       });
     }
 

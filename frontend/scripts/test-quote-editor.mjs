@@ -458,6 +458,7 @@ test('actual editor and UI styles stay syntactically valid without full build or
   load(resultSource, 'ResultWorkbench.tsx', {}, {
     react: React, 'react/jsx-runtime': jsxRuntime, '../lib/workbenchApi': api,
     '../lib/productionModes': modes, '../lib/appApi': appApi, '../lib/qualitySummary': quality,
+    '../lib/dialogFocus': load(read('../src/lib/dialogFocus.ts'), 'dialogFocus.ts'),
     './QuoteEditor': { __esModule: true, ...quote }, '../styles/modes.css': {}, './ResultWorkbench.css': {},
     '../lib/pendingEdits': pending, './ui/Icon': icon,
   });

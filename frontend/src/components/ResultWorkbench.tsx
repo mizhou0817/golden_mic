@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
+import { containDialogTab } from '../lib/dialogFocus';
 import type { CaptionStyle, EditingPacing } from '../types';
 import {
   canConfirmCheck, createWorkbenchApi, DEFAULT_EXPORT, diffWorkbenchPreferences, exportSupport,
@@ -727,7 +728,14 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
     setExportOpen(true);
   };
   useEffect(() => {
-    if (exportOpen) exportDialog.current?.showModal(); else exportDialog.current?.close();
+    if (!exportOpen) return;
+    const node = exportDialog.current;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    node?.showModal();
+    return () => {
+      node?.close();
+      if (previous?.isConnected) previous.focus();
+    };
   }, [exportOpen]);
   const submitExport = () => {
     if (!canExport || disabled || dirty) return;
@@ -1018,7 +1026,7 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
         <button className="gm-rw-gold" disabled={!editable || !hasEdit(draft)} onClick={submitBatch}>应用修改 → 生成新版本</button>
       </div>}
 
-      {owner && <dialog ref={exportDialog} className="gm-rw-export" aria-labelledby="gm-rw-export-title" onCancel={() => setExportOpen(false)}>
+      {owner && <dialog ref={exportDialog} tabIndex={-1} onKeyDown={containDialogTab} className="gm-rw-export" aria-labelledby="gm-rw-export-title" onCancel={() => setExportOpen(false)}>
         <div className="gm-rw-section-head"><h2 id="gm-rw-export-title">导出 / 分享</h2><button onClick={() => setExportOpen(false)}>关闭</button></div>
         <p>想保存到电脑或发给别人？选“视频 MP4”即可。生成独立文件，不覆盖成片。</p>
         <p className="gm-rw-muted">所有发布前检查通过、待修改内容已处理，才能导出；完成后还需点击下载。</p>

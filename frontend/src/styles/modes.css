@@ -142,7 +142,7 @@
 .gm-create-wizard .gm-tip summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .375rem .625rem; cursor: pointer; list-style: none; }
 .gm-create-wizard .gm-tip summary::-webkit-details-marker { display: none; }
 .gm-create-wizard .gm-tip summary > span:not(.gm-tip-more):not(.gm-tip-less) { flex: 1 1 12rem; min-width: 0; }
-.gm-create-wizard .gm-tip :is(.gm-tip-more,.gm-tip-less) { margin-left: auto; color: var(--gm-teal); font-size: .8125rem; font-weight: 800; }
+.gm-create-wizard .gm-tip :is(.gm-tip-more,.gm-tip-less) { margin-left: auto; color: var(--gm-ink); font-size: .8125rem; font-weight: 800; }
 .gm-create-wizard .gm-tip .gm-tip-less,.gm-create-wizard .gm-tip[open] .gm-tip-more { display: none; }
 .gm-create-wizard .gm-tip[open] .gm-tip-less { display: inline; }
 .gm-create-wizard .gm-tip ul { margin: .5rem 0 0; padding-left: 1.25rem; }

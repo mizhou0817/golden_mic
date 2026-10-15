@@ -53,7 +53,7 @@ a{color:var(--gm-teal)}a:hover{color:var(--gm-ink)}
 .shell-recent>button:hover{background:var(--gm-wash)}.shell-recent>button[aria-current=true]{border-color:var(--gm-line);background:var(--gm-green)}
 .shell-recent strong{font-size:.875rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .shell-recent small{font-size:.75rem;color:var(--gm-muted);overflow-wrap:anywhere}.shell-recent-meta{display:flex;align-items:center;flex-wrap:wrap;gap:.375rem}
-.shell-work-status{display:inline-block;font-weight:800;color:var(--gm-teal);background:var(--gm-green);border:.09375rem solid var(--gm-line);border-radius:.375rem;padding:.0625rem .375rem}
+.shell-work-status{display:inline-block;font-weight:800;color:var(--gm-ink);background:var(--gm-green);border:.09375rem solid var(--gm-line);border-radius:.375rem;padding:.0625rem .375rem}
 .shell-work-status[data-status=failed],.shell-work-status[data-status=cancelled]{color:var(--gm-red);background:var(--gm-surface);border-color:var(--gm-red)}
 .shell-work-status[data-status=queued],.shell-work-status[data-status=running]{color:var(--gm-ink);background:var(--gm-yellow);border-color:var(--gm-gold)}
 .shell-mode-badge,.shell-audio-badge{display:inline-block;border:.09375rem solid var(--gm-line);border-radius:.375rem;background:var(--gm-wash);color:var(--gm-ink);padding:.125rem .4375rem;font-size:.75rem;font-weight:800;overflow-wrap:anywhere}
@@ -161,8 +161,8 @@ a{color:var(--gm-teal)}a:hover{color:var(--gm-ink)}
 .shell-dialog{width:min(32.5rem,calc(100% - 2rem));max-height:85dvh;overflow:auto;margin:auto;border:.0625rem solid var(--gm-line);border-radius:1.125rem;padding:1.75rem;background:var(--gm-surface);color:var(--gm-ink);box-shadow:0 1rem 3rem rgba(74,54,38,.16);overflow-wrap:anywhere}
 .shell-dialog::backdrop,.shell-drawer::backdrop{background:color-mix(in srgb,var(--gm-ink) 45%,transparent)}.shell-dialog h2{font-size:1.25rem;font-weight:900;margin:0 0 1rem}.shell-dialog p{margin:.75rem 0}
 .shell-dialog label{display:grid;gap:.625rem;font-size:.9375rem;font-weight:700}.shell-dialog .shell-actions{justify-content:flex-end;margin-top:1.5rem}
-.shell-drawer{margin:0;top:0;left:0;height:100dvh;max-height:100dvh;width:min(18.75rem,90vw);max-width:90vw;border:0;border-right:.125rem solid var(--gm-ink);background:var(--gm-paper);color:var(--gm-ink);padding:4.25rem .875rem 1.5rem;overflow:auto}
-.shell-drawer[open]{display:flex;flex-direction:column;gap:.625rem}.shell-drawer-close{position:absolute;right:.875rem;top:.875rem;display:grid;place-items:center;width:2.75rem;height:2.75rem;background:var(--gm-surface);border:.125rem solid var(--gm-line);border-radius:.75rem;padding:.5rem;font-size:1.5rem}
+.shell-drawer{margin:0;top:0;left:0;height:100dvh;max-height:100dvh;width:min(18.75rem,90vw);max-width:90vw;border:0;border-right:.125rem solid var(--gm-ink);background:var(--gm-paper);color:var(--gm-ink);padding:.875rem .875rem 1.5rem;overflow:auto;overscroll-behavior:contain}
+.shell-drawer[open]{display:flex;flex-direction:column;gap:.625rem}.shell-drawer-close{position:sticky;align-self:flex-end;flex:none;z-index:1;top:0;display:grid;place-items:center;width:2.75rem;height:2.75rem;background:var(--gm-surface);border:.125rem solid var(--gm-line);border-radius:.75rem;padding:.5rem;font-size:1.5rem}
 .shell-main .gm-rw,.shell-main .gm-studio{font-size:1rem}.shell-main :is([tabindex],h1,h2){scroll-margin-top:calc(var(--shell-header-height) + 1.5rem)}
 
 /* Demonstration view: readable report data, no editor controls or fake waveform. */

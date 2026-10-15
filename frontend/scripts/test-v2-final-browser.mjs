@@ -136,7 +136,10 @@ test('bounded SRT fixture has actual cues and deterministic bytes, not a video/e
   assert.equal(sha(SRT), sha(Buffer.from(SRT.toString('utf8'))));
 });
 
-if (direct && process.env.GM_FINAL_BROWSER === '1') test('native Edge: independent final client states and UI SRT download (mock HTTP, no server TTL)', { timeout: 35000 }, async () => {
+// The existing 25s business watchdog remains below. Installed Edge can take
+// >56s to exit after all nine scenarios succeed; reserve bounded teardown time
+// instead of cancelling a healthy 14s body or reporting cancellation as passed.
+if (direct && process.env.GM_FINAL_BROWSER === '1') test('native Edge: independent final client states and UI SRT download (mock HTTP, no server TTL)', { timeout: 180000 }, async t => {
   let browser, context, page, temp, downloadDir, transport, download, stage = 'collect', failed = false, cleanupErrors = 0, timedOut = false;
   let errors = 0, blocked = 0, routeErrors = 0, downloads = 0, dialogs = 0, approvedConfirm = false, approvedUnload = false;
   let postBudget = 0, deleteBudget = 0, posts = 0, deletes = 0, routedDownloadGets = 0, requests = 0;
@@ -146,6 +149,12 @@ if (direct && process.env.GM_FINAL_BROWSER === '1') test('native Edge: independe
   const receipt = { scope: 'independent-native-client-fixture', network: 'in-memory-UI-plus-owned-rejecting-native-download-proxy', serverTTL: false,
     backendDeletion: false, backendExportPipeline: false, backendAuthorization: false, core6: 'separate-not-run', design4: 'separate-not-run',
     rawErrors: false, rawDOM: false, screenshots: false, traces: false, syntheticCapabilities: true, cases };
+  const cleanupMs = {};
+  const cleanupStep = async (name, action) => {
+    const began = performance.now();
+    try { await action(); } catch { cleanupErrors++; }
+    finally { cleanupMs[name] = Math.round(performance.now() - began); }
+  };
   let watchdog;
   try {
     stage = 'transport'; temp = mkdtempSync(join(tmpdir(), 'gm-final-browser-'));
@@ -327,12 +336,13 @@ if (direct && process.env.GM_FINAL_BROWSER === '1') test('native Edge: independe
     receipt.browser = browser.version(); receipt.sourceHashes = graph.hashes;
   } catch { failed = true; }
   finally {
+    receipt.bodyDurationMs = Math.round(performance.now() - started);
     clearTimeout(watchdog);
-    if (held) await held.abort().catch(() => { cleanupErrors++; });
-    if (download) try { receipt.downloadCleanup = await cleanupDownload(download); } catch { cleanupErrors++; }
-    try { await context?.close(); } catch { cleanupErrors++; }
-    try { await browser?.close(); } catch { cleanupErrors++; }
-    try { await transport?.close(); } catch { cleanupErrors++; }
+    if (held) await cleanupStep('heldRoute', () => held.abort());
+    if (download) await cleanupStep('download', async () => { receipt.downloadCleanup = await cleanupDownload(download); });
+    await cleanupStep('context', () => context?.close());
+    await cleanupStep('browser', () => browser?.close());
+    await cleanupStep('transport', () => transport?.close());
     if (downloadDir) try {
       receipt.downloadEntriesAfterClose = readdirSync(downloadDir).length;
       check(receipt.downloadEntriesAfterClose === 0, 'download-cleanup-residue'); rmdirSync(downloadDir);
@@ -340,9 +350,9 @@ if (direct && process.env.GM_FINAL_BROWSER === '1') test('native Edge: independe
     } catch { cleanupErrors++; }
     receipt.transport = transport?.counters; receipt.transportCleanup = transport?.cleanup;
     if (transport && (!transport.cleanup.closed || transport.cleanup.listening || transport.cleanup.sockets !== 0)) cleanupErrors++;
-    Object.assign(receipt, { passed: !failed && !cleanupErrors && !timedOut, stage, errors, blocked, routeErrors, requests,
+    Object.assign(receipt, { passed: !failed && !cleanupErrors && !timedOut && !t.signal.aborted, stage, errors, blocked, routeErrors, requests,
       posts, deletes, downloadGets: transport?.counters.gets ?? 0, routedDownloadGets, downloads, dialogs, cleanupErrors, ownedBrowserClosed: !browser?.isConnected(),
-      timedOut, durationMs: Math.round(performance.now() - started) });
+      timedOut, testAborted: t.signal.aborted, cleanupMs, durationMs: Math.round(performance.now() - started) });
     // Static keys/labels, counts, hashes only. No capabilities, URLs, exceptions,
     // DOM, console, downloads or browser traces enter retained evidence.
     if (temp) writeFileSync(join(temp, 'receipt.json'), JSON.stringify(receipt, null, 2), { flag: 'wx' });

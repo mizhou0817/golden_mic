@@ -13,9 +13,10 @@ const require = createRequire(import.meta.url);
 const read = p => readFileSync(new URL(p, import.meta.url), 'utf8');
 const source = read('../src/components/Workspace.tsx');
 const ast = ts.createSourceFile('Workspace.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const focusAst = ts.createSourceFile('dialogFocus.ts', read('../src/lib/dialogFocus.ts'), ts.ScriptTarget.Latest, true);
 const api = ts.createSourceFile('appApi.ts', read('../src/lib/appApi.ts'), ts.ScriptTarget.Latest, true);
 const printer = ts.createPrinter();
-function declaration(name, tree = ast) {
+function declaration(name, tree = name === 'containDialogTab' ? focusAst : ast) {
   let found;
   function visit(n) {
     if ((ts.isFunctionDeclaration(n) || ts.isVariableDeclaration(n)) && n.name?.getText(tree) === name) {
@@ -24,13 +25,13 @@ function declaration(name, tree = ast) {
     ts.forEachChild(n, visit);
   }
   visit(tree); assert.ok(found, 'required actual declaration');
-  return ((ts.isVariableDeclaration(found) ? 'const ' : '') + printer.printNode(ts.EmitHint.Unspecified, found, tree)).replace(/^export /, '') + ';';
+  return ((ts.isVariableDeclaration(found) ? 'const ' : '') + printer.printNode(ts.EmitHint.Unspecified, found, tree)).replace(/\bexport (?=function\b)/, '') + ';';
 }
 const compile = code => ts.transpileModule(code, { fileName: 'actual.tsx', compilerOptions: {
   target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None, jsx: ts.JsxEmit.React,
 } }).outputText;
 const baseline = process.env.GM_DIALOG_BASELINE === '1';
-const hasHandler = ast.statements.some(n => ts.isFunctionDeclaration(n) && n.name?.text === 'containDialogTab');
+const hasHandler = focusAst.statements.some(n => ts.isFunctionDeclaration(n) && n.name?.text === 'containDialogTab');
 
 if (!baseline) {
   test('all three dialogs share only a local handler and negative fallback tabindex', () => {
@@ -68,6 +69,18 @@ if (!baseline) {
     active = {}; assert.equal(press({ shiftKey: true }), 1); assert.equal(active, b);
     controls = [hidden, disabled]; assert.equal(press(), 1); assert.equal(active, dialog);
     controls = [a]; active = a; assert.equal(press(), 1); assert.equal(active, a);
+  });
+  test('native disclosure summaries remain reachable at either modal boundary', () => {
+    const { handler } = vm.runInNewContext(compile(declaration('containDialogTab') + ';({handler:containDialogTab})'));
+    let active;
+    const control = type => ({ type, tabIndex: 0, matches: () => false, closest: () => null,
+      checkVisibility: () => true, getClientRects: () => [1], focus() { active = this; } });
+    const first = control('button'), summary = control('summary');
+    const dialog = { open: true, matches: () => true, ownerDocument: { get activeElement() { return active; } },
+      querySelectorAll(selector) { assert.ok(selector.split(',').map(s => s.trim()).includes('summary')); return [first, summary]; } };
+    const press = shiftKey => handler({ currentTarget: dialog, key: 'Tab', shiftKey, preventDefault() {} });
+    active = first; press(true); assert.equal(active, summary);
+    press(false); assert.equal(active, first);
   });
   test('radio boundary follows the enabled checked member, recalculated each key', () => {
     const { handler } = vm.runInNewContext(compile(declaration('containDialogTab') + ';({handler:containDialogTab})'));

@@ -224,7 +224,9 @@ class StudioAudioFilterContractTests(unittest.TestCase):
             elif isinstance(node, ast.ImportFrom):
                 self.assertEqual(node.level, 0)
                 imports.append(node.module)
-        self.assertEqual(imports, ["typing"])
+        # The shared speech-clock duck envelope uses only stdlib math and
+        # Sequence in addition to Final; no pipeline/provider/renderer import.
+        self.assertEqual(imports, ["math", "collections.abc", "typing"])
         renderer = ast.parse((root / "studio_render.py").read_text(encoding="utf-8"))
         self.assertFalse(any(isinstance(node, ast.ImportFrom) and node.module == "tts_pipeline"
                              for node in ast.walk(renderer)))

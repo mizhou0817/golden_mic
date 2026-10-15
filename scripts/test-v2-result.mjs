@@ -44,6 +44,7 @@ const pend = load('frontend/src/lib/pendingEdits.ts', { './workbenchApi': api })
 const quote = load('frontend/src/components/QuoteEditor.tsx', { '../lib/workbenchApi': api });
 const resultModules = { '../lib/workbenchApi': api, '../lib/pendingEdits': pend,
   '../lib/productionModes': modes, '../lib/appApi': appApi, '../lib/qualitySummary': quality,
+  '../lib/dialogFocus': load('frontend/src/lib/dialogFocus.ts'),
   './QuoteEditor': quote, './ui/Icon': icon, './ResultWorkbench.css': {} };
 const TASK = 'a'.repeat(32), JOB = 'b'.repeat(32), RECORD = 'c'.repeat(32);
 const store = (initial = {}) => { let raw = JSON.stringify(initial); return { getItem: () => raw, setItem: (_, v) => { raw = v; }, value: () => JSON.parse(raw) }; };
