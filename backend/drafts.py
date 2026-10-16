@@ -778,15 +778,26 @@ class DraftService:
 
     async def file_action(self, record: TaskRecord, file_id: str, action: str,
                           *, raw: dict | None = None, request: Request | None = None, index: int = 0):
+        if action == "chunk":
+            assert request is not None
+            async with self.operation():
+                self.check(record, draft=True)
+                item = self.item(record, file_id)
+            # Receive the body outside the site-wide draft gate: a slow connection must not make every
+            # other visitor's draft operations wait (they were refused with 409 after 20 s). The upload
+            # store serialises writes to one upload itself.
+            length = request.headers.get("content-length", "")
+            result = await self.uploads.put_chunk(item["up_id"], item["capability"], index,
+                request.stream(), int(length) if length.isdigit() else None)
+            async with self.operation():
+                self.check(record, draft=True)
+                item = self.item(record, file_id)
+                self.touch(record)
+                return {**result, **self.file_view(record, item)}
         async with self.operation():
             self.check(record, draft=True)
             item = self.item(record, file_id)
-            if action == "chunk":
-                assert request is not None
-                length = request.headers.get("content-length", "")
-                result = await self.uploads.put_chunk(item["up_id"], item["capability"], index,
-                    request.stream(), int(length) if length.isdigit() else None)
-            elif action == "probe":
+            if action == "probe":
                 if raw != {} or not item["supplied_hash"]:
                     raise HTTPException(422, "Metadata probe requires a verified digest and empty body")
                 result = await self.uploads.probe_only(item["up_id"], item["capability"])

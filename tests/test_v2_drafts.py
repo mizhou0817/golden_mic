@@ -394,6 +394,26 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
                                           for index in range(3)))
         self.assertEqual(len({receipt["task_id"] for receipt in receipts}), 3)
 
+    async def test_a_slow_chunk_upload_does_not_hold_other_visitors_draft_operations(self):
+        record, _ = await self.draft("slow-visitor")
+        receipt = await self.service.add_file(record, {"name": "source.mp4", "size": 4,
+                                                       "sha256": hashlib.sha256(b"abcd").hexdigest()}, "")
+        release = asyncio.Event()
+        class SlowRequest:
+            headers = {"content-length": "4"}
+            async def stream(self):
+                await release.wait()
+                yield b"abcd"
+        upload = asyncio.create_task(self.service.file_action(record, receipt["file_id"], "chunk",
+                                                              request=SlowRequest(), index=0))
+        await asyncio.sleep(0.05)
+        other = await asyncio.wait_for(self.service.create({"mode": "voiceover"}, owner_digest("other-visitor")), 2)
+        self.assertNotEqual(other["task_id"], record.task_id)
+        self.assertFalse(upload.done())
+        release.set()
+        view = await asyncio.wait_for(upload, 2)
+        self.assertEqual(view["received"], 4)
+
     async def test_start_limit_refusal_says_how_long_to_wait_and_a_local_limit_is_honoured(self):
         ledger = self.service.ledger
         ledger.accept("a", "owner", "ip", "hash", now=10000)
