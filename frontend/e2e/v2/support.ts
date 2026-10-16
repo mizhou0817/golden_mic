@@ -353,7 +353,6 @@ export async function creator(page: Page, mode: Mode, script = '') {
   const wizard = page.getByRole('region', { name: '新建新闻作品', exact: true });
   await expect(wizard).toBeVisible();
   await expect(page.getByRole('heading', { name: '写稿', exact: true })).toBeVisible();
-  if (mode !== 'voiceover') await page.getByRole('button', { name: /^更多制作方式/ }).click();
   const names = { voiceover: /AI 配音/, mixed: /旁白 \+ 原声/, original: /只用原声/ };
   await wizard.getByRole('group', { name: '制作模式', exact: true }).getByRole('button', { name: names[mode] }).click();
   if (script) await page.getByRole('textbox', { name: '新闻稿（第一行标题，下一行正文）', exact: true }).fill(script);

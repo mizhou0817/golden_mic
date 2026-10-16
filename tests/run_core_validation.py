@@ -114,13 +114,17 @@ class Guards:
         # owned descriptor confer authority over an absolute external path.
         if os.path.isabs(raw) or dir_fd is None or dir_fd == -1:
             return raw
-        if sys.platform != "linux" or type(dir_fd) is not int or dir_fd < 0:
+        if sys.platform not in {"linux", "darwin"} or type(dir_fd) is not int or dir_fd < 0:
             self.reject("unsupported directory descriptor")
         if any(part in {".", ".."} for part in raw.split("/")):
             self.reject("directory descriptor traversal")
         try:
             opened = os.fstat(dir_fd)
-            base = os.readlink(f"/proc/self/fd/{dir_fd}")
+            if sys.platform == "darwin":
+                import fcntl  # F_GETPATH is the macOS counterpart of /proc/self/fd
+                base = os.fsdecode(fcntl.fcntl(dir_fd, fcntl.F_GETPATH, b"\0" * 1024).split(b"\0", 1)[0])
+            else:
+                base = os.readlink(f"/proc/self/fd/{dir_fd}")
             if (not stat.S_ISDIR(opened.st_mode) or not os.path.isabs(base)
                     or base.endswith(" (deleted)") or Path(base).resolve() != Path(base).absolute()):
                 self.reject("unsafe directory descriptor")

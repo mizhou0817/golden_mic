@@ -479,6 +479,8 @@ class V2ExportOptions(StrictModel):
     sub: Literal["standard", "large", "none"] = "standard"
     frame_seconds: float | None = Field(default=None, ge=0, le=3600)
     expected_revision: int = Field(ge=0, strict=True)
+    # The user was shown every unresolved check and chose to export anyway. Strict boolean only.
+    acknowledge_unresolved: bool = Field(default=False, strict=True)
 
     @model_validator(mode="before")
     @classmethod

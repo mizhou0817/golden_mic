@@ -78,7 +78,7 @@ async function fixture({ firstFailed = true, earlyInvalid = false } = {}) {
     polling: { current: new Map() }, removalCancels: { current: new Map() }, mounted: { current: true }, transferRunning: { current: false },
     draftAccessRef: { current: access }, draftController: { current: null }, AbortController,
     sessionFor: id => sessions.get(id), setHashProgress() {}, setUploads() {}, setDraftAccess() {},
-    setUploadErrors(fn) { errors = fn(errors); }, errorMessage: () => 'STATIC failed',
+    setUploadErrors(fn) { errors = fn(errors); }, errorMessage: () => 'STATIC failed', uploadErrorText: () => 'STATIC failed', isCapacityFailure: () => false, setUploadBlock() {},
     updateFile(id, patch) { const f = context.filesRef.current.find(f => f.id === id); assert.ok(f); Object.assign(f, patch); },
     observeUpload(id) { observations.push(id); }, canServerProbe: media.canServerProbe,
     urls: { current: new Set() }, URL, releaseUrl() {}, setNotice() {},

@@ -1,6 +1,8 @@
 import { defineConfig } from '@playwright/test';
 import { env, exists, joinPath, makeDirectory, newInstance, parentPath, readText, writeJSON } from './e2e/workspace/io.mjs';
 import { loadManifest, runSettings, unlinked } from './e2e/workspace/environment';
+// Default Edge; GM_BROWSER=chrome selects Chrome. WebKit is covered by the node tests, not these suites.
+const browserChannel = env.GM_BROWSER === 'chrome' ? 'chrome' : 'msedge';
 
 // No webServer/global launcher: the parent builds and explicitly starts the host.
 // No dependency on the retired canary/account harness or package scripts.
@@ -36,7 +38,7 @@ export default defineConfig({
   globalSetup: './e2e/workspace/global-setup.ts',
   reporter: [['./e2e/workspace/reporter.ts']],
   use: {
-    baseURL: run.baseURL, browserName: 'chromium', channel: 'msedge',
+    baseURL: run.baseURL, browserName: 'chromium', channel: browserChannel,
     headless: true, viewport: { width: 1440, height: 960 }, locale: 'zh-CN',
     serviceWorkers: 'block', acceptDownloads: true,
     trace: 'off', video: 'off', screenshot: 'off',

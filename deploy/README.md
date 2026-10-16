@@ -202,6 +202,35 @@ sudo bash "$GM_BOOTSTRAP_SOURCE/deploy/deploy_release.sh" \
 
 **环境包装器调用协议：** [run_with_environment.py](run_with_environment.py)的选项 `--cwd` / `--set` 必须放在环境文件位置参数**之前**；环境文件后必须有显式 `--`，其后是目标可执行程序及全部目标参数。目标参数即使名为 `--cwd` 或 `--set` 也属于目标命令，不能再被包装器解释。[部署调用](deploy_release.sh)与[目标机检查调用](validate_target_host.sh)应使用同一协议。缺少分隔符或旧顺序应修正调用，不绕过包装器、环境 schema 或完整 preflight。此规则的静态/合成参数回归只验证解析、转发与拒绝边界；不代表已读取真实 EnvironmentFile、运行目标 preflight 或完成 Linux 发布/回滚。修复后的实际验证另行报告，本文不新增通过计数。
 
+### 共用服务器上的 Docker 部署（宝塔 / 已有其他项目）
+
+当前线上（101.33.210.33，https://goldmic.misuntech.com）用这种方式，和其他项目完全隔离，全部放在 `/opt/goldmic/`：
+
+| 路径 | 内容 |
+| --- | --- |
+| `build/` | 镜像构建上下文：`backend/`、`frontend/dist/`、`deploy/`、`vendor/`、锁文件、[Dockerfile](docker/Dockerfile) |
+| `data/` | 作品、ASR 缓存、临时文件（同一文件系统；容器内 `/data`，uid 990） |
+| `samples/` | 已审核范例包（只读挂载到 `backend/assets/samples`） |
+| `goldmic.env` | 生产配置与密钥（root，0600；生产模式只读进程环境，不读 `.env`） |
+| `docker-compose.yml` | [模板](docker/docker-compose.yml)：容器 `goldmic`，`restart: always`，只监听 `127.0.0.1:18765` |
+| `nginx-proxy.conf` | 即 [golden-mic-proxy.conf](nginx/golden-mic-proxy.conf) |
+
+nginx：宝塔的 `/www/server/panel/vhost/nginx/goldmic.misuntech.com.conf`（来自 [goldmic.nginx.conf](docker/goldmic.nginx.conf)），证书由 certbot（webroot `/opt/goldmic/acme`）签发并自动续期。
+
+更新版本：本机 `npm --prefix frontend run build` 后，把上表的构建上下文同步到 `/opt/goldmic/build/`，然后在服务器
+`cd /opt/goldmic && docker build -t goldmic:latest build && docker compose up -d`。数据和配置不受影响。
+生产模式要求 HTTPS（`__Host-` 安全 Cookie 与 https Origin），不能用纯 http + IP 访问。
+
+### 范例成片（“先看一条范例成片”）
+
+范例不在发布包里（`verify_release_archive.py` 拒绝 `backend/assets/samples`），在主机上单独放一次即可：
+
+1. 本机准备（已做好的范例在开发机 `backend/assets/samples/`；素材与稿件在 `examples/迎春市集范例/`）。重新制作时：用这份稿件和素材在应用里真实做一遍，然后
+   `python deploy/export_sample_input.py --task-dir data/tasks/<作品id> --media-dir examples/迎春市集范例/素材 --script examples/迎春市集范例/稿件.txt --output /tmp/sample-input`，
+   再 `python deploy/prepare_sample_bundle.py --source /tmp/sample-input --output /tmp/sample-bundle --rights-reviewed`（`--rights-reviewed` 表示你已确认素材可公开展示）。
+2. 把 `registry.json` 和 `default/` 拷到服务器 `/opt/golden-mic/samples/`（root 所有，0755/0644，约 32 MB）。
+3. 之后每次 `deploy_release.sh` 都会把它复制进新版本的 `backend/assets/samples/`；服务端每次读取都会重新核对每个文件的 SHA-256，不匹配时页面显示“暂时没有可供查看的已核验范例”，不会用其他数据代替。
+
 ### 手工排空、停止与取消排空
 
 仅在目标主机直接回环执行，不经 Nginx，不增加公共管理接口：

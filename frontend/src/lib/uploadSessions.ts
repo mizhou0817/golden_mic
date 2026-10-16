@@ -362,6 +362,13 @@ export const uploadUsable = (snapshot: UploadSnapshot | undefined): boolean => !
 /** Only an authorized, identity-checked server response can replace metadata.
  * Preserve authored notes/ranges; do not silently shorten a range or source.
  */
+/** The server's measured duration replaces the browser's (Safari reads e.g. 8.0667 where FFmpeg says 8.07).
+ * An untouched full-clip trim follows it; a trim the user set is kept as is (and flagged if it no longer fits). */
+export function serverTrimEnd(item: Pick<MediaSelection, "duration" | "trim_end">, sec: number): number {
+  const untouched = item.trim_end == null || item.duration != null && Math.abs(item.trim_end - item.duration) < 1e-6;
+  return untouched ? sec : item.trim_end!;
+}
+
 export function reconcileServerProbe(item: MediaSelection, snapshot: ProbedUploadSnapshot, limits: PublicLimits): Partial<MediaSelection> {
   if (snapshot.probe_ok !== true) return { status: snapshot.status === "failed" ? "error" : "loading" };
   const cap = mediaLimits(limits);
@@ -370,7 +377,7 @@ export function reconcileServerProbe(item: MediaSelection, snapshot: ProbedUploa
     || !number(snapshot.height, 1, 4320)
     || !number(snapshot.fps, Number.MIN_VALUE, 120)) return fail();
   return { duration: snapshot.sec, width: snapshot.width, height: snapshot.height,
-    trim_end: item.kind === "image" ? null : item.trim_end ?? snapshot.sec,
+    trim_end: item.kind === "image" ? null : serverTrimEnd(item, snapshot.sec),
     status: snapshot.status === "ready" && uploadUsable(snapshot) ? "ready" : snapshot.status === "failed" ? "error" : "loading" };
 }
 
@@ -406,6 +413,13 @@ export async function deleteUploadFile(session: UploadSession, signal: AbortSign
  * Retry always GETs chunk acknowledgements and checks the full incremental hash;
  * a ready/processing upload needs no File at all, and no ASR is restarted here.
  */
+export const CHUNK_ATTEMPTS = 3;
+/** Network failure, timeout or a busy/erroring server: the piece may simply be resent. */
+export function retryableChunkFailure(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status !== "number" || status >= 500 || status === 408 || status === 429;
+}
+
 export async function uploadFile(file: File | undefined, signal: AbortSignal, callbacks: UploadCallbacks,
   resume?: UploadSession, scope?: DraftAccess, metadataOnly = false): Promise<UploadSnapshot> {
   aborted(signal);
@@ -448,8 +462,21 @@ export async function uploadFile(file: File | undefined, signal: AbortSignal, ca
       const start = index * UPLOAD_CHUNK_BYTES, end = Math.min(file.size, start + UPLOAD_CHUNK_BYTES);
       const base = putPath(active.upload_id, active.put_url, active);
       const path = base.endsWith("/{index}") ? base.replace("{index}", String(index)) : `${base}/${index}`;
-      await requestFor(signal, active)<unknown>(path, { method: "PUT", headers: { ...headers(active.upload_id, active.access_token),
-        "Content-Type": "application/octet-stream", "Content-Range": `bytes ${start}-${end - 1}/${file.size}` }, body: file.slice(start, end) });
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await requestFor(signal, active)<unknown>(path, { method: "PUT", headers: { ...headers(active.upload_id, active.access_token),
+            "Content-Type": "application/octet-stream", "Content-Range": `bytes ${start}-${end - 1}/${file.size}` }, body: file.slice(start, end) });
+          break;
+        } catch (error) {
+          // A slow or dropped connection (timeout, network, server busy) is retried twice on its own; a clear
+          // refusal (e.g. the piece changed) is not. The server is asked first: a lost reply may have stored it.
+          if (signal.aborted || attempt >= CHUNK_ATTEMPTS || !retryableChunkFailure(error)) throw error;
+          await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+          aborted(signal);
+          const state = await getUploadStatus(active.upload_id, active.access_token, signal, active);
+          if (state.chunks.includes(index)) break;
+        }
+      }
       aborted(signal);
       // A successful response acknowledges this one chunk, not all file bytes.
       chunks.add(index);

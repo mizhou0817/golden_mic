@@ -25,6 +25,14 @@ def owner_digest(owner: str) -> str:
     return hashlib.sha256(owner.encode("utf-8")).hexdigest()
 
 
+
+def start_budget_detail(limit: int, wait_seconds: int) -> dict[str, object]:
+    """A plain refusal for "too many starts this hour": how long to wait and that nothing was lost."""
+    minutes = max(1, -(-wait_seconds // 60))
+    return {"code": "start_budget", "retry_after": wait_seconds,
+            "message": f"这一小时内开始制作的次数已经用完（每小时最多 {limit} 次）。约 {minutes} 分钟后可以再点“开始制作”；"
+                       "稿件和已上传的素材都保留着，不需要重新上传。"}
+
 class AdmissionLedger:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = _safe_path(data_dir, directory=True)
@@ -100,10 +108,16 @@ class AdmissionLedger:
                 "FROM accepted WHERE at>?", (owner, ip, stamp - 3600),
             ).fetchone()
             assert counts is not None
-            if (counts[0] + legacy_counts[0] >= global_limit
-                    or counts[1] + legacy_counts[1] >= min(2, session_limit)
-                    or counts[2] + legacy_counts[2] >= ip_limit):
-                raise HTTPException(429, "Accepted-start hourly limit reached", headers={"Retry-After": "3600"})
+            # The caller passes the effective per-session limit (production keeps its stricter cap).
+            hit = [(scope, limit) for scope, used, limit in (("global", counts[0] + legacy_counts[0], global_limit),
+                                                                ("owner", counts[1] + legacy_counts[1], session_limit),
+                                                                ("ip", counts[2] + legacy_counts[2], ip_limit)) if used >= limit]
+            if hit:
+                scope, limit = hit[0]
+                where = {"global": ("", ()), "owner": (" AND owner=?", (owner,)), "ip": (" AND ip=?", (ip,))}[scope]
+                oldest = db.execute(f"SELECT MIN(at) FROM accepted WHERE at>?{where[0]}", (stamp - 3600, *where[1])).fetchone()[0]
+                wait = max(60, int((oldest or stamp) + 3600 - stamp) + 1)
+                raise HTTPException(429, start_budget_detail(limit, wait), headers={"Retry-After": str(wait)})
             db.execute("INSERT INTO accepted VALUES (?,?,?,?,?)", (task_id, owner, ip, stamp, input_hash))
 
     def tombstone(self, task_id: str, owner: str, token_hash: str, reason: str,

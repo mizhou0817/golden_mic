@@ -31,3 +31,6 @@ dist/
 *.key
 *.pfx
 *.p12
+# Local example footage (never committed) and macOS metadata
+/examples/
+.DS_Store

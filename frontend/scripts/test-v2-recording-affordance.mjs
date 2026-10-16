@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { launchBrowser } from './browser.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -163,7 +164,7 @@ if (process.env.GM_RECORDING_BROWSER === '1') test('offline Edge: native denied 
     }
     const entry = collect('src/components/ResultWorkbench.tsx');
     stage = 'edge-launch';
-    browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--disable-background-networking', '--disable-component-update', '--no-first-run'] });
+    browser = await launchBrowser({ chromiumOnly: true, headless: true, args: ['--disable-background-networking', '--disable-component-update', '--no-first-run'] });
     context = await browser.newContext({ offline: true, serviceWorkers: 'block', acceptDownloads: false });
     await context.route('**/*', route => {
       const u = new URL(route.request().url());
@@ -259,7 +260,7 @@ if (process.env.GM_RECORDING_BROWSER === '1') test('offline Edge: native recordi
     const entry = collect('src/components/ResultWorkbench.tsx'), apiEntry = collect('src/lib/workbenchApi.ts');
     const pendingEntry = collect('src/lib/pendingEdits.ts');
     stage = 'launch';
-    browser = await chromium.launch({ channel: 'msedge', headless: true,
+    browser = await launchBrowser({ chromiumOnly: true, headless: true,
       args: ['--disable-background-networking', '--disable-component-update', '--no-first-run'] });
     context = await browser.newContext({ offline: true, serviceWorkers: 'block', acceptDownloads: false });
     await context.route('**/*', route => {

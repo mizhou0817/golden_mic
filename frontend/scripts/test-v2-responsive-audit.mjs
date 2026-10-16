@@ -2,6 +2,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { collect } from './test-v2-final-browser.mjs';
+import { launchBrowser } from './browser.mjs';
 
 // Current complete TSX/React/CSS, not a replacement UI. HTTP is synthetic and
 // fail-closed; no app host, real data, devices, provider or export work. Edge's
@@ -45,8 +46,8 @@ test('offline native responsive Workspace, drawer, export and quote touch contro
   const totals = { requests: 0, blocked: 0, pageErrors: 0, dialogs: 0, downloads: 0, devices: 0 };
   const check = (value, code) => { if (!value) { stage = code; const e = new Error(code); e.stack = ''; throw e; } };
   try {
-    const { chromium } = require('playwright');
-    browser = await chromium.launch({ channel: 'msedge', headless: true, timeout: 8000,
+    // Edge, Chrome or WebKit, whichever is installed (GM_BROWSER); same offline launch options.
+    browser = await launchBrowser({ headless: true, timeout: 8000,
       proxy: { server: 'http://egress-disabled.invalid:9', bypass: '<-loopback>' },
       args: ['--disable-background-networking', '--disable-component-update', '--no-first-run', '--disable-quic',
         '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--host-resolver-rules=MAP * ~NOTFOUND'] });

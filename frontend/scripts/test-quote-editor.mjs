@@ -67,10 +67,16 @@ const withoutRow = resultAst.statements.find(node => ts.isFunctionDeclaration(no
 assert.ok(withoutRow);
 const draft = load(`${draftFunctions}\n${printer.printNode(ts.EmitHint.Unspecified, withoutRow, resultAst)}
 export { emptyDraft, hasEdit, hasUnsent, rowHasEdit, withoutRowEdits };
-export function canExport(input) {
+function gates(input) {
   const { owner, context, historical, state, processing, disabled, dirty, checksLoading, checksError, checks, revision } = input;
-  return ${expression('canExport')};
-}`, 'result-predicates.ts', { hasWorkbenchPreferenceChanges: api.hasWorkbenchPreferenceChanges, serverAllowsExport: api.serverAllowsExport });
+  const exportReady = ${expression('exportReady')};
+  const canExport = ${expression('canExport')};
+  const openChecks = unresolvedChecks(checks, revision);
+  const canExportAnyway = ${expression('canExportAnyway')};
+  return { canExport, canExportAnyway, openChecks };
+}
+export const canExport = input => gates(input).canExport;
+export const canExportAnyway = input => gates(input).canExportAnyway;`, 'result-predicates.ts', { hasWorkbenchPreferenceChanges: api.hasWorkbenchPreferenceChanges, serverAllowsExport: api.serverAllowsExport, unresolvedChecks: api.unresolvedChecks });
 
 function take(overrides = {}) {
   return { take_id: 'take-one', upload_id: 'upload-one', start: 10, end: 15, speaker_id: 'speaker-one',
@@ -257,6 +263,48 @@ test('actual export gate refuses unsaved, loading, historical, failed or unconfi
     { revision: 5 }, { checks: gate({ pending_count: 0, checks: [] }) }]) {
     assert.equal(draft.canExport({ ...ready, ...patch }), false, JSON.stringify(patch));
   }
+});
+
+test('open checks no longer block exporting, but only with a fresh server-read list and no other blocker', () => {
+  const ready = { owner: true, context: {}, historical: false, state: 'done', processing: false, disabled: false, dirty: false,
+    checksLoading: false, checksError: '', checks: gate(), revision: 4 };
+  assert.equal(draft.canExport(ready), false, 'the strict gate itself is unchanged');
+  assert.equal(draft.canExportAnyway(ready), true, 'unconfirmed warnings: export is possible after acknowledging them');
+  const blocking = gate({ blocking_count: 1, pending_count: 0, checks: [check({ level: 0, code: 'MATCH_FALLBACK' })] });
+  assert.equal(draft.canExportAnyway({ ...ready, checks: blocking }), true, 'even a hard error can be exported past, once acknowledged');
+  assert.equal(draft.canExportAnyway({ ...ready, checks: passed() }), false, 'nothing open: the normal path applies');
+  // Everything that is not a check result still blocks exactly as before.
+  for (const patch of [{ owner: false }, { context: null }, { historical: true }, { state: 'failed' }, { processing: true }, { disabled: true },
+    { dirty: true }, { checksLoading: true }, { checksError: 'offline' }, { checks: null }, { revision: 5 }]) {
+    assert.equal(draft.canExportAnyway({ ...ready, ...patch }), false, JSON.stringify(patch));
+  }
+});
+
+test('export request carries the acknowledgement only when asked; the receipt reports what was open', () => {
+  const options = { ...api.DEFAULT_EXPORT };
+  assert.equal('acknowledge_unresolved' in api.simpleExportBody(options), false);
+  assert.equal('acknowledge_unresolved' in api.simpleExportBody(options, false), false);
+  assert.equal(api.simpleExportBody(options, true).acknowledge_unresolved, true);
+  const id = 'a'.repeat(32);
+  const receipt = { export_id: id, revision: 4, state: 'queued', output_id: null, error: null,
+    options: { fmt: 'mp4', aspect: '16:9', res: '1080p', sub: 'std', expected_revision: 4 } };
+  assert.equal(api.parseJob(receipt, options).unresolved, undefined);
+  assert.deepEqual(plain(api.parseJob({ ...receipt, unresolved: { blocking: 1, pending: 2, qc_blockers: true } }, options).unresolved),
+    { blocking: 1, pending: 2, qc_blockers: true });
+  for (const bad of [{ blocking: '1', pending: 0, qc_blockers: false }, { blocking: 1, pending: 0 }, { blocking: -1, pending: 0, qc_blockers: false }, 'x', null]) {
+    assert.equal(api.parseJob({ ...receipt, unresolved: bad }, options).unresolved, undefined, JSON.stringify(bad));
+  }
+});
+
+test('the acknowledgement only ever covers the exact list of open checks that was shown', () => {
+  const a = check({ key: 'a' }), b = check({ key: 'b' }), c = check({ key: 'c', checked: true }), info = check({ key: 'i', level: 2 });
+  const open = api.unresolvedChecks(gate({ checks: [b, a, c, info] }), 4);
+  assert.deepEqual(plain(open.map(item => item.key)), ['b', 'a'], 'confirmed and informational items are not open');
+  assert.equal(api.unresolvedSignature(open), 'a|b');
+  assert.equal(api.unresolvedSignature(api.unresolvedChecks(gate({ checks: [a, b] }), 4)), 'a|b', 'order does not matter');
+  assert.notEqual(api.unresolvedSignature(api.unresolvedChecks(gate({ checks: [a, b, check({ key: 'new' })] }), 4)), 'a|b', 'a new open check invalidates it');
+  assert.deepEqual(plain(api.unresolvedChecks(gate(), 5)), [], 'another revision has no usable list');
+  assert.deepEqual(plain(api.unresolvedChecks(null, 4)), []);
 });
 
 test('each new quote/speaker draft participates in actual unsaved navigation and submission guards', () => {

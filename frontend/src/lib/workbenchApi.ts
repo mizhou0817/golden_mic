@@ -27,7 +27,7 @@ export interface Report {
   task_id: string; rows: Row[]; quality: QualitySummary | null;
   mode?: ProductionMode; speakers?: Speaker[]; jumpcuts?: JumpCut[];
   revision?: number;
-  replace_fails?: Record<string, { kind: 'none' | 'used' | 'abstract'; text: string }>;
+  replace_fails?: Record<string, { kind: 'none' | 'used' | 'abstract' | 'processing_failed'; text: string }>;
 }
 /** Optional persisted report.quality.metrics contract, not measured CPM. */
 export interface NarrationRateTarget { target_cpm: number; min_cpm: number; max_cpm: number }
@@ -110,7 +110,21 @@ export interface ExportJob {
   state: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
   output_id: string | null; error: string | null; qc: string; disclosure: boolean;
   options: ExportOptions;
+  /** Present only when this file was exported after the user acknowledged unresolved checks. */
+  unresolved?: UnresolvedSummary;
   result?: { file: string; bytes: number; duration: number; png_semantics?: string; gif_fps_semantics?: string };
+}
+export interface UnresolvedSummary { blocking: number; pending: number; qc_blockers: boolean }
+/** The checks still open right now, exactly as the server reports them (errors and unconfirmed warnings). */
+export function unresolvedChecks(checks: WorkbenchChecks | null, revision: number): WorkbenchChecks['checks'] {
+  if (!checks || checks.revision !== revision) return [];
+  return checks.checks.filter(check => check.level < 2 && !check.checked);
+}
+/** Identity of the open set, so an acknowledgement only ever covers the list the user actually saw. */
+export const unresolvedSignature = (items: WorkbenchChecks['checks']) => items.map(item => item.key).sort().join('|');
+function parseUnresolved(value: unknown): UnresolvedSummary | undefined {
+  if (!object(value) || !integer(value.blocking) || !integer(value.pending) || typeof value.qc_blockers !== 'boolean') return undefined;
+  return { blocking: value.blocking, pending: value.pending, qc_blockers: value.qc_blockers };
 }
 export function exportSupport(format: ExportFormat) {
   return {
@@ -317,13 +331,15 @@ export function validateEditBatch(batch: EditBatch, mode?: ProductionMode): void
       || e.instruction !== undefined && (!text(e.instruction, 500) || !e.instruction.trim())
       || e.recording_id !== undefined && !hexId(e.recording_id))) throw new Error('文字、画面要求或说话人资料超过限制，请缩短后再提交。');
 }
-export function simpleExportBody(options: ExportOptions) {
+export function simpleExportBody(options: ExportOptions, acknowledgeUnresolved = false) {
   const normalized = normalizeExport(options);
   if (!(SIMPLE_EXPORT_FORMATS as readonly string[]).includes(normalized.format)) throw new Error('请选择视频、动图、音频、字幕或封面图。');
   if (normalized.format === 'png' && (!finite(options.frame_time) || options.frame_time < 0)) throw new Error('请先在播放器选择要导出的画面。');
   return { fmt: normalized.format, aspect: normalized.aspect, res: `${normalized.resolution}p`,
     sub: normalized.subtitles === 'standard' ? 'std' : normalized.subtitles === 'large' ? 'big' : 'none',
-    ...(normalized.format === 'png' ? { frame_seconds: options.frame_time } : {}) };
+    ...(normalized.format === 'png' ? { frame_seconds: options.frame_time } : {}),
+    // Only ever true after the user was shown the open checks and confirmed; the server records it with the job.
+    ...(acknowledgeUnresolved ? { acknowledge_unresolved: true } : {}) };
 }
 
 export interface ApplyBody {
@@ -512,6 +528,7 @@ export function parseJob(value: unknown, submittedOptions?: ExportOptions): Expo
     return { id: value.export_id, export_id: value.export_id, revision: value.revision, pipeline_revision: value.revision,
       state: value.state as ExportJob['state'], output_id: value.output_id as string ?? null,
       error: value.error ? '导出没有完成，请核对状态后再操作。' : null, qc: '', disclosure: false, options,
+      ...(parseUnresolved(value.unresolved) ? { unresolved: parseUnresolved(value.unresolved) } : {}),
       ...(object(value.result) ? { result: { file: '', bytes: value.result.bytes as number, duration: value.result.duration as number } } : {}) };
   }
   if (!object(value) || !hexId(value.id) || !integer(value.pipeline_revision) || !integer(value.revision)
@@ -572,7 +589,7 @@ export function createWorkbenchApi(taskId: string, request: WorkbenchRequest) {
         || s.row_id !== expectedSteps[i].row_id || JSON.stringify(s.stages) !== JSON.stringify(expectedSteps[i].stages)))) throw new Error('修改结果与提交计划不匹配，请刷新核对。');
       const failures: NonNullable<Report['replace_fails']> = {};
       for (const [row, reason] of Object.entries(value.replace_failures)) {
-        if (/^(0|[1-9]\d*)$/.test(row) && ['none', 'used', 'abstract'].includes(String(reason))) failures[row] = { kind: reason as 'none' | 'used' | 'abstract', text: '' };
+        if (/^(0|[1-9]\d*)$/.test(row) && ['none', 'used', 'abstract', 'processing_failed'].includes(String(reason))) failures[row] = { kind: reason as 'none' | 'used' | 'abstract' | 'processing_failed', text: '' };
       }
       return { failures, state: value.state as ExportJob['state'], steps,
         complete: value.state === 'succeeded' && steps.every(s => s.state === 'succeeded') && Object.keys(value.replace_failures).length === 0 };
@@ -642,9 +659,9 @@ export function createWorkbenchApi(taskId: string, request: WorkbenchRequest) {
       const v = await request<unknown>(root + '/recordings', { method: 'POST', body, signal });
       return parseRecordingReceipt(v, sentenceId, revision);
     },
-    export: async (options: ExportOptions, expected_revision: number, signal?: AbortSignal) => {
+    export: async (options: ExportOptions, expected_revision: number, signal?: AbortSignal, acknowledgeUnresolved = false) => {
       if (!integer(expected_revision)) throw new Error('导出必须绑定当前版本。');
-      const job = parseJob(await post('/exports', { ...simpleExportBody(options), expected_revision }, signal), options);
+      const job = parseJob(await post('/exports', { ...simpleExportBody(options, acknowledgeUnresolved), expected_revision }, signal), options);
       if (job.pipeline_revision !== expected_revision) throw new Error('导出回执版本不匹配，请查询状态，不要重复提交。');
       return job;
     },

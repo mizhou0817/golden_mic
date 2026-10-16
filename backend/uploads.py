@@ -76,11 +76,18 @@ MAX_PHOTO_PIXELS = 20_000_000
 PHOTO_DURATION = 3.0
 MAX_FILE_SECONDS = 1800.0
 MAX_TASK_SECONDS = 3600.0
-MAX_OWNER_BYTES = 5 * 1024**3
-MAX_OWNER_FILES = 20
-MAX_SESSIONS = 100
+# One work: at most 20 files / 5 GiB. One visitor, across all drafts: 100 files / 20 GiB (old drafts'
+# clips and finished works' staging copies are released automatically when that fills up).
+MAX_WORK_FILES = 20
+MAX_WORK_BYTES = 5 * 1024**3
+MAX_OWNER_FILES = 100
+MAX_OWNER_BYTES = 20 * 1024**3
+OWNER_QUOTA_MESSAGE = "你保存的素材已达上限（最多 100 个文件，合计不超过 20 GiB）。"
+# Site-wide live staging sessions. Disk is protected separately by the per-upload reservation, and
+# redundant copies held by finished works are released when this fills up (DraftService).
+MAX_SESSIONS = 500
 OWNER_CREATIONS_PER_HOUR = 40
-GLOBAL_CREATIONS_PER_HOUR = 200
+GLOBAL_CREATIONS_PER_HOUR = 1000  # site-wide; an 8-clip work is 8 uploads
 UPLOAD_TTL_SECONDS = 72 * 3600
 MAX_PREPROCESS = 4
 IO_BLOCK = 128 * 1024
@@ -399,9 +406,11 @@ class UploadStore:
         self.root = Path(os.path.abspath(settings.data_dir)) / "_uploads"
         self.max_bytes = min(MAX_FILE_BYTES, int(settings.upload_limit_bytes))
         self.max_seconds = min(MAX_FILE_SECONDS, float(settings.max_source_duration_seconds_per_file))
-        self.max_total_bytes = min(MAX_OWNER_BYTES, int(settings.total_upload_limit_bytes))
+        self.max_total_bytes = min(MAX_WORK_BYTES, int(settings.total_upload_limit_bytes))
         self.max_total_seconds = min(MAX_TASK_SECONDS, float(settings.max_total_source_duration_seconds))
-        self.max_files = min(MAX_OWNER_FILES, int(settings.max_files))
+        self.max_files = min(MAX_WORK_FILES, int(settings.max_files))
+        self.owner_max_files = max(MAX_OWNER_FILES, self.max_files)
+        self.owner_max_bytes = max(MAX_OWNER_BYTES, self.max_total_bytes)
         self._records: dict[str, _Manifest] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._jobs: dict[str, asyncio.Task[None]] = {}
@@ -443,13 +452,26 @@ class UploadStore:
 
     @property
     def reserved_bytes(self) -> int:
-        return sum(self._reservation(record.size) for record in self._records.values()) + self._orphans * self._reservation(MAX_FILE_BYTES)
+        # Only uploads that still have work ahead (receiving, assembly, PCM, ASR) reserve space. A finished
+        # upload's bytes are already on disk and in the real free-space figure; reserving them again made
+        # hundreds of finished uploads look like tens of GB and refused new uploads on a disk with room.
+        pending = ("uploading", "probed", "processing")
+        return (sum(self._reservation(record.size) for record in self._records.values() if record.status in pending)
+                + self._orphans * self._reservation(MAX_FILE_BYTES))
 
     @staticmethod
     def _reservation(size: int) -> int:
         # Includes chunks + assembly, one retry temp, PCM and bounded metadata.
         # Intentionally conservative: never overcommit already received uploads.
         return 2 * size + CHUNK_SIZE + MAX_PCM_BYTES + 2 * MAX_JSON_BYTES + MAX_THUMB_BYTES
+
+    def space_shortfall(self, additional: int = 0, extra_reserved: int = 0) -> int:
+        """Bytes still missing for `additional` more data (<= 0 means it fits)."""
+        try:
+            free = shutil.disk_usage(_safe_path(self.root, directory=True)).free
+        except OSError:
+            return 0
+        return self.settings.minimum_free_disk_bytes + self.reserved_bytes + extra_reserved + additional - free
 
     def _space(self, additional: int = 0) -> None:
         try:
@@ -554,7 +576,11 @@ class UploadStore:
                 # worst-case reservation and exclude them from all reads/jobs.
                 self._orphans += 1
 
-    async def create(self, *, name: str, size: int, sha256: str, owner: str, content_type: str = "application/octet-stream") -> dict[str, Any]:
+    async def create(self, *, name: str, size: int, sha256: str, owner: str, content_type: str = "application/octet-stream",
+                     count_budget: bool = True) -> dict[str, Any]:
+        """count_budget=False is only for server-side recovery copies of the owner's own verified files:
+        they are not new uploads, so they must not exhaust the hourly new-upload budget. The per-session
+        file/byte quota, the global session cap and the disk reservation still apply."""
         async with self._operation():
             try:
                 payload = _CreateUpload(name=name, bytes=size, sha256=sha256, content_type=content_type)
@@ -576,9 +602,9 @@ class UploadStore:
                 own = [record for record in self._records.values() if record.owner_hash == owner_hash]
                 if len(self._records) + self._orphans >= MAX_SESSIONS:
                     raise _error(429, "全站上传名额已满，请稍后重试。")
-                if len(own) >= self.max_files or sum(record.size for record in own) + size > self.max_total_bytes:
-                    raise _error(429, "当前会话最多保留 20 个文件，合计不超过 5 GiB。")
-                if len(entries) >= GLOBAL_CREATIONS_PER_HOUR or sum(entry.owner == owner_hash for entry in entries) >= OWNER_CREATIONS_PER_HOUR:
+                if len(own) >= self.owner_max_files or sum(record.size for record in own) + size > self.owner_max_bytes:
+                    raise _error(429, OWNER_QUOTA_MESSAGE)
+                if count_budget and (len(entries) >= GLOBAL_CREATIONS_PER_HOUR or sum(entry.owner == owner_hash for entry in entries) >= OWNER_CREATIONS_PER_HOUR):
                     raise _error(429, "新建上传过于频繁，请稍后重试。")
                 self._space(self._reservation(size))
                 upload_id, token = "up_" + secrets.token_hex(16), secrets.token_urlsafe(32)
@@ -592,7 +618,7 @@ class UploadStore:
                     _safe_path(directory, exists=False, directory=True).mkdir(mode=0o700)
                     # Persist the budget first: an interrupted create cannot
                     # evade the hourly budget by deleting its session directory.
-                    self._budgets = _Budgets(entries=[*entries, _BudgetEntry(owner=owner_hash, at=now)])
+                    self._budgets = _Budgets(entries=[*entries, _BudgetEntry(owner=owner_hash, at=now)] if count_budget else entries)
                     _atomic_json(self.root / "budgets.json", self._budgets.model_dump(mode="json"))
                     self._save(record)
                 except OSError:

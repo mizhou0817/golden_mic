@@ -20,6 +20,7 @@ import unicodedata
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
@@ -29,9 +30,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from .admission import AdmissionLedger, owner_digest
 from .media_input import prepare_media_inputs
 from .models import EditingPreferences, TaskState
+from .operations import InsufficientDiskSpaceError
 from .production_modes import (Mode, SentenceInput, Speaker, align_quotes, parse_sentences,
                                quote_text_is_contiguous)
-from .storage import create_task_dir, write_json_atomic
+from .storage import create_task_dir, write_json_atomic, write_text_log
 from .task_manager import TaskManager, TaskRecord
 from .task_operations import drain_task, _operation as task_operation
 from .uploads import (CHUNK_SIZE, IO_BLOCK, UploadStore, _blocking, _check_stop,
@@ -120,6 +122,35 @@ from verified persisted chunks, then the existing assembler verifies it again.
                 self._save(record)
             raise
 
+    def plan_quota_release(self, source_task: TaskRecord, owner: str, files: list[dict]) -> list[tuple[str, str]] | None:
+        """Staging copies of the failed task itself to release so a recovery fits the session quota.
+
+        An accepted task keeps its originals under task_dir/raw and import_recovery falls
+        back to them, so its upload staging records (kept for 72 h) are redundant. Without
+        this, a task with more than half the per-session file limit could never be
+        recovered: staging copies plus recovered copies exceed it. Returns [] when it
+        already fits, a list when releasing only this task's own idle same-owner records
+        makes it fit, and None when it cannot fit (nothing may then be touched).
+        """
+        digest = hashlib.sha256(owner.encode()).hexdigest()
+        own = [record for record in self._records.values() if record.owner_hash == digest]
+        need_count = len(files)
+        need_bytes = sum(int(file["manifest"]["size"]) for file in files)
+        free_count = self.owner_max_files - len(own)
+        free_bytes = self.owner_max_bytes - sum(record.size for record in own)
+        plan: list[tuple[str, str]] = []
+        for item in source_task.draft_context.get("files", []):
+            if free_count >= need_count and free_bytes >= need_bytes:
+                return plan
+            live = self._records.get(item.get("up_id"))
+            capability = item.get("capability")
+            if live is None or live.owner_hash != digest or not isinstance(capability, str):
+                continue
+            plan.append((live.id, capability))
+            free_count += 1
+            free_bytes += live.size
+        return plan if free_count >= need_count and free_bytes >= need_bytes else None
+
     async def import_recovery(self, source_task: TaskRecord, evidence: dict, owner: str) -> dict:
         """Import only an owned, committed raw source; no caller-supplied path.
 
@@ -166,7 +197,7 @@ from verified persisted chunks, then the existing assembler verifies it again.
                 await pins.enter_async_context(source_lock)
             check_transcript_budget()
             receipt = await self.create(name=manifest.name, size=manifest.size, sha256=manifest.sha256,
-                                        owner=owner, content_type=manifest.content_type)
+                                        owner=owner, content_type=manifest.content_type, count_budget=False)
             imported = self.authorize(receipt["upload_id"], receipt["access_token"])
             try:
                 destination = self._directory(imported) / ("source" + Path(imported.name).suffix.lower())
@@ -210,6 +241,8 @@ class DraftCreate(_Strict):
 class DraftRecovery(_Strict):
     step: int = Field(ge=1, le=2, strict=True)
     mode: Mode | None = None
+    # Explicit consent to repeated footage, carried into the recovered draft (only after a shortage failure).
+    allow_shot_reuse: bool | None = Field(default=None, strict=True)
 
 
 class FileOptions(_Strict):
@@ -314,6 +347,8 @@ async def retry_verified_mode(record: TaskRecord, service) -> dict:
                     raise HTTPException(409, {"code": "retry_cache_missing", "stage": stage})
                 continue
             value = read_json(record.task_dir, path.relative_to(record.task_dir).as_posix())
+            if stage == 6 and value.get("state") == "retry_safe":
+                continue  # failed locally after provider work ended; it is simply rerun
             if value.get("state") != "complete" or not isinstance(value.get("signature"), str):
                 raise HTTPException(409, {"code": "retry_provider_uncertain", "stage": stage})
             if cache.load(stage, value["signature"]) is None:
@@ -408,17 +443,25 @@ class DraftService:
     async def operation(self):
         if self._closed or self.manager.is_draining:
             raise HTTPException(503, "Service is draining")
-        if self._gate.locked():
-            raise HTTPException(409, "Draft operation pending; read state before retrying")
+        # One gate serialises every visitor's draft operations. They are short, so wait for a turn
+        # instead of failing a concurrent visitor at once (that left uploads stuck at "等待上传").
+        try:
+            await asyncio.wait_for(self._gate.acquire(), timeout=20)
+        except TimeoutError:
+            raise HTTPException(409, "Draft operation pending; read state before retrying") from None
         task = asyncio.current_task()
         assert task is not None
-        async with self._gate:
+        try:
+            if self._closed or self.manager.is_draining:
+                raise HTTPException(503, "Service is draining")
             self._operations.add(task)
             try:
                 self.ledger.check()
                 yield
             finally:
                 self._operations.discard(task)
+        finally:
+            self._gate.release()
 
     def check(self, record: TaskRecord, *, draft: bool = False) -> None:
         self.ledger.check()
@@ -540,7 +583,168 @@ class DraftService:
                                if record.status in {TaskState.done, TaskState.failed, TaskState.cancelled} else None),
                 "accepted": self.ledger.accepted(record.task_id),
                 "retry_same_supported": self.retry_hook is not None,
+                # The client decides between cache-resume retry and the legacy full re-run from this flag.
+                "lifecycle_v2": record.lifecycle_v2,
+                "shot_reuse_accepted": (record.draft_context.get("shot_reuse") or {}).get("accepted") is True,
                 "created_at": record.created_at.isoformat(), "updated_at": record.updated_at.isoformat()}
+
+    async def _storage_shortfall(self, size: int) -> int:
+        capacity = await self.guard.snapshot()
+        return (self.settings.minimum_free_disk_bytes + capacity.reserved_bytes + self.uploads.reserved_bytes
+                + self.uploads._reservation(size) - capacity.free_bytes)
+
+    async def free_space_for(self, record: TaskRecord, size: int) -> dict[str, int]:
+        """The disk is short for a new upload: overwrite the oldest material, oldest first, only as much as needed.
+
+        1. staging copies of finished works (they keep their own copy);
+        2. clips of other drafts, least recently used first (their text stays; the draft being edited is never touched);
+        3. the oldest finished works themselves (as retention expiry would, just earlier).
+        Running work is never touched. Called inside the drafts gate.
+        """
+        freed = {"staging": 0, "draft_clips": 0, "works": 0}
+
+        async def fits() -> bool:
+            return await self._storage_shortfall(size) <= 0
+
+        terminal = {TaskState.done, TaskState.failed, TaskState.cancelled}
+        finished = sorted((task for task in self.manager._tasks.values() if task.status in terminal and task.lifecycle_v2
+                           and not task.local_only and self.ledger.accepted(task.task_id)), key=lambda task: task.updated_at)
+        for task in finished:
+            materialized = {asset.upload_id: asset for asset in task.uploads}
+            for item in task.draft_context.get("files", []):
+                live, asset = self.uploads._records.get(item.get("up_id")), materialized.get(item.get("up_id"))
+                if live is None or asset is None or not (task.task_dir / "raw" / asset.stored_name).is_file():
+                    continue
+                try:
+                    await self.uploads.delete(live.id, item.get("capability"))
+                    freed["staging"] += 1
+                except (HTTPException, OSError):
+                    continue
+            if await fits():
+                return self._log_freed(record, freed)
+        drafts = sorted((task for task in self.manager._tasks.values() if task.status == TaskState.draft and task.lifecycle_v2
+                         and task.task_id != record.task_id), key=lambda task: task.updated_at)
+        for draft in drafts:
+            for item in list(draft.draft_context.get("files", [])):
+                try:
+                    if item.get("up_id") in self.uploads._records:
+                        await self.uploads.delete(item["up_id"], item.get("capability"))
+                except (HTTPException, OSError):
+                    continue
+                draft.draft_context["files"].remove(item)
+                freed["draft_clips"] += 1
+            self.manager._persist_record(draft)
+            if await fits():
+                return self._log_freed(record, freed)
+        for task in finished:
+            if self.manager.get(task.task_id) is not task or task.status not in terminal:
+                continue
+            try:
+                await self._remove_work(task, "task_retention_expiry")
+                freed["works"] += 1
+            except (HTTPException, OSError, RuntimeError):
+                continue
+            if await fits():
+                break
+        return self._log_freed(record, freed)
+
+    def _log_freed(self, record: TaskRecord, freed: dict[str, int]) -> dict[str, int]:
+        if any(freed.values()):
+            write_text_log(record.task_dir, f"服务器存储不足，已按时间顺序清理最早的素材：完成作品的上传副本 {freed['staging']} 个、"
+                                            f"其他草稿的素材 {freed['draft_clips']} 个、最早的已完成作品 {freed['works']} 个。")
+        return freed
+
+    async def _remove_work(self, record: TaskRecord, reason: str) -> None:
+        """The removal step of delete(), for callers already inside the drafts gate."""
+        for item in list(record.draft_context.get("files", [])):
+            try:
+                await self.uploads.delete(item["up_id"], item["capability"])
+            except HTTPException as exc:
+                if exc.status_code != 404:
+                    raise
+            record.draft_context["files"].remove(item)
+            self.manager._persist_record(record)
+        self.ledger.tombstone(record.task_id, record.owner_hash, record.access_token_hash, reason)
+        await self.manager.cancel_and_delete(record.task_id)
+
+    async def reclaim_finished_staging(self, owner: str, size: int, *, keep: str | None = None) -> int:
+        """Free upload staging that only finished tasks still hold, when it blocks a new upload.
+
+        An accepted task copies its originals into its own task_dir/raw; the staging session
+        (kept 72 h) is then redundant, and recovery/retry fall back to the task's own copy. Without
+        this, a handful of finished or failed works use up the per-session file quota (or, across
+        all visitors, the site-wide session cap) and the next upload is refused. Only idle sessions
+        of accepted, terminal tasks whose copy exists are released, oldest first, and only as many
+        as needed: first this owner's, then (only for the site-wide cap) anyone's. Drafts and
+        running tasks are never touched.
+        """
+        from .uploads import MAX_SESSIONS
+        digest = hashlib.sha256(owner.encode()).hexdigest()
+        own = [record for record in self.uploads._records.values() if record.owner_hash == digest]
+        state = {"count": self.uploads.owner_max_files - len(own), "bytes": self.uploads.owner_max_bytes - sum(record.size for record in own)}
+        owner_ok = lambda: state["count"] >= 1 and state["bytes"] >= size
+        site_ok = lambda: len(self.uploads._records) + self.uploads._orphans < MAX_SESSIONS
+        if owner_ok() and site_ok():
+            return 0
+        terminal = {TaskState.done, TaskState.failed, TaskState.cancelled}
+        finished = sorted((task for task in self.manager._tasks.values()
+                           if task.status in terminal and task.lifecycle_v2 and task.owner_hash and self.ledger.accepted(task.task_id)),
+                          key=lambda task: task.updated_at)
+        released = 0
+
+        async def release(task: TaskRecord, done: Callable[[], bool]) -> bool:
+            nonlocal released
+            task_digest = hashlib.sha256(task.owner_hash.encode()).hexdigest()
+            materialized = {asset.upload_id: asset for asset in task.uploads}
+            for item in task.draft_context.get("files", []):
+                if done():
+                    return True
+                live = self.uploads._records.get(item.get("up_id"))
+                asset = materialized.get(item.get("up_id"))
+                capability = item.get("capability")
+                if (live is None or live.owner_hash != task_digest or asset is None or not isinstance(capability, str)
+                        or not (task.task_dir / "raw" / asset.stored_name).is_file()):
+                    continue
+                try:
+                    await self.uploads.delete(live.id, capability)
+                except (HTTPException, OSError):
+                    continue
+                released += 1
+                if task_digest == digest:
+                    state["count"] += 1
+                    state["bytes"] += live.size
+            return done()
+
+        for task in finished:
+            if task.owner_hash == owner and await release(task, lambda: owner_ok() and site_ok()):
+                break
+        if not site_ok():
+            for task in finished:
+                if await release(task, site_ok):
+                    break
+        if not owner_ok() and keep is not None:
+            # Still full: this visitor's OTHER drafts, least recently used first, give up their clips (their
+            # text stays; the draft being edited is never touched). The visitor asked for old clips to go.
+            stale = sorted((task for task in self.manager._tasks.values() if task.owner_hash == owner and task.task_id != keep
+                            and task.status == TaskState.draft and task.lifecycle_v2), key=lambda task: task.updated_at)
+            for draft in stale:
+                for item in list(draft.draft_context.get("files", [])):
+                    if owner_ok():
+                        break
+                    live = self.uploads._records.get(item.get("up_id"))
+                    try:
+                        if live is not None:
+                            await self.uploads.delete(live.id, item.get("capability"))
+                            state["count"] += 1
+                            state["bytes"] += live.size
+                    except (HTTPException, OSError):
+                        continue
+                    draft.draft_context["files"].remove(item)
+                    released += 1
+                self.manager._persist_record(draft)
+                if owner_ok():
+                    break
+        return released
 
     async def add_file(self, record: TaskRecord, raw: dict, task_token: str) -> dict:
         payload = _validate(DraftFile, raw)
@@ -551,9 +755,11 @@ class DraftService:
                 raise HTTPException(422, "Too many files")
             if sum(self.uploads.read(f["up_id"], f["capability"])["bytes"] for f in files) + payload.size > self.uploads.max_total_bytes:
                 raise HTTPException(413, "Task upload budget exceeded")
-            capacity = await self.guard.snapshot()
-            if capacity.free_bytes < self.settings.minimum_free_disk_bytes + capacity.reserved_bytes + self.uploads.reserved_bytes + self.uploads._reservation(payload.size):
-                raise HTTPException(507, "Insufficient shared upload/task storage")
+            if await self._storage_shortfall(payload.size) > 0:
+                await self.free_space_for(record, payload.size)
+                if await self._storage_shortfall(payload.size) > 0:
+                    raise HTTPException(507, "Insufficient shared upload/task storage")
+            await self.reclaim_finished_staging(record.owner_hash, payload.size, keep=record.task_id)
             receipt = await self.uploads.create(name=payload.name, size=payload.size,
                 sha256=payload.sha256 or "0" * 64, owner=record.owner_hash, content_type=payload.content_type)
             item = {"file_id": receipt["upload_id"], "up_id": receipt["upload_id"],
@@ -937,6 +1143,13 @@ class DraftService:
             # Include the upload store's outstanding commitments in this
             # reservation; ordinary legacy starts see it through the same guard.
             requested = total + math.ceil(self.uploads.reserved_bytes / self.settings.task_disk_reservation_multiplier)
+            try:
+                probe = self.guard.reserve(requested)
+                await probe.__aenter__()
+                await probe.__aexit__(None, None, None)
+            except InsufficientDiskSpaceError:
+                # Short of disk to start: overwrite the oldest material first (see free_space_for), then try once more.
+                await self.free_space_for(record, math.ceil(requested * self.settings.task_disk_reservation_multiplier / 2))
             async with self.reserve(requested) as reservation:
                 assets, cached = await self.uploads.materialize(ids, tokens, record.task_dir)
                 for snapshot, original in zip(snapshots, cached, strict=True):
@@ -970,7 +1183,7 @@ class DraftService:
                     "speakers": [s.model_dump() for s in record.speakers], "files": options, "ids": ids},
                     sort_keys=True).encode()).hexdigest()
                 self.ledger.accept(record.task_id, record.owner_hash, owner_digest(ip), fingerprint,
-                    session_limit=self.settings.anonymous_session_task_rate_limit_per_hour,
+                    session_limit=self.settings.effective_session_start_limit,
                     ip_limit=self.settings.anonymous_ip_task_rate_limit_per_hour,
                     global_limit=self.settings.anonymous_global_task_rate_limit_per_hour,
                     legacy_counts=self.legacy_counts(record.owner_hash, ip))
@@ -1035,14 +1248,28 @@ class DraftService:
                 files = original.get("files")
                 if not isinstance(files, list) or not 1 <= len(files) <= min(20, self.settings.max_files):
                     raise HTTPException(409, {"code": "recovery_source_unverified"})
+                if payload.allow_shot_reuse and (source.error_kind != "shortage" or (payload.mode or original["mode"]) == "original"):
+                    raise HTTPException(409, {"code": "shot_reuse_not_applicable"})
+                release = self.uploads.plan_quota_release(source, source.owner_hash, files)
+                if release is None:
+                    raise HTTPException(429, {"code": "recovery_quota",
+                        "message": f"恢复需要 {len(files)} 个文件名额，你最多保存 {self.uploads.owner_max_files} 个文件、合计 20 GiB，"
+                                   "释放这个作品的暂存副本后仍放不下。请先删除不需要的草稿或作品，再回去修改。"})
+                for up_id, capability in release:
+                    try:
+                        await self.uploads.delete(up_id, capability)
+                    except (HTTPException, OSError):
+                        continue  # a later create() reports any real shortage; nothing was copied yet
                 if (sum(r.status == TaskState.draft and r.owner_hash == source.owner_hash for r in self.manager._tasks.values()) >= 20
                         or sum(r.status == TaskState.draft for r in self.manager._tasks.values()) >= 1000):
-                    raise HTTPException(429, "Draft storage limit reached")
+                    raise HTTPException(429, {"code": "recovery_draft_limit",
+                        "message": "未提交的草稿已达上限（每个会话最多 20 份）。请先在“我的作品”里删除不需要的草稿，再回去修改。"})
                 key = uuid4().hex
                 directory = create_task_dir(self.settings, key)
                 record = TaskRecord(key, directory, "", [], mode=payload.mode or original["mode"],
                     mode_contract=True, lifecycle_v2=True, owner_hash=source.owner_hash, status=TaskState.draft,
-                    message="恢复草稿", draft_context={"version": 2, "files": [], "expires_at": time.time() + 86400})
+                    message="恢复草稿", draft_context={"version": 2, "files": [], "expires_at": time.time() + 86400,
+                                                      **({"shot_reuse": {"accepted": True}} if payload.allow_shot_reuse else {})})
                 imports = []
                 try:
                     mapping = {}
@@ -1098,12 +1325,30 @@ class DraftService:
             self.check(record)
             if record.status != TaskState.failed or not self.ledger.accepted(record.task_id):
                 raise HTTPException(409, "Only an accepted failed task can RetrySame")
-            if raw and raw != {"expected_revision": record.revision}:
+            base = {"expected_revision": record.revision}
+            # Strict boolean: Python treats 1 == True, which must never count as consent.
+            reuse = bool(raw) and raw.get("allow_shot_reuse") is True and raw == {**base, "allow_shot_reuse": True}
+            if raw and raw != base and not reuse:
                 raise HTTPException(422, "RetrySame does not accept changed inputs")
             if self.retry_hook is None:
                 raise HTTPException(409, {"code": "retry_same_unavailable", "supported": False,
                     "message": "Cache-validated first-incomplete resume is not installed; no task was started or charged"})
-            return await self.retry_hook(record, self)
+            previous = record.draft_context.get("shot_reuse")
+            if reuse:
+                # An explicit, per-task consent to repeated footage. It is not an input of the
+                # script/preferences binding, so cached stages stay valid; only matching reruns.
+                if record.error_kind != "shortage" or record.mode == "original":
+                    raise HTTPException(409, {"code": "shot_reuse_not_applicable"})
+                record.draft_context["shot_reuse"] = {"accepted": True}
+            try:
+                return await self.retry_hook(record, self)
+            except BaseException:
+                if reuse:
+                    if previous is None:
+                        record.draft_context.pop("shot_reuse", None)
+                    else:
+                        record.draft_context["shot_reuse"] = previous
+                raise
 
     async def delete(self, record: TaskRecord, *, expired: bool = False) -> None:
         async def finish():

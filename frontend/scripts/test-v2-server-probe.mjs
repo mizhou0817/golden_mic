@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { launchBrowser } from './browser.mjs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
@@ -84,7 +85,11 @@ test('server metadata remains non-ready until actual ready, preserves notes/rang
   const ready = u.parseUploadSnapshot(snapshot({ sec: 10, status: 'ready', metadata_only: false, can_materialize: true }), id, scope);
   assert.equal(u.reconcileServerProbe(input, ready, limits).status, 'ready');
   const invalidTrim = { ...input, ...u.reconcileServerProbe(input, { ...ready, sec: 2 }, limits) };
-  assert.equal(invalidTrim.trim_end, 8); assert.ok(media.validateTrim(invalidTrim));
+  assert.equal(invalidTrim.trim_end, 8); assert.ok(media.validateTrim(invalidTrim));
+  // Safari measures 8.0667 s where the server's FFmpeg says 8.07 s: the untouched full-clip trim follows the server.
+  const safari = item({ duration: 8.066667, trim_start: 0, trim_end: 8.066667 });
+  const adopted = { ...safari, ...u.reconcileServerProbe(safari, { ...ready, sec: 8.07 }, limits) };
+  assert.equal(adopted.trim_end, 8.07); assert.equal(media.validateTrim(adopted), null);
 });
 test('strict task parser rejects missing/zero/nonfinite dimensions fps and false probe', () => {
   const u = upload();
@@ -173,7 +178,7 @@ for (const scenario of ['valid', 'aggregate', 'unknown', 'abort', 'invalid', 'im
     cap: media.mediaLimits(limits), limits, initialDraft: {}, draftAccessRef: { current: scope }, draftController: { current: null },
     canServerProbe: media.canServerProbe, urls: { current: new Set() }, releaseUrl() {}, setNotice() {},
     setHashProgress() {}, setUploadErrors(fn) { errors = fn(errors); }, setDraftAccess() {},
-    errorMessage: e => e.message, URL, transferComplete: u.transferComplete,
+    errorMessage: e => e.message, uploadErrorText: e => e.message, isCapacityFailure: () => false, setUploadBlock() {}, URL, transferComplete: u.transferComplete,
     updateFile(key, values) { Object.assign(filesRef.current.find(f => f.id === key), values); },
     sessionFor: key => sessions.get(key), rememberSession(s) { sessions.set(s.file_id, s); },
     async probeMedia() {
@@ -225,7 +230,7 @@ if (process.env.GM_F06_BROWSER === '1') test('offline native Edge decodes actual
   try {
     const { chromium } = createRequire(import.meta.url)('playwright');
     stage = 1;
-    browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--disable-background-networking', '--disable-component-update', '--no-first-run'] });
+    browser = await launchBrowser({ headless: true, args: ['--disable-background-networking', '--disable-component-update', '--no-first-run'] });
     const context = await browser.newContext({ offline: true, serviceWorkers: 'block', acceptDownloads: false });
     await context.route('**/*', route => { requests++; return route.abort(); });
     const page = await context.newPage(); await page.setContent('<html><body></body></html>');

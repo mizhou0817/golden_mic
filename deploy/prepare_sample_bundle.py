@@ -23,7 +23,13 @@ Without timings the runtime does not invent seek clocks from row durations.
 
 This conservative stdlib profile fits ReportResponse and _safe_report in
 backend/v2_editing.packaged_sample; no backend/config/provider import occurs.
-Output: registry.json plus default/{report.json,final.mp4[,timings.json]}.
+Optional walkthrough (how the sample was made, shown step by step):
+walkthrough.json {"schema_version":1,"script":"...","mode":"voiceover",
+"settings":[{"label":"..","value":".."}],"sources":[{"file":"sources/01.mp4",
+"thumb":"sources/01.jpg","name":"01-xx.mp4","duration":8.0,"used_by":[0]}]}
+plus every sources/NN.{mp4,jpg} it names, and optional thumbs/<sentence_id>.jpg.
+
+Output: registry.json plus default/{report.json,final.mp4[,timings.json,...]}.
 Registry uses the runtime's SHA-string map, not descriptor byte-count objects.
 Copying is streamed and reverified. Invalid input creates no output; copy
 failure retains an incomplete fresh directory WITHOUT a usable registry. Do
@@ -46,6 +52,8 @@ from typing import Any
 
 MAX_JSON = 8 * 1024**2
 MAX_VIDEO = 512 * 1024**2
+MAX_IMAGE = 5 * 1024**2
+MEDIA_NAME = re.compile(r"(?:sources/[0-9]{2}\.(?:mp4|jpg)|thumbs/[0-9]{1,4}\.jpg)")
 CHUNK = 1024**2
 DESCRIPTOR = "reviewed-sample.json"
 ROOT = Path(__file__).absolute().parent.parent
@@ -207,6 +215,35 @@ def validate_report(report: Any, task_id: str) -> list[int]:
     return ids
 
 
+def file_limit(name: str) -> int:
+    return MAX_VIDEO if name.endswith(".mp4") else MAX_IMAGE if name.endswith(".jpg") else MAX_JSON
+
+
+def validate_walkthrough(value: Any, inventory: dict[str, Any], ids: list[int]) -> None:
+    fields(value, {"schema_version", "script", "mode", "sources"}, {"settings"})
+    require(type(value["schema_version"]) is int and value["schema_version"] == 1, "schema_version")
+    text(value["script"], 4000, blank=False)
+    require(value["mode"] in ("voiceover", "mixed", "original"), "walkthrough_mode")
+    settings = value.get("settings", [])
+    require(isinstance(settings, list) and len(settings) <= 12, "walkthrough_settings")
+    for item in settings:
+        fields(item, {"label", "value"})
+        text(item["label"], 20, blank=False)
+        text(item["value"], 80, blank=False)
+    sources = value["sources"]
+    require(isinstance(sources, list) and 1 <= len(sources) <= 20, "walkthrough_sources")
+    for index, item in enumerate(sources, 1):
+        fields(item, {"file", "thumb", "name", "duration"}, {"used_by"})
+        require(item["file"] == f"sources/{index:02d}.mp4" and item["thumb"] == f"sources/{index:02d}.jpg"
+                and item["file"] in inventory and item["thumb"] in inventory, "walkthrough_source_files")
+        text(item["name"], 80, blank=False)
+        number(item["duration"], 0.000001, 3600)
+        used = item.get("used_by", [])
+        require(isinstance(used, list) and all(type(sid) is int and sid in ids for sid in used), "walkthrough_used_by")
+    named = {name for item in sources for name in (item["file"], item["thumb"])}
+    require({name for name in inventory if name.startswith("sources/")} == named, "unreferenced_source")
+
+
 def prepare(source: Path, output: Path, *, rights_reviewed: bool = False) -> dict[str, Any]:
     require(rights_reviewed is True, "rights_review_required")
     source, output = absolute_local(source), absolute_local(output)
@@ -231,17 +268,21 @@ def prepare(source: Path, output: Path, *, rights_reviewed: bool = False) -> dic
     inventory = descriptor["files"]
     # Fixed canonical relative names reject traversal, ADS, case aliases and
     # destination collisions without ever opening those supplied names.
-    fields(inventory, {"report.json", "final.mp4"}, {"timings.json"})
+    require(isinstance(inventory, dict) and len(inventory) <= 100, "unsupported_fields")
+    fields(inventory, {"report.json", "final.mp4"}, {"timings.json", "walkthrough.json"}
+           | {name for name in inventory if MEDIA_NAME.fullmatch(name)})
     metadata: dict[str, Any] = {}
     for name, expected in inventory.items():
         fields(expected, {"sha256", "bytes"})
         require(isinstance(expected["sha256"], str)
                 and re.fullmatch(r"[a-f0-9]{64}", expected["sha256"]) is not None, "invalid_digest")
-        limit = MAX_VIDEO if name == "final.mp4" else MAX_JSON
+        limit = file_limit(name)
         require(type(expected["bytes"]) is int and 0 < expected["bytes"] <= limit, "declared_size_limit")
-        actual, payload = consume(source / name, limit, capture=name != "final.mp4")
+        actual, payload = consume(source / name, limit, capture=name.endswith(".json"))
         require(actual == expected, "file_integrity")
-        if name == "final.mp4":
+        if name.endswith(".jpg"):
+            require(payload[:3] == b"\xff\xd8\xff", "jpeg_header")
+        elif name.endswith(".mp4"):
             box_size = int.from_bytes(payload[:4], "big")
             require(len(payload) >= 16 and payload[4:8] == b"ftyp"
                     and 16 <= box_size <= actual["bytes"], "mp4_header")
@@ -260,13 +301,21 @@ def prepare(source: Path, output: Path, *, rights_reviewed: bool = False) -> dic
             number(timing["end"], 0, 600)
             require(timing["end"] > timing["start"], "timing_order")
             previous = timing["end"]
+    for name in inventory:
+        if name.startswith("thumbs/"):
+            require(int(name[len("thumbs/"):-len(".jpg")]) in ids, "thumbnail_identity")
+    if "walkthrough.json" in metadata:
+        validate_walkthrough(metadata["walkthrough.json"], inventory, ids)
+    else:
+        require(not any(name.startswith("sources/") for name in inventory), "unreferenced_source")
     # All validation precedes creation/copy; source bytes are checked AGAIN
     # during copying, and destination bytes before publishing registry last.
     output.mkdir()
     folder = output / "default"
     folder.mkdir()
     for name, expected in inventory.items():
-        limit = MAX_VIDEO if name == "final.mp4" else MAX_JSON
+        limit = file_limit(name)
+        (folder / name).parent.mkdir(exist_ok=True)
         actual, _ = consume(source / name, limit, target=folder / name)
         require(actual == expected, "copy_source_changed")
         copied, _ = consume(folder / name, limit)

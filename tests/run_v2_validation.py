@@ -46,6 +46,11 @@ LINUX_EXCLUSIONS = frozenset({
     "tests.test_v2_windows_asyncio.WindowsTests.test_tls_direct_and_start_tls_bytes",
     "tests.test_v2_sample_bundle.SampleBundleTests.test_native_windows_short_ancestor_aliases_before_content_or_creation",
 })
+# macOS (default APFS) is case-insensitive, so the case-alias root probe, which
+# assumes a case-sensitive filesystem off Windows, cannot run. Listed, not skipped.
+DARWIN_EXCLUSIONS = LINUX_EXCLUSIONS | frozenset({
+    "tests.test_v2_model_bundle.ModelBundleTests.test_native_case_alias_supplied_root",
+})
 # These are inventories, not claims that the modules have passed on current source.
 SOURCE_PATTERNS = (
     "backend/**/*.py", "backend/**/*.json", "tests/**/*.py", "tests/**/*.cjs",
@@ -168,7 +173,7 @@ def platform_suite(suite, *, platform=sys.platform):
                 yield item
 
     tests = list(leaves(suite))
-    exclusions = LINUX_EXCLUSIONS if platform == "linux" else frozenset()
+    exclusions = {"linux": LINUX_EXCLUSIONS, "darwin": DARWIN_EXCLUSIONS}.get(platform, frozenset())
     excluded = sorted(test.id() for test in tests if test.id() in exclusions)
     if set(excluded) != exclusions:
         raise SetupFailure("platform_test_inventory_changed")
@@ -574,7 +579,7 @@ def main(argv=None):
                 summary["discovered"] = module_counts["test_v2_text_rules.py"] + suite.countTestCases()
                 suite, excluded = platform_suite(suite)
                 summary["platform_exclusions_not_run"] = excluded
-                summary["platform_exclusion_reason"] = "Windows-native transport/8.3 coverage requires Windows" if excluded else None
+                summary["platform_exclusion_reason"] = "Windows-native transport/8.3 coverage requires Windows (macOS also lists a case-sensitivity probe)" if excluded else None
                 summary["selected"] = module_counts["test_v2_text_rules.py"] + suite.countTestCases()
                 summary["discovered_by_module"] = module_counts
                 summary["pure_import_phase"] = "cold_before_shared_dependency_imports"

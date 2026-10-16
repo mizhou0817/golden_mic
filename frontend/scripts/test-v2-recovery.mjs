@@ -101,6 +101,37 @@ test('one POST with original capability, independent persisted draft, actual-siz
   assert.deepEqual(draft.preferences, plain(modes.defaultModePreferences('mixed')));
   assert.deepEqual(plain(h.validate(draft)), draft);
 });
+const consented = (patch = {}, overrides = {}) => {
+  const response = { ...receipt(), step: 1, shot_reuse_accepted: true, ...patch }; const h = harness({ response, ...overrides });
+  h.globals.task.errorKind = 'shortage'; h.globals.task.mode = 'voiceover'; return h;
+};
+test('recovery can carry an explicit, confirmed consent to repeated footage into the new draft', async () => {
+  const h = consented(); await h.edit(1, undefined, { allowShotReuse: true });
+  assert.equal(h.calls.filter(x => x === 'confirm').length, 2, 'asks about repeated footage, then about replacing the draft');
+  const posts = h.calls.filter(x => x.init); assert.equal(posts.length, 1);
+  assert.deepEqual(JSON.parse(posts[0].init.body), { step: 1, allow_shot_reuse: true });
+  assert.equal(h.mounts.length, 1); assert.deepEqual(h.errors.filter(Boolean), []);
+});
+test('an ordinary recovery never carries consent', async () => {
+  const h = consented({ shot_reuse_accepted: false }); await h.edit(1);
+  assert.deepEqual(JSON.parse(h.calls.find(x => x.init).init.body), { step: 1 });
+});
+test('repeated-footage recovery is refused locally unless it is a shortage in a mode that has b-roll', async () => {
+  for (const [errorKind, mode] of [['transient', 'voiceover'], ['qc', 'mixed'], ['shortage', 'original'], [undefined, 'voiceover']]) {
+    const h = consented(); h.globals.task.errorKind = errorKind; h.globals.task.mode = mode;
+    await h.edit(1, undefined, { allowShotReuse: true });
+    assert.equal(h.calls.length, 0, `${errorKind}/${mode}`); assert.equal(h.mounts.length, 0);
+  }
+});
+test('declining the repeated-footage question sends nothing and keeps the draft', async () => {
+  const h = consented({}, { confirm: false }); await h.edit(1, undefined, { allowShotReuse: true });
+  assert.deepEqual(h.calls, ['confirm']); assert.equal(h.draftRef.current, h.old); assert.equal(h.mounts.length, 0);
+});
+test('a recovery receipt that does not confirm the consent is rejected, nothing is mounted', async () => {
+  const h = consented({ shot_reuse_accepted: undefined }); await h.edit(1, undefined, { allowShotReuse: true });
+  assert.equal(h.calls.filter(x => x.init).length, 1); assert.equal(h.mounts.length, 0); assert.equal(h.writes.length, 0);
+  assert.match(h.errors.at(-1), /恢复回执无效/);
+});
 test('replacement declined means no POST or draft write', async () => {
   const h = harness({ confirm: false }); await h.edit(2);
   assert.deepEqual(h.calls, ['confirm']); assert.equal(h.writes.length, 0); assert.equal(h.draftRef.current, h.old);

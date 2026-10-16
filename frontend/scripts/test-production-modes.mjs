@@ -204,7 +204,11 @@ test('NFKC, combining accents, Jamo and locale-independent casefold are stable',
 test('original text evidence rejects inserted words and noncontiguous deletion, including interior fillers', () => {
   assert.equal(modes.quoteTextEvidence('今天欢迎大家', '前文今天欢迎大家后文').contiguous, true);
   assert.equal(modes.quoteTextEvidence('我们欢迎大家', '我们今天欢迎大家').unverified, true);
-  assert.equal(modes.quoteTextEvidence('我们，嗯，欢迎大家', '我们欢迎大家').unverified, true);
+  assert.equal(modes.quoteTextEvidence('我们，嗯，欢迎大家', '我们欢迎大家').unverified, true);
+  // The recognizer heard '那边比较旺一点' this time: the typed line is blocked in 只用原声, and taking the
+  // transcript's exact words (what “改成素材里的原话” does) passes the same literal check.
+  assert.equal(modes.quoteTextEvidence('那边比较方便', '那边比较旺一点。').unverified, true);
+  assert.equal(modes.quoteTextEvidence('那边比较旺一点', '那边比较旺一点。').unverified, false);
   assert.equal(modes.quoteTextEvidence('我们欢迎大家', '我们，嗯，欢迎大家').unverified, true);
   assert.equal(modes.quoteTextEvidence('1月31日', '一月三十一号').exact, true);
   assert.equal(modes.quoteTextEvidence('', '欢迎大家').unverified, true);
@@ -503,17 +507,40 @@ test('reselecting a ready upload verifies content before emitting any ready stat
   assert.equal(emitted, 0); assert.equal(h.calls.length, 1);
 });
 
-test('ambiguous PUT or completion failure is never automatically replayed', async () => {
-  for (const failingMethod of ['PUT', 'POST']) {
-    let acknowledged = failingMethod === 'POST'; const failure = new Error('Synthetic disconnect');
+test('an ambiguous completion is never replayed; a dropped piece is resent only after the server says it is missing', async () => {
+  // Completion (POST) may already have started server work: never replayed.
+  { const failure = new Error('Synthetic disconnect');
     const h = uploadsHarness((path, init) => {
-      if (init.method === failingMethod) throw failure;
-      if (init.method === 'PUT') { acknowledged = true; return {}; }
-      return snapshot({ status: 'uploading', chunks: acknowledged ? [0] : [], progress: acknowledged ? 100 : 0 });
+      if (init.method === 'POST') throw failure;
+      return snapshot({ status: 'uploading', chunks: [0], progress: 100 });
     });
     await assert.rejects(h.api.uploadFile(file(), signal(), { onSession() {}, onSnapshot() {} }, session()), error => error === failure);
-    assert.equal(h.calls.filter(call => call.init.method === failingMethod).length, 1);
-  }
+    assert.equal(h.calls.filter(call => call.init.method === 'POST').length, 1); }
+  // A piece that keeps failing (slow/dropped connection) is resent a bounded number of times, each after a status check.
+  { const failure = new Error('Synthetic disconnect');
+    const h = uploadsHarness((path, init) => {
+      if (init.method === 'PUT') throw failure;
+      return snapshot({ status: 'uploading', chunks: [], progress: 0 });
+    });
+    await assert.rejects(h.api.uploadFile(file(), signal(), { onSession() {}, onSnapshot() {} }, session()), error => error === failure);
+    assert.equal(h.calls.filter(call => call.init.method === 'PUT').length, h.api.CHUNK_ATTEMPTS); }
+  // The reply was lost but the server stored the piece: it is not sent again, and the upload completes.
+  { let stored = false;
+    const h = uploadsHarness((path, init) => {
+      if (init.method === 'PUT') { stored = true; throw new Error('Synthetic lost reply'); }
+      return snapshot({ status: init.method === 'POST' ? 'probing' : 'uploading', chunks: stored ? [0] : [], progress: stored ? 100 : 0 });
+    });
+    await h.api.uploadFile(file(), signal(), { onSession() {}, onSnapshot() {} }, session());
+    assert.equal(h.calls.filter(call => call.init.method === 'PUT').length, 1, 'no duplicate send');
+    assert.equal(h.calls.filter(call => call.init.method === 'POST').length, 1); }
+  // A clear refusal (the piece changed) is never resent.
+  { const refusal = Object.assign(new Error('Chunk changed'), { status: 409 });
+    const h = uploadsHarness((path, init) => {
+      if (init.method === 'PUT') throw refusal;
+      return snapshot({ status: 'uploading', chunks: [], progress: 0 });
+    });
+    await assert.rejects(h.api.uploadFile(file(), signal(), { onSession() {}, onSnapshot() {} }, session()), error => error === refusal);
+    assert.equal(h.calls.filter(call => call.init.method === 'PUT').length, 1); }
 });
 
 test('polling waits exactly 2s, releases abort listeners and never overlaps GETs', async () => {
@@ -630,18 +657,34 @@ const readyPoll = async (id, token, signal, emit) => { emit(snapshot()); return 
 test('wizard defaults to voiceover with three Chinese cards and keeps optional element self-checks', () => {
   const h = wizardHarness({ draft: draft() });
   assert.equal(h.drafts.at(-1).mode, 'voiceover'); assert.ok(h.nodes().some(node => node.props?.className === 'gm-elements'));
-  assert.equal(h.nodes().filter(node => node.props?.className === 'gm-mode-card').length, 1);
-  h.click('更多制作方式：旁白 + 原声 / 只用原声 ▾');
+  assert.equal(h.nodes().some(node => String(node.props?.className ?? '').includes('gm-mode-more')), false, 'no hidden-mode toggle');
   const cards = h.nodes().filter(node => node.props?.className === 'gm-mode-card'); assert.equal(cards.length, 3);
   assert.equal(cards.filter(card => card.props['aria-pressed']).length, 1); assert.equal(cards[0].props['aria-pressed'], true);
   assert.ok(h.content(h.tree).includes('不是事实认证')); h.unmount();
 });
 
 test('blank original mode can enter uploads without weakening the normal-script minimum', () => {
-  const a = wizardHarness(); assert.equal(a.button('下一步：传素材 →').props.disabled, true); a.unmount();
+  const a = wizardHarness(); assert.equal(a.button('下一步：传素材 →').props['aria-disabled'], true); a.unmount();
   const c = wizardHarness({ draft: draft({ script: '', mode: 'original', preferences: modes.defaultModePreferences('original') }) });
-  assert.equal(c.button('下一步：传素材 →').props.disabled, false); c.click('下一步：传素材 →');
-  assert.ok(c.content(c.tree).includes('选择文件即开始上传和转写')); assert.equal(c.button('下一步：选效果 →').props.disabled, true); c.unmount();
+  assert.equal(c.button('下一步：传素材 →').props['aria-disabled'], false); c.click('下一步：传素材 →');
+  assert.ok(c.content(c.tree).includes('选择文件即开始上传和转写')); assert.equal(c.button('下一步：选效果 →').props['aria-disabled'], true); c.unmount();
+});
+
+test('next step is never a dead button: a blocked click says what is missing, a valid one proceeds', () => {
+  const h = wizardHarness();
+  const next = () => h.button('下一步：传素材 →');
+  // Blocked: keeps a real, focusable button (no disabled attribute) that reports why.
+  assert.equal(next().props.disabled, undefined); assert.equal(next().props['aria-disabled'], true);
+  assert.ok(!h.content(h.tree).includes('还不能进入下一步'), 'no scolding before the user tries');
+  next().props.onClick(); h.flush();
+  assert.ok(h.content(h.tree).includes('还不能进入下一步：稿件至少写 20 字'));
+  assert.ok(!h.content(h.tree).includes('选择文件即开始上传和转写'), 'blocked click must not advance');
+  assert.equal(h.nodes().find(node => node.props?.role === 'alert' && String(node.props.className).includes('gm-action-error')) !== undefined, true);
+  // Fixing the script clears the message and the same button now proceeds.
+  h.script('真实新闻标题\n今天活动正式开幕，欢迎大家前来参观。');
+  assert.equal(next().props['aria-disabled'], false); assert.ok(!h.content(h.tree).includes('还不能进入下一步'));
+  next().props.onClick(); h.flush();
+  assert.ok(h.content(h.tree).includes('选择文件即开始上传和转写')); h.unmount();
 });
 
 test('manual mixed chips preserve text and segmentation and invalidate element checks', () => {
@@ -669,7 +712,7 @@ test('editing a prefix updates inferred kinds while an explicit user chip retain
 
 test('restored ready uploads need no reselect; C effects hide voice, pacing and generation', async () => {
   const h = wizardHarness({ draft: uploadedDraft(), uploadApi: { pollUploadStatus: readyPoll, requestMatchPreview: async () => [match()] } });
-  assert.equal(h.button('下一步：选效果 →').props.disabled, true);
+  assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], true);
   await h.settle(); assert.equal(h.timers.timers.size, 0, 'Restoration is read-only until explicit alignment');
   h.click('重新核对'); h.timers.fire(600); await h.settle(); h.click('下一步：选效果 →');
   const body = h.content(h.tree);
@@ -684,14 +727,14 @@ test('restoring invalid mode sentences/tokens retains script but never queries a
   const value = uploadedDraft({ sentences: [row('并不在稿子中的内容')] }); let reads = 0;
   const h = wizardHarness({ draft: value, uploadApi: { pollUploadStatus: () => { reads++; return Promise.resolve(snapshot()); } } });
   assert.equal(h.drafts.at(-1).script, value.script); assert.equal(reads, 0); assert.equal(h.drafts.at(-1).uploadIds.length, 0);
-  assert.equal(h.button('下一步：选效果 →').props.disabled, true); h.unmount();
+  assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], true); h.unmount();
 });
 
 test('an unfinished oversize sentence does not discard valid uploads or trigger another paid transcription', async () => {
   const value = uploadedDraft({ script: '采访标题\n' + '字'.repeat(2001), sentences: [] }); let reads = 0;
   const h = wizardHarness({ draft: value, uploadApi: { pollUploadStatus: async (...args) => { reads++; return readyPoll(...args); } } });
   await h.settle(); assert.equal(reads, 1); assert.deepEqual(plain(h.drafts.at(-1).uploadIds), [UPLOAD]);
-  assert.equal(h.drafts.at(-1).script, value.script); assert.equal(h.button('下一步：选效果 →').props.disabled, true); h.unmount();
+  assert.equal(h.drafts.at(-1).script, value.script); assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], true); h.unmount();
 });
 
 test('effect replay cancels old restored-upload reads without losing the replacement read', async () => {
@@ -701,9 +744,9 @@ test('effect replay cancels old restored-upload reads without losing the replace
   } });
   h.replayEffects(); assert.equal(reads.length, 2); assert.equal(reads[0].signal.aborted, true);
   reads[0].emit(snapshot()); reads[0].response.resolve(snapshot()); await h.settle();
-  assert.equal(h.button('下一步：选效果 →').props.disabled, true);
+  assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], true);
   reads[1].emit(snapshot()); reads[1].response.resolve(snapshot()); await h.settle(); h.click('重新核对'); h.timers.fire(600); await h.settle();
-  assert.equal(h.button('下一步：选效果 →').props.disabled, false); h.unmount();
+  assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], false); h.unmount();
 });
 
 test('transcript picks preserve source hints and upload-scoped speaker IDs through mode switch/reload', async () => {
@@ -752,9 +795,9 @@ test('mixed missing quote blocks the effect step until explicitly converted, not
   const h = wizardHarness({ draft: uploadedDraft({ mode: 'mixed', script: '采访新闻标题\n同期：这是一段素材里面没有说过的原话。' }),
     uploadApi: { pollUploadStatus: readyPoll, requestMatchPreview: async () => [match({ source: null, score: .2 })] } });
   await h.settle(); h.click('重新核对'); h.timers.fire(600); await h.settle();
-  assert.equal(h.button('下一步：选效果 →').props.disabled, true); assert.ok(h.content(h.tree).includes('没找到'));
+  assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], true); assert.ok(h.content(h.tree).includes('没找到'));
   h.click('改成旁白'); assert.equal(h.drafts.at(-1).sentences[0].kind, 'narration');
-  assert.equal(h.button('下一步：选效果 →').props.disabled, false); h.unmount();
+  assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], false); h.unmount();
 });
 
 test('original cannot pass with no speech or with a matched take outside the selected source trim', async () => {
@@ -764,7 +807,7 @@ test('original cannot pass with no speech or with a matched take outside the sel
       pollUploadStatus: async (id, token, signal, emit) => { const s = snapshot(noSpeech ? { has_speech: false, transcript: [] } : {}); emit(s); return s; },
       requestMatchPreview: async () => [match()],
     } });
-    await h.settle(); h.click('重新核对'); h.timers.fire(600); await h.settle(); assert.equal(h.button('下一步：选效果 →').props.disabled, true); h.unmount();
+    await h.settle(); h.click('重新核对'); h.timers.fire(600); await h.settle(); assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], true); h.unmount();
   }
 });
 
@@ -776,7 +819,7 @@ test('preview debounce cancels old controller and late responses cannot certify 
   h.timers.fire(600); await h.settle(); assert.equal(requests.length, 2);
   requests[1].response.resolve([match({ source: null, score: .1 })]); await h.settle();
   requests[0].response.resolve([match()]); await h.settle();
-  h.click('下一步：传素材 →'); assert.equal(h.button('下一步：选效果 →').props.disabled, true);
+  h.click('下一步：传素材 →'); assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], true);
   assert.ok(h.content(h.tree).includes('没找到')); h.unmount();
 });
 
@@ -796,10 +839,10 @@ test('mode suggestion is once per wizard session and never auto-switches', async
 test('server-status refresh failure revokes previously ready eligibility', async () => {
   let fail = false;
   const h = wizardHarness({ draft: uploadedDraft(), uploadApi: { pollUploadStatus: async (...args) => { if (fail) throw new Error('Synthetic missing upload'); return readyPoll(...args); }, requestMatchPreview: async () => [match()] } });
-  await h.settle(); h.click('重新核对'); h.timers.fire(600); await h.settle(); assert.equal(h.button('下一步：选效果 →').props.disabled, false);
+  await h.settle(); h.click('重新核对'); h.timers.fire(600); await h.settle(); assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], false);
   fail = true;
   h.click('重新读取状态'); await h.settle();
-  assert.equal(h.button('下一步：选效果 →').props.disabled, true); h.unmount();
+  assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], true); h.unmount();
 });
 
 test('paper CSS consumes the authoritative v2 palette, rem geometry and shared SVG icons without remote assets', () => {

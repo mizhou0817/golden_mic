@@ -73,7 +73,14 @@ test('draft creation shares one promise across additions and never replays an am
   assert.equal(once('original', sig()), a);
   const broken = boundary(() => Promise.reject(Error('synthetic uncertain commit')));
   const retry = load('draft', { './appApi': broken }).draftTaskOnce();
-  await assert.rejects(retry('voiceover', sig())); await assert.rejects(retry('voiceover', sig())); assert.equal(broken.calls.length, 1);
+  await assert.rejects(retry('voiceover', sig())); await assert.rejects(retry('voiceover', sig())); assert.equal(broken.calls.length, 1);
+  // An explicit refusal created nothing, so the next attempt asks again instead of failing forever.
+  let attempt = 0;
+  const busy = boundary(() => ++attempt === 1 ? Promise.reject(Object.assign(Error('busy'), { status: 409 })) : Promise.resolve(receipt()));
+  const again = load('draft', { './appApi': busy }).draftTaskOnce();
+  await assert.rejects(again('voiceover', sig()));
+  assert.deepEqual(plain(await again('voiceover', sig())), { ...access, status: 'draft', expires_at: receipt().expires_at });
+  assert.equal(busy.calls.length, 2);
 });
 test('draft capabilities reject partial and mismatched receipts', () => {
   const d = load('draft', { './appApi': boundary(denied) });
@@ -298,11 +305,11 @@ function wizard(draft, { respond = denied, uploadOverrides = {}, ready = true, c
 const draft = patch => ({ script: '新闻标题\n今天社区活动正式开始，大家一起来了解现场的最新消息。', mode: 'voiceover', step: 1,
   preferences: modes.defaultModePreferences(), files: [], elements: {}, sentenceChecks: {}, ...patch });
 const restored = patch => draft({ ...access, step: 2, files: [metadata()], uploadBindings: [binding()], uploadIds: [UP], uploadTokens: { [UP]: TOKEN }, ...patch });
-test('actual wizard starts with A only, unfolds three modes, step change focuses heading', () => {
+test('actual wizard shows all three modes at once with A selected, no toggle; step change focuses heading', () => {
   const w = wizard(draft());
-  assert.equal(w.nodes().filter(n => n.props?.className === 'gm-mode-card').length, 1);
-  w.click('更多制作方式：旁白 + 原声 / 只用原声 ▾');
-  assert.equal(w.nodes().filter(n => n.props?.className === 'gm-mode-card').length, 3);
+  const cards = w.nodes().filter(n => n.props?.className === 'gm-mode-card');
+  assert.equal(cards.length, 3); assert.deepEqual(cards.map(card => card.props['aria-pressed']), [true, false, false]);
+  assert.equal(w.nodes().some(n => String(n.props?.className ?? '').includes('gm-mode-more')), false);
   assert.equal(w.focuses, 0); w.click('下一步：传素材'); assert.equal(w.focuses, 1);
   w.click('← 上一步'); assert.equal(w.focuses, 2); w.unmount();
 });
@@ -328,10 +335,10 @@ test('element chips toggle manual whole-script self-checks without opening evide
 test('original empty/title-only onboarding is allowed; malformed title and short A remain blocked', () => {
   for (const script of ['', '新闻标题']) {
     const w = wizard(draft({ mode: 'original', script, preferences: modes.defaultModePreferences('original') }));
-    assert.equal(w.button('下一步：传素材').props.disabled, false); w.unmount();
+    assert.equal(w.button('下一步：传素材').props['aria-disabled'], false); w.unmount();
   }
   for (const [mode, script] of [['voiceover', '标题\n太短'], ['original', '标题！']]) {
-    const w = wizard(draft({ mode, script })); assert.equal(w.button('下一步：传素材').props.disabled, true); w.unmount();
+    const w = wizard(draft({ mode, script })); assert.equal(w.button('下一步：传素材').props['aria-disabled'], true); w.unmount();
   }
 });
 test('restored task emits capability and only reads; file advanced controls fold and undo prevents DELETE', async () => {
@@ -350,7 +357,7 @@ test('restored task emits capability and only reads; file advanced controls fold
 });
 test('unmount cancels pending removal without destructive cleanup and stage warnings cannot bypass hard upload gate', async () => {
   const w = wizard(restored(), { respond: path => path === root ? receipt() : path === fileRoot ? snapshot({ status: 'uploading', chunks: [], progress: 0 }) : { files: [] } });
-  await w.settle(); assert.equal(w.button('下一步：选效果').props.disabled, true);
+  await w.settle(); assert.equal(w.button('下一步：选效果').props['aria-disabled'], true);
   w.click('移除 synthetic.mp4'); w.unmount(); w.c.advance(5000); await ticks();
   assert.ok(w.requests.calls.every(c => c.init.method !== 'DELETE'));
 });
@@ -366,12 +373,12 @@ test('wizard keeps start blocked and binding recoverable while DELETE is pending
   const w = wizard(restored(), { respond: (path, init) => init.method === 'DELETE' ? held.promise
     : path === root ? receipt() : path === fileRoot ? snapshot() : { files: [] } });
   await w.settle(); w.click('移除 synthetic.mp4'); w.c.advance(5000); await w.settle();
-  assert.equal(w.button('下一步：选效果').props.disabled, true);
+  assert.equal(w.button('下一步：选效果').props['aria-disabled'], true);
   assert.equal(w.button('撤销').props.disabled, true);
   assert.equal(w.drafts.at(-1).uploadBindings.length, 1);
   held.reject(Error('synthetic ambiguous DELETE')); await w.settle();
   assert.equal(w.drafts.at(-1).uploadBindings.length, 1);
-  assert.equal(w.button('下一步：选效果').props.disabled, true); w.unmount();
+  assert.equal(w.button('下一步：选效果').props['aria-disabled'], true); w.unmount();
 });
 test('actual wizard edit waits 600ms, sends complete editorial context and never starts provider work', async () => {
   const w = wizard(restored(), { respond: (path, init) => path.endsWith('/align')
@@ -407,7 +414,7 @@ test('C unsaid content remains blocked after real match result, even with a high
       transcript: [{ id: 'seg', start: 1, end: 4, speaker_id: '', text: actual, words: [] }] }) : { files: [] },
   });
   await w.settle(); w.click('重新核对'); w.c.advance(600); await w.settle();
-  assert.equal(w.button('下一步：选效果').props.disabled, true);
+  assert.equal(w.button('下一步：选效果').props['aria-disabled'], true);
   w.click('← 上一步'); assert.ok(w.nodes().some(n => n.props?.className === 'gm-unverified-quote')); w.unmount();
 });
 test('transcript displays eight lines then an explicit remainder fold; notes preserve twenty Unicode codepoints', async () => {
@@ -454,7 +461,7 @@ test('new wizard self voice needs no microphone or whole recording and submits m
   assert.equal('ownVoice' in submitted[0], false); w.unmount();
   for (const patch of [{ status: 'processing', phase: 'asr' }, { status: 'asr_failed', probe_ok: true, can_materialize: true }]) {
     const blocked = wizard(restored({ voice: 'self' }), { respond: path => path === root ? receipt() : path === fileRoot ? snapshot(patch) : { files: [] } });
-    await blocked.settle(); assert.equal(blocked.button('下一步：选效果').props.disabled, true); blocked.unmount();
+    await blocked.settle(); assert.equal(blocked.button('下一步：选效果').props['aria-disabled'], true); blocked.unmount();
   }
 });
 

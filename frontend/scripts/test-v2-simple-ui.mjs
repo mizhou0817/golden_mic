@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { collect } from './test-v2-final-browser.mjs';
+import { launchBrowser } from './browser.mjs';
 
 // Full current TSX graph, real React/ReactDOM and native Edge. Synthetic HTTP
 // only; no app host, backend, provider, real config/data, media or export work.
@@ -52,8 +53,8 @@ test('offline native simple UI', { timeout: 150000 }, async t => {
       window.load=function load(key){if(cache[key])return cache[key].exports;const m=cache[key]={exports:{}};
       factories[key](m,m.exports,name=>name==='react'?React:name.endsWith('.css')?{__esModule:true,default:new Proxy({},{get:(_,k)=>k})}:load(paths[key][name]));return m.exports;};`;
     stage = 'launch';
-    const { chromium } = require('playwright');
-    browser = await chromium.launch({ channel: 'msedge', headless: true, timeout: 8000,
+    // Edge, Chrome or WebKit, whichever is installed (GM_BROWSER); same offline launch options.
+    browser = await launchBrowser({ headless: true, timeout: 8000,
       env: { ...process.env, DEBUG: '', PWDEBUG: '0' },
       proxy: { server: 'http://egress-disabled.invalid:9', bypass: '<-loopback>' },
       args: ['--disable-background-networking', '--disable-component-update', '--no-first-run', '--disable-quic',
@@ -347,7 +348,11 @@ test('offline native simple UI', { timeout: 150000 }, async t => {
       check(await dialog.getByRole('button', { name: '视频 MP4', exact: true }).getAttribute('aria-pressed') === 'true', 'default-mp4');
       check(!await page.locator('.gm-rw-export-settings').evaluate(e => e.open), 'export-settings-closed');
       check((await page.locator('.gm-rw-export-summary').textContent()).includes('1080p · 横屏 · 标准字幕'), 'default-export-summary');
-      check(await button('检查通过后才能导出').isDisabled(), 'publication-export-gate');
+      // Unresolved checks no longer forbid export: it stays gated until the user confirms having seen them.
+      check(await button('先勾选确认，再导出').isDisabled(), 'publication-export-gate');
+      const acknowledge = dialog.locator('[data-control=export-accept-unresolved]');
+      await acknowledge.check(); check(await button('仍然导出（带未通过的检查）').isEnabled(), 'publication-export-after-ack');
+      await acknowledge.uncheck(); check(await button('先勾选确认，再导出').isDisabled(), 'publication-export-regated');
       await layout('export-closed'); await toggle('.gm-rw-export-settings', 'Enter', true);
       stage = 'result-export-select-options';
       // These implicit labels also contain their option text. Match the actual

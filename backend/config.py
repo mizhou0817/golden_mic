@@ -326,6 +326,18 @@ class Settings(BaseSettings):
                 raise ValueError("production 模式不能使用模板占位凭证。")
         return self
 
+    @model_validator(mode="after")
+    def absolute_data_paths(self) -> "Settings":
+        # A relative DATA_DIR (the .env.example default) made task directories
+        # relative while upload paths were absolute, so every
+        # path.relative_to(task_dir) failed mid-pipeline. Pin both to absolute
+        # paths. This runs after the production check so production still
+        # rejects relative values instead of silently accepting them.
+        cache = self.effective_asr_cache_dir
+        self.data_dir = self.data_dir.absolute()
+        self.asr_cache_dir = cache.absolute()
+        return self
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.frontend_origins.split(",") if origin.strip()]
@@ -333,6 +345,14 @@ class Settings(BaseSettings):
     @property
     def trusted_hosts(self) -> list[str]:
         return [host.strip() for host in self.allowed_hosts.split(",") if host.strip()]
+
+    @property
+    def effective_session_start_limit(self) -> int:
+        """Starts per browser session per hour, as configured (the field itself is capped at 20).
+
+        Production used to force 2, which stopped a normal user after two works in an hour; the operator's
+        ANONYMOUS_SESSION_TASK_RATE_LIMIT_PER_HOUR now applies everywhere (with the per-IP/global limits)."""
+        return self.anonymous_session_task_rate_limit_per_hour
 
     @property
     def is_production(self) -> bool:

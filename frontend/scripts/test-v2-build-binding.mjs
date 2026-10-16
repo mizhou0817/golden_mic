@@ -17,7 +17,7 @@ const anchors = ['frontend/index.html', 'frontend/package.json', 'frontend/packa
   'frontend/tsconfig.json', 'frontend/tsconfig.node.json', 'backend/mode_rules.json'];
 
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-v2-binding-node-'));
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'gm-v2-binding-node-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true })); // exact owned synthetic root only
   const names = [...anchors, 'frontend/src/main.tsx', 'frontend/src/ui/tokens.css',
     'frontend/tsconfig.extra.json', 'frontend/vite.config.mts',

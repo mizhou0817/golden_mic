@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { launchBrowser } from './browser.mjs';
+import { realpathSync, readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -79,6 +80,26 @@ for (const [label, mutate] of [
   ['nonfinite clock', x => { x.report.rows[0].start = NaN; }],
   ['overlapping clock', x => { x.report.rows[1].start = .1; }],
 ]) test(`strict public sample rejects ${label}`, () => { const x = fixture(); mutate(x); assert.throws(() => parseSample(x)); });
+const walkthrough = () => ({ script: '标题\n第一句', mode: 'voiceover', settings: [{ label: '声音', value: 'AI 配音' }],
+  sources: [{ index: 1, name: '01-市集.mp4', duration: 8, used_by: [10, 12],
+    video_url: '/api/samples/default/sources/01.mp4', thumb_url: '/api/samples/default/sources/01.jpg' }] });
+test('walkthrough: script, mode, settings and sample clips are kept; sample pictures are accepted', () => {
+  const x = fixture(); x.walkthrough = walkthrough(); x.report.rows[0].thumb_url = '/api/samples/default/thumbs/10.jpg';
+  const data = parseSample(x);
+  assert.equal(data.walkthrough.mode, 'voiceover');
+  assert.deepEqual(data.walkthrough.sources[0].usedBy, [10, 12]);
+  assert.equal(data.walkthrough.sources[0].video, '/api/samples/default/sources/01.mp4');
+  assert.equal(data.report.rows[0].thumb_url, '/api/samples/default/thumbs/10.jpg');
+  assert.equal(parseSample(fixture()).walkthrough, null, 'older bundles without a walkthrough still load');
+});
+for (const [label, mutate] of [
+  ['foreign clip', w => { w.sources[0].video_url = 'https://foreign.invalid/a.mp4'; }],
+  ['clip numbered out of order', w => { w.sources[0].video_url = '/api/samples/default/sources/02.mp4'; }],
+  ['credential in clip', w => { w.sources[0].thumb_url += '?token=x'; }],
+  ['unknown sentence', w => { w.sources[0].used_by = [99]; }],
+  ['unknown mode', w => { w.mode = 'other'; }],
+  ['blank script', w => { w.script = ' '; }],
+]) test(`walkthrough rejects ${label}`, () => { const x = fixture(); x.walkthrough = walkthrough(); mutate(x.walkthrough); assert.throws(() => parseSample(x)); });
 test('tokenless bound report references stay relative; missing media/timing never fabricated', () => {
   const x = fixture(); x.report.rows[0].thumb_url = '/api/tasks/sample-public/thumbs/0.jpg';
   x.video_url = null; delete x.report.rows[0].start; delete x.report.rows[0].end;
@@ -91,9 +112,9 @@ test('offline Edge runtime: actual SampleView + parsers + publicRequest; native 
   const { chromium } = require('playwright');
   let browser, context, stage = 'launch', errors = 0, unexpected = 0, downloads = 0;
   const calls = [], evidence = [];
-  const temp = mkdtempSync(join(tmpdir(), 'gm-sample-review-'));
+  const temp = mkdtempSync(join(realpathSync(tmpdir()), 'gm-sample-review-'));
   try {
-    browser = await chromium.launch({ channel: 'msedge', headless: true,
+    browser = await launchBrowser({ headless: true,
       args: ['--disable-background-networking', '--disable-component-update', '--no-first-run'] });
     context = await browser.newContext({ offline: true, serviceWorkers: 'block', acceptDownloads: false });
     let response = fixture(), status = 200, missingVideo = false, videoBytes;
@@ -160,7 +181,8 @@ test('offline Edge runtime: actual SampleView + parsers + publicRequest; native 
     stage = 'loaded';
     const cards = page.locator('.gm-sample-storyboard button'), detail = page.locator('#gm-sample-sentence');
     await cards.nth(2).waitFor(); stage = 'native-metadata';
-    await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
+    // preload="metadata": WebKit stops at HAVE_METADATA (1) until play; Chromium reaches 2.
+    await page.waitForFunction(min => document.querySelector('video')?.readyState >= min, browser.gmBrowserName === 'webkit' ? 1 : 2);
     console.log(JSON.stringify({ sampleMedia: await page.locator('video').evaluate(e => ({ readyState: e.readyState, duration: Number.isFinite(e.duration) ? e.duration : null, error: e.error?.code ?? 0 })) }));
     assert.equal(await detail.getByText('Verified fixture scene 1', { exact: true }).count(), 1);
     stage = 'click-second';

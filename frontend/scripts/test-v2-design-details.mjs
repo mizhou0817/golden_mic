@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { launchBrowser } from './browser.mjs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { readFileSync, existsSync } from 'node:fs';
@@ -183,7 +184,7 @@ test('offline native Edge: Enter/Space disclosure, selection, row reset, C label
   let browser, context, requests = 0, errors = 0, stage = 0;
   try {
     const { chromium, expect } = require('@playwright/test');
-    browser = await chromium.launch({ channel: 'msedge', headless: true,
+    browser = await launchBrowser({ headless: true,
       args: ['--disable-background-networking', '--disable-component-update', '--no-first-run'] });
     context = await browser.newContext({ offline: true, serviceWorkers: 'block', acceptDownloads: false });
     await context.route('**/*', route => { requests++; return route.abort(); });
