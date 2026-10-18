@@ -1471,6 +1471,13 @@ def build_mode_edl(
                     usable = window.duration if last else max(0.0, window.duration - 1.0 / _FPS)
                     take = min(usable, remaining)
                     if clips and take < 1 / _FPS:
+                        # Less than a frame left: a one-frame clip would flash, so stretch the previous clip over it
+                        # (start it earlier when it can, otherwise use the frame it held back) instead of failing.
+                        previous, held = clips[-1], shots_by_id[clips[-1].shot_id]
+                        earlier = min(remaining, max(0.0, previous.in_time - held.start))
+                        later = min(remaining - earlier, max(0.0, held.end - previous.out_time))
+                        clips[-1] = previous.model_copy(update={"in_time": previous.in_time - earlier, "out_time": previous.out_time + later})
+                        remaining -= earlier + later
                         break
                     start = window.start
                     if position == 0 and preferred is not None:

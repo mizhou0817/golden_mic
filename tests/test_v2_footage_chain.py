@@ -80,6 +80,18 @@ class FootageChainTests(unittest.IsolatedAsyncioTestCase):
         edl, _ = self.edl_for([self.item(0, 20)], shots, {"0": [10, 11]}, [2.0])
         self.assertEqual([clip.shot_id for clip in edl[0].clips], [20])
 
+    async def test_less_than_a_frame_left_over_stretches_the_previous_window_instead_of_failing(self):
+        # Production case: two 2.025 s windows leave 0.021 s of a 4.005 s sentence, less than a frame. That used to
+        # stop the chain and fail the whole render although the chain had seconds of footage to spare.
+        shots = [self.shot(12, 6.242, 8.267), self.shot(13, 6.242, 8.267), self.shot(14, 6.242, 8.267)]
+        edl, _ = self.edl_for([self.item(0, 12)], shots, {"0": [12, 13, 14]}, [3.885])
+        clips = edl[0].clips
+        self.assertEqual([clip.shot_id for clip in clips], [12, 13], "no one-frame flash clip")
+        self.assertAlmostEqual(sum(clip.out_time - clip.in_time for clip in clips), 3.885 + 0.12, places=6)
+        for clip in clips:
+            self.assertGreaterEqual(clip.in_time, 6.242 - 1e-9); self.assertLessEqual(clip.out_time, 8.267 + 1e-9)
+        self.assertTrue(all(not clip.freeze_pad for clip in clips))
+
     async def test_a_chain_that_is_too_short_for_the_real_audio_is_reported_not_faked(self):
         shots = [self.shot(10, 0.0, 3.0), self.shot(11, 0.0, 1.0)]
         with self.assertRaises(mp.MatchingError) as caught:
