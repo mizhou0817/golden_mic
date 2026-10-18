@@ -290,13 +290,13 @@ export function createAppRequest(access: Access): AppRequest {
     // AI writing is one slow model call; everything else keeps the short JSON timeout.
     // A file piece gets time for its size even on a slow uplink (8 KB/s), not a flat 120 s.
     const timer = setTimeout(abort, init.body instanceof FormData ? 30 * 60_000 : init.body instanceof Blob ? 120_000 + Math.ceil(init.body.size / 8)
-      : url === '/api/script/assist' ? 170_000 : 30_000);
+      : url === '/api/script/assist' ? 170_000 : url === '/api/script/effects' ? 60_000 : 30_000);
     try {
       if (controller.signal.aborted) throw new DOMException('已取消', 'AbortError');
       const uploadScope = access.taskId === undefined && access.token === undefined && (
         url === '/api/tasks' && init.method?.toUpperCase() === 'POST' ||
         url === '/api/uploads' || /^\/api\/uploads\/up_[0-9a-f]{32}(?:\/chunks\/(?:0|[1-9]\d*)|\/complete)?$/.test(url)
-        || url === '/api/match/preview' || url === '/api/script/assist');
+        || url === '/api/match/preview' || url === '/api/script/assist' || url === '/api/script/effects');
       if (!uploadScope && (!access.taskId || !validTaskId(access.taskId) || access.token !== undefined && !validToken(access.token)
         || !url.startsWith(`/api/tasks/${encodeURIComponent(access.taskId)}`)
         || !['', '/', '?'].includes(url.charAt(`/api/tasks/${encodeURIComponent(access.taskId)}`.length)))) throw new Error('只能访问当前选中的作品。');

@@ -284,7 +284,7 @@ function wizard(draft, { respond = denied, uploadOverrides = {}, ready = true, c
   const d = load('draft', { './appApi': requests }, c);
   const api = load('wizard', { react, 'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'fragment' },
     './ui/Icon': { default: ({ name }) => ({ type: 'svg', props: { 'data-icon': name } }), __esModule: true },
-    '../styles/modes.css': {}, '../lib/draftTasks': d, '../lib/mediaInput': media, '../lib/productionModes': modes,
+    '../styles/modes.css': {}, '../lib/draftTasks': d, '../lib/effectsSuggest': { describeEffects: () => '', requestEffectsSuggestion: denied }, '../lib/mediaInput': media, '../lib/productionModes': modes,
     '../lib/uploadSessions': { ...uploadModule(requests), ...uploadOverrides },
   }, { ...c, window: { confirm }, performance: { now: () => 0 } });
   const props = { limits: { max_files: 20, max_upload_bytes: 500 * 1024 ** 2, max_total_upload_bytes: 5 * 1024 ** 3, max_script_length: 8000 },
@@ -361,11 +361,13 @@ test('unmount cancels pending removal without destructive cleanup and stage warn
   w.click('移除 synthetic.mp4'); w.unmount(); w.c.advance(5000); await ticks();
   assert.ok(w.requests.calls.every(c => c.init.method !== 'DELETE'));
 });
-test('sentence self-check list shows 12 then at most 60, preserving complete draft body', async () => {
+test('footage sufficiency is one read-only line, never a per-sentence checklist; the draft body stays complete', async () => {
   const script = '新闻标题\n' + Array.from({ length: 70 }, (_, i) => `这是第${i}条现场新闻。`).join('\n');
   const w = wizard(restored({ script }), { respond: path => path === root ? receipt() : path === fileRoot ? snapshot() : { files: [] } });
-  await w.settle(); assert.equal(w.nodes().filter(n => n.props?.className === 'gm-check-row').length, 12);
-  w.click('展开全部 60 句'); assert.equal(w.nodes().filter(n => n.props?.className === 'gm-check-row').length, 60);
+  await w.settle(); assert.equal(w.nodes().filter(n => n.props?.className === 'gm-check-row').length, 0);
+  const hint = w.nodes().find(n => n.props?.className === 'gm-sufficiency');
+  assert.ok(hint); assert.equal(hint.type, 'p'); assert.match(w.text(hint), /素材(够用|可能不够)/);
+  assert.ok(!w.text(w.tree).includes('每句话都拍到了吗'));
   assert.equal(w.drafts.at(-1).sentences.length, 70); w.unmount();
 });
 test('wizard keeps start blocked and binding recoverable while DELETE is pending or fails', async () => {
@@ -452,7 +454,7 @@ test('new wizard self voice needs no microphone or whole recording and submits m
   const submitted = [], respond = path => path === root ? receipt() : path === fileRoot ? snapshot() : { files: [] };
   const w = wizard(restored(), { respond, onSubmit: async value => submitted.push(value) });
   await w.settle(); w.click('下一步：选效果'); w.click('我自己读');
-  assert.ok(w.text(w.tree).includes('做好后逐句录音'));
+  assert.ok(w.text(w.tree).includes('做好后可以逐句换成你的录音'));
   assert.equal(w.nodes().some(n => n.props?.className === 'gm-voice-panel'), false);
   assert.equal(w.drafts.at(-1).preferences.voice, 'mine');
   assert.equal(w.button('开始制作').props.disabled, false);

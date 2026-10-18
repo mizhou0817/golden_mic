@@ -758,6 +758,38 @@ async def assist_script_endpoint(request: Request) -> dict[str, Any]:
         raise HTTPException(502, "AI 写作暂时不可用或超时，稿子没有被改动。请稍后重试。") from None
 
 
+class EffectsSuggestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["voiceover", "mixed", "original"]
+    script: str = Field(min_length=1, max_length=8000)
+
+
+@app.post("/api/script/effects")
+async def suggest_effects_endpoint(request: Request) -> dict[str, Any]:
+    """“AI 自动选效果”. Always answers: without a usable model it reads the manuscript's keywords instead."""
+    try:
+        payload = EffectsSuggestRequest.model_validate(await _bounded_json(request, limit=32 * 1024))
+    except ValidationError as exc:
+        raise HTTPException(422, "请先写好稿子，再让 AI 选效果。") from exc
+    from .effects_suggest import suggest_effects
+    from .providers.llm import LLMConfigurationError, LLMProvider
+    provider = LLMProvider.from_settings(settings)
+    try:
+        provider.validate_configuration()
+        _enforce_assist_budget(_client_ip(request))
+        usable = not _assist_slot.locked()
+    except (LLMConfigurationError, HTTPException):
+        usable = False
+    if not usable:
+        await provider.aclose()
+        return await suggest_effects(payload.script, payload.mode, None)
+    async with _assist_slot, provider:
+        try:
+            return await asyncio.wait_for(suggest_effects(payload.script, payload.mode, provider), timeout=45)
+        except TimeoutError:
+            return await suggest_effects(payload.script, payload.mode, None)
+
+
 def _metadata_ledger() -> AdmissionLedger | None:
     if _draft_service is not None:
         if _draft_service.manager is not task_manager or _draft_service.settings.data_dir != settings.data_dir:

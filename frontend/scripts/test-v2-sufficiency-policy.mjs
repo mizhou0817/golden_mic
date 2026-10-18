@@ -28,7 +28,7 @@ const wizardAst = ts.createSourceFile('CreateWizard.tsx', wizardSource, ts.Scrip
 const declarations = new Map(); let sufficiencySection;
 function visit(node) {
   if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) declarations.set(node.name.text, node);
-  if (ts.isJsxElement(node) && node.openingElement.tagName.getText(wizardAst) === 'section'
+  if (ts.isJsxElement(node) && ['section', 'p'].includes(node.openingElement.tagName.getText(wizardAst))
     && node.openingElement.attributes.properties.some(p => ts.isJsxAttribute(p) && p.name.text === 'className'
       && p.initializer?.text === 'gm-sufficiency')) sufficiencySection = node.getText(wizardAst);
   ts.forEachChild(node, visit);
@@ -170,21 +170,18 @@ test('receipt association survives reorder and does not leak to an unrelated fil
   assert.equal(wizardEstimate(s).estimate.unknownSpeechVideos, 1);
   s.files.reverse(); assert.equal(wizardEstimate(s).estimate.possibleShots, 6);
 });
-test('unchanged sufficiency JSX renders new policy and truthful conditional unknown note', () => {
+test('sufficiency is one short read-only line: enough or not, narration vs footage seconds, no checklist', () => {
   const jsx = (type, props) => ({ type, props });
   const text = value => value == null || typeof value === 'boolean' ? '' : Array.isArray(value) ? value.map(text).join('')
     : typeof value === 'object' ? text(value.props?.children) : String(value);
   const render = (s, mode = 'voiceover') => text(run(`exports.tree = (${sufficiencySection});`, {
     require: name => { assert.equal(name, 'react/jsx-runtime'); return { jsx, jsxs: jsx }; },
     ...media, ...s, estimate: wizardEstimate(s).estimate, mode, quoteRows: [{ text: 'quote' }], quotesComplete: false, quoteSeconds: 0,
-    sentListOpen: false, sentenceChecks: {}, sentenceKey: (text, index) => `${index}:${text}`,
-    setSentenceChecks: denied, setSentListOpen: denied,
+    narrationRows: [{ text: 'narration', idx: 0 }], files: state().files,
   }).tree);
   const s = state(), known = render(s);
-  assert.match(known, /12 秒/); assert.match(known, /照片.*已确认有人声.*各.*1/);
-  assert.doesNotMatch(known, /每 6 秒|人声状态未确认/);
-  s.uploads = {}; const unknown = render(s, 'mixed');
-  assert.match(unknown, /1 个视频人声状态未确认/); assert.match(unknown, /暂按普通视频估算/);
-  assert.match(unknown, /不是镜头检测或内容匹配/); assert.match(unknown, /不能保证制作成功/);
-  assert.match(unknown, /另有原声 1 段/);
+  assert.match(known, /^(✓ 素材够用|! 素材可能不够)旁白约 .+，素材约 .+/);
+  assert.ok(known.length < 60, known);
+  assert.doesNotMatch(known, /不是镜头检测|估算依据|每句话都拍到了吗|点一下确认/);
+  s.uploads = {}; assert.match(render(s, 'mixed'), /素材约/);
 });

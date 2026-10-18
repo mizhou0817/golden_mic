@@ -85,30 +85,31 @@ test('SSR empty A is StepBar → Intro → step card with exact opening copy and
   assert.ok(html.indexOf('aria-label="制作步骤"') < html.indexOf('aria-label="使用引导"'));
   assert.ok(html.indexOf('aria-label="使用引导"') < html.indexOf('class="gm-wizard-card"'));
   assert.equal((html.match(/<h1\b/g) ?? []).length, 1);
-  assert.match(html, /第一行是标题。/); assert.match(html, /直接粘贴新闻稿到这里，或自己写/);
+  // The script's format hint lives inside the box, not above it; the box keeps a full accessible name.
+  assert.match(html, /新闻稿：第一行写标题，下一行起写正文。/); assert.doesNotMatch(html, /class="gm-field-label gm-script-label"/);
+  assert.match(html, /class="gm-sr-only"[^>]*>新闻稿（第一行标题，下一行正文）</);
   assert.match(html, /0 \/ 3000 字/); assert.doesNotMatch(html, /0 \/ 8000/);
   // All three modes are shown from the start, nothing is collapsed; AI voiceover is the pre-selected default.
   assert.equal((html.match(/class="gm-mode-card"/g) ?? []).length, 3);
   assert.doesNotMatch(html, /data-collapsed|gm-mode-more|更多制作方式/);
   assert.match(html, /<button type="button" aria-pressed="true" class="gm-mode-card"[^>]*>(?:(?!<\/button>)[\s\S])*AI 配音/);
   assert.equal((html.match(/aria-pressed="true" class="gm-mode-card"/g) ?? []).length, 1);
-  const tip = html.match(/<details class="gm-tip">[\s\S]*?<\/details>/)?.[0];
-  assert.ok(tip); assert.equal((tip.match(/<li>/g) ?? []).length, 4);
-  assert.match(tip, /制作后请核对实际读音/); assert.doesNotMatch(tip, /AI 会读对/);
+  // Mode cards keep only the name and who it suits; no stamp, description or tip box.
+  assert.doesNotMatch(html, /最简单，先用这个|稿子全由 AI 读|gm-mode-description|class="gm-tip"/);
+  assert.match(html, /适合：消息、活动报道、无人说话的素材/);
 });
 test('SSR B/C preserve mode copy; step two cannot show intro and keeps visible privacy brief', () => {
-  assert.match(wizard({ mode: 'mixed' }), /第一行是标题；人说的话写成「同期 姓名（身份）：…」。/);
-  assert.match(wizard({ mode: 'original' }), /第一行是标题；下面每行一句原话。/);
+  assert.match(wizard({ mode: 'mixed' }), /受访者的话写成：同期 王红（市集主办方）：/);
+  assert.match(wizard({ mode: 'original' }), /第一行写标题，下面每行一句采访原话。/);
   const html = wizard({ step: 2 });
   assert.doesNotMatch(html, /aria-label="使用引导"/);
-  const brief = html.match(/class="gm-cloud-notice"[\s\S]*?<details>/)?.[0];
-  assert.match(brief, /选择文件即开始上传和转写/); assert.match(brief, /第三方 AI 并产生费用/);
-  assert.match(brief, /已获授权、不含敏感隐私/);
-  assert.match(html, /<details><summary>隐私与处理说明/);
+  // One short visible line replaces the old notice and its folded privacy text.
+  assert.match(html, /选好就开始上传和转写（会用到 AI 服务）。请只传有权使用的素材。/);
+  assert.doesNotMatch(html, /隐私与处理说明|gm-cloud-notice/);
 });
 test('SSR soft overflow is advisory; hard overflow remains invalid and explicit at 8000', () => {
   const soft = wizard({ script: '标题\n' + '完整的新闻句子。'.repeat(400) });
-  assert.match(soft, /服务器硬上限 8000 字/); assert.match(soft, /aria-invalid="false"/);
+  assert.match(soft, /建议精简（最多 8000 字）/); assert.match(soft, /aria-invalid="false"/);
   const hard = wizard({ script: '标题\n' + '完整的新闻句子。'.repeat(1100) });
   assert.match(hard, /稿件不能超过 8000 字/); assert.match(hard, /aria-invalid="true"/);
 });

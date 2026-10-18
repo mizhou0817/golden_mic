@@ -117,7 +117,7 @@ export function SampleReview({ data }: { data: SampleData }) {
     {notice && <p role="status">{notice}</p>}
     <div className="gm-sample-panels">
       <section aria-label="范例分镜"><h2>逐句看范例</h2>
-        <p>选择句子查看画面依据；有成片时间时可定位播放。不提供修改或导出。</p>
+        <p>点一句，看它用了哪段画面。</p>
         <ol className="gm-sample-storyboard">{data.report.rows.map((item, index) => <li key={item.sentence_id}>
           <button type="button" aria-pressed={selected === item.sentence_id} aria-controls="gm-sample-sentence"
             onClick={() => { setSelected(item.sentence_id); setNotice(''); if (item.start !== undefined) seek(item.start); }}>
@@ -174,12 +174,13 @@ export function SampleSteps({ data }: { data: SampleData & { walkthrough: Sample
     <li><h2><span aria-hidden="true">3</span>选效果</h2>
       {walkthrough.settings.length ? <dl className="gm-sample-settings">{walkthrough.settings.map(item => <div key={item.label}>
         <dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl> : <p>全部用默认效果。</p>}
+      <p>也可以点“AI 自动选效果”，按稿子一键选好。</p>
     </li>
     <li><h2><span aria-hidden="true">4</span>点“开始制作”，等它自动做完</h2>
-      <p>依次：检查素材 → 看懂画面 → 给每句话找画面 → AI 配音 → 配字幕 → 合成视频 → 质量检查。做的时候可以离开页面，回来在“我的作品”里找。</p>
+      <p>通常几分钟。可以先离开，做好后在“我的作品”里找。</p>
     </li>
     <li><h2><span aria-hidden="true">5</span>看成片，逐句核对</h2>
-      <p>点下面任意一句，视频会跳到那里；可以看到这句用了哪段画面、为什么选它。自己的作品在这一步还能改字、换画面、导出。</p>
+      <p>点下面任意一句，视频跳到那里。自己的作品还能改字、换画面、导出。</p>
     </li>
   </ol>;
 }
@@ -227,8 +228,8 @@ export default function SampleView({ onBack, onTry }: { onBack: () => void; onTr
   return <section className={styles.sample} aria-label="范例作品，只读">
     <p className={styles.readonly}>范例作品 · 只读</p><h1>{data?.title ?? '看一条范例作品'}</h1>
     {walkthrough
-      ? <p>这条成片是用下面这份稿子和 {walkthrough.sources.length} 段素材，按和你自己做时完全一样的 5 步做出来的。看完可以点“用这份范例自己做一遍”，亲手走一遍。</p>
-      : <p>这里只查看服务器提供的范例；不保存检查勾选、不改稿、不复制或导出，也不写入你的作品历史。</p>}
+      ? <p>这条成片用下面的稿子和 {walkthrough.sources.length} 段素材做成，步骤和你自己做时一样。</p>
+      : <p>这是一条只读的范例作品。</p>}
     {loading && <p role="status">正在读取已核验范例…</p>}
     {error && <p role="alert">{error}</p>}
     {walkthrough && onTry && <div className={styles.actions}><button type="button" className={styles.button} data-primary="true"
@@ -240,6 +241,6 @@ export default function SampleView({ onBack, onTry }: { onBack: () => void; onTr
       {walkthrough && onTry && <button type="button" className={styles.button} data-primary="true" disabled={!!preparing} onClick={() => void tryIt()}>用这份范例自己做一遍</button>}
       <button type="button" className={styles.button} data-primary={walkthrough && onTry ? undefined : 'true'} onClick={onBack}>返回写稿</button>
       <button type="button" className={styles.button} disabled={loading} onClick={() => setRetry(value => value + 1)}>重新读取范例</button></div>
-    {walkthrough && onTry && <p className="gm-sample-note">“自己做一遍”会把这份稿子和 {walkthrough.sources.length} 段素材放进一份新草稿，从第 1 步开始，真实上传和制作，会占用一次制作次数。</p>}
+    {walkthrough && onTry && <p className="gm-sample-note">“自己做一遍”会用这份稿子和 {walkthrough.sources.length} 段素材新建草稿，真实制作一次。</p>}
   </section>;
 }

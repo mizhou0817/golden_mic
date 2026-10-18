@@ -212,7 +212,7 @@ test('failed-ASR own retry is observation only; refresh never grants POST', asyn
 test('actual continuation control stays visible without File and has truthful label; source/submit gates unchanged', () => {
   const buttons = [], effects = [];
   const walk = n => {
-    if (ts.isJsxElement(n) && n.openingElement.tagName.getText(ast) === 'button' && n.getText(ast).includes('retryFile(item.id)')) buttons.push(n);
+    if (ts.isJsxElement(n) && n.openingElement.tagName.getText(ast) === 'button' && n.getText(ast).includes('retryFile(item.id)') && n.getText(ast).includes('\u6838\u5bf9\u5206\u7247\u5e76\u7ee7\u7eed')) buttons.push(n);
     if (ts.isCallExpression(n) && n.expression.getText(ast) === 'useEffect') effects.push(n.getText(ast));
     ts.forEachChild(n, walk);
   }; walk(ast); assert.equal(buttons.length, 1);

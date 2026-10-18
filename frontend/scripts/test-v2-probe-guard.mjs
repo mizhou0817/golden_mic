@@ -418,7 +418,7 @@ test('static UI exposes explicit uploading continuation and disables only active
   const button = [];
   const visit = n => {
     if (ts.isJsxElement(n) && n.openingElement.tagName.getText(wizardAst) === 'button'
-      && n.getText(wizardAst).includes('retryFile(item.id)')) button.push(n.getText(wizardAst));
+      && n.getText(wizardAst).includes('retryFile(item.id)') && n.getText(wizardAst).includes('\u6838\u5bf9\u5206\u7247\u5e76\u7ee7\u7eed')) button.push(n.getText(wizardAst));
     ts.forEachChild(n, visit);
   };
   visit(wizardAst); check(button.length === 1);

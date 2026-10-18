@@ -230,10 +230,10 @@ test('offline native responsive Workspace, drawer, export and quote touch contro
             });
             return components[0] * .2126 + components[1] * .7152 + components[2] * .0722;
           };
-          return [...document.querySelectorAll(kind === 'create' ? '.gm-tip-more,.shell-work-status[data-status=done]'
+          return [...document.querySelectorAll(kind === 'create' ? '.gm-mode-fit,.shell-work-status[data-status=done]'
             : '.gm-rw-badge[data-tone=olive],.gm-rw-cell-text,.shell-work-status[data-status=done]')]
             .filter(e => e.checkVisibility()).map(e => {
-              const style = getComputedStyle(e), bg = e.matches('.gm-tip-more') ? getComputedStyle(e.closest('.gm-tip')).backgroundColor : style.backgroundColor;
+              const style = getComputedStyle(e), bg = e.matches('.gm-mode-fit') ? getComputedStyle(e.closest('.gm-mode-card')).backgroundColor : style.backgroundColor;
               const a = luminance(style.color), b = luminance(bg);
               return { ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05), opaqueBackground: !bg.startsWith('rgba') };
             });

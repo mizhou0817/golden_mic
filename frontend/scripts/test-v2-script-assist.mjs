@@ -105,7 +105,7 @@ test('edit: quick edits and custom requests send the current text; undo disappea
     await page.getByRole('button', { name: '精简一些' }).click(); await page.locator('[data-testid=script-assist-result]').waitFor();
     assert.equal(h.requests[0].action, 'edit'); assert.equal(h.requests[0].mode, 'mixed');
     assert.equal(h.requests[0].text, '标题\n旁白一。\n同期：真实原话。'); assert.match(h.requests[0].instruction, /精简/);
-    assert.match(await page.locator('[data-testid=script-assist]').textContent(), /同期”原声句会原样保留/);
+    assert.match(await page.getByLabel('自定义修改要求').getAttribute('placeholder'), /同期原话不改/);
     await page.locator('[data-control=assist-retry]').click(); await page.waitForFunction(() => window.applied !== undefined);
     await page.waitForTimeout(150); assert.equal(h.requests.length, 2); assert.match(h.requests[1].instruction, /精简/, 'retry repeats the same request');
     await page.locator('[data-control=assist-adopt]').click();
@@ -148,14 +148,14 @@ test('edit controls need a manuscript; original-sound mode shows an explanation 
   try {
     for (const label of ['润色，更通顺', '精简一些', '更适合口播', '语气更庄重']) assert.equal(await empty.page.getByRole('button', { name: label }).isDisabled(), true, label);
     assert.equal(await empty.page.locator('[data-control=assist-edit]').isDisabled(), true);
-    assert.match(await empty.page.locator('[data-testid=script-assist]').textContent(), /先在上面的稿子框里写或粘贴内容/);
+    assert.match(await empty.page.getByLabel('自定义修改要求').getAttribute('placeholder'), /已有稿子？说说怎么改/);
     assert.equal(empty.requests.length, 0);
   } finally { await empty.context.close(); await empty.browser.close(); }
   const original = await open('original', '标题\n原话。', ok('x\ny'));
   try {
     assert.equal(await original.page.locator('[data-testid=script-assist-unavailable]').count(), 1);
     assert.equal(await original.page.locator('button').count(), 0);
-    assert.match(await original.page.locator('[data-testid=script-assist-unavailable]').textContent(), /不能由 AI 写或改/);
+    assert.match(await original.page.locator('[data-testid=script-assist-unavailable]').textContent(), /不能用 AI 写/);
   } finally { await original.context.close(); await original.browser.close(); }
 });
 

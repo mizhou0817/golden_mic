@@ -240,23 +240,23 @@ test('offline native simple UI', { timeout: 150000 }, async t => {
         check(m.gets === 3 && m.alignPosts === 0, 'task-scoped-get-only');
         if (mode !== 'voiceover') { check(await button('下一步：选效果').isDisabled(), 'quote-gate-before-recheck'); await recheck(); }
         if (mode !== 'original') {
-          await layout('upload-closed'); await toggle('.gm-sentence-review', 'Enter', true);
-          await page.locator('.gm-check-row').first().click();
-          await layout('upload-expanded'); await toggle('.gm-sentence-review', 'Space', false);
-          await toggle('.gm-sentence-review', 'Enter', true);
-          check((await page.locator('.gm-check-row').first().textContent()).includes('拍到了'), 'sentence-check-preserved');
+          await layout('upload');
+          // Footage sufficiency is one read-only line: no checklist to tick.
+          await visible(page.locator('p.gm-sufficiency'));
+          check(await page.locator('.gm-check-row,.gm-sentence-review').count() === 0, 'sufficiency-read-only');
         }
         await button('下一步：选效果').click(); await page.getByRole('heading', { name: '选效果', exact: true }).waitFor();
         const detail = page.locator('.gm-advanced-settings');
         check(!await detail.evaluate(e => e.open), 'settings-default-closed');
         check(await page.locator('[role="switch"]').count() === (mode === 'mixed' ? 8 : 7), 'all-effects-mounted');
         check(await page.locator('[role="switch"]').evaluateAll(es => es.every(e => e.closest('details.gm-advanced-settings'))), 'effects-inside');
+        await visible(button('AI 自动选效果'));
         await visible(button('大字清晰')); await button('大字清晰').click();
         if (mode !== 'original') {
           await visible(button('我自己读')); await button('我自己读').click();
           check(await page.locator('.gm-voice-panel').count() === 0 && await button('开始制作').isEnabled(), 'm0-own-voice-no-fake-file-gate');
         } else check(await button('我自己读').count() === 0, 'original-no-voice-control');
-        if (mode === 'mixed') await visible(page.getByText('本次已开启 AI 示意画面补充', { exact: false }));
+        if (mode === 'mixed') await visible(page.getByText('已开启 AI 示意画面', { exact: false }));
         await layout('effects-closed'); await toggle('.gm-advanced-settings', 'Enter', true);
         const switches = detail.getByRole('switch');
         for (let i = 0; i < await switches.count(); i++) await visible(switches.nth(i));

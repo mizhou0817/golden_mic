@@ -1211,18 +1211,8 @@ export default function Workspace() {
     setIntroDismissed(true); preference('introDismissed', true);
     document.querySelector<HTMLTextAreaElement>('.shell-wizard-host textarea')?.focus();
   }
-  function showHelp() {
-    if (pageRef.current !== 'create' || intentRef.current) {
-      if (!canLeave()) return;
-      if (draftRef.current) draftRef.current = { ...draftRef.current, step: 1 };
-      navigate('create', false, true);
-    } else {
-      // Use the existing wizard's step action, not a remount that loses Files.
-      document.querySelector<HTMLButtonElement>('.shell-wizard-host .gm-steps button')?.click();
-      setWizardStep(1);
-    }
-    setDrawer(false); setIntroDismissed(false); preference('introDismissed', false);
-  }
+  /** "怎么用" opens the sample walkthrough: a finished example with its script, clips and steps. */
+  function showHelp() { openSample(); }
   function trySample(value: SampleTry) {
     // Same reset as "新建空白", then the sample's script, mode and real clips go into a fresh draft.
     if ((hasDraftContent(draftRef.current) || draftDirty.current || draftBlocked.current || draftNeedsClear)
@@ -1264,8 +1254,8 @@ export default function Workspace() {
   // Bound presentation, never evict older capabilities just to meet a UI cap.
   const recent = [...works].sort(compareWorks).slice(0, V2_HISTORY_LIMIT);
   const sourceDescription = config?.local_history
-    ? '本机工作区：显示服务器允许读取的作品，并合并此浏览器保存的记录。打开作品使用原有访问凭据，不会在拒绝后更换凭据。'
-    : '浏览器历史：仅列出此浏览器持有访问凭据的作品。清除浏览器数据可能使作品无法找回；不会读取其他人的任务列表。';
+    ? '这里列出本机工作区和这个浏览器里的作品。'
+    : '作品记录只存在这个浏览器里；清除浏览器数据后可能找不回。';
   const navigation = <>
     <button type="button" className="shell-new-work" disabled={busy || uploading} onClick={() => newBlank()}><span aria-hidden="true">＋</span>新作品</button>
     <nav className="shell-navigation" aria-label="工作区导航">
@@ -1284,8 +1274,7 @@ export default function Workspace() {
     </nav>
     <button type="button" className="shell-sample-button" disabled={busy || uploading} onClick={() => openSample()}>看一条范例作品</button>
     <button type="button" className="shell-drawer-help shell-nav-link" disabled={busy || uploading} onClick={showHelp}>怎么用</button>
-    <details className="shell-receipt-note"><summary>保留期限与作品回执</summary><p>{sourceDescription}</p><p>媒体保留期限以服务器为准；未提供到期时间时不推测倒计时。访问凭据不放进分享链接；清除浏览器数据可能无法找回作品。</p><p>提交快照可在此浏览器恢复 30 天，不保存媒体文件，不会自动重新制作。</p>{historyCheckedAt !== null && <p>列表读取于 {savedTime(historyCheckedAt)}</p>}<button type="button" disabled={historyLoading} onClick={refreshHistory}>刷新作品列表</button>{pendingHistoryCount > 0 && <button type="button" onClick={retryHistorySave}>仅重试保存回执</button>}</details>
-    <p className="shell-retention">新作品的保留期限以服务器返回的到期时间为准；做好后请及时下载留档。</p>
+    <details className="shell-receipt-note"><summary>作品保存在哪里</summary><p>{sourceDescription}</p><p>作品到期会被清理，做好后请及时下载。</p>{historyCheckedAt !== null && <p>列表读取于 {savedTime(historyCheckedAt)}</p>}<button type="button" disabled={historyLoading} onClick={refreshHistory}>刷新作品列表</button>{pendingHistoryCount > 0 && <button type="button" onClick={retryHistorySave}>仅重试保存回执</button>}</details>
   </>;
   return <div className="shell-layout">
     <a className="shell-skip" href="#main-content" onClick={event => {

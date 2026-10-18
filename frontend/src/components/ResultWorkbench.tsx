@@ -860,9 +860,9 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
           {owner && <button className="gm-rw-primary" disabled={disabled || historical} onClick={event => { exportOpener.current = event.currentTarget; setExportOpen(true); }}>导出 / 分享</button>}
         </div>
       </header>
-      {error && <div className="gm-rw-alert" role="alert">{error}<p>没有自动重复提交。刷新会保留草稿，请核对作品的最新状态后再操作。</p><button disabled={!!busy || loading || recording || micStarting} onClick={() => void reload(version)}>刷新作品状态</button></div>}
+      {error && <div className="gm-rw-alert" role="alert">{error}<button disabled={!!busy || loading || recording || micStarting} onClick={() => void reload(version)}>刷新作品状态</button></div>}
       {notice && <div className="gm-rw-notice" role="status">{notice}</div>}
-      {ownVoiceNotice && <p className="gm-rw-own-voice" role="status">你选择了自己配音。初版先用 AI 配音；选中旁白句子，点「我来读」逐句替换。尚未录制的句子仍是 AI 配音，不会自动开启麦克风。</p>}
+      {ownVoiceNotice && <p className="gm-rw-own-voice" role="status">初版先用 AI 配音。选中旁白句子，点「我来读」就能换成你的声音。</p>}
       {(busy || loading) && <p role="status">{busy || '正在读取真实作品与报告…'}</p>}
       <div className="gm-rw-next"><b aria-hidden="true"><Icon name="arrow" size={18} /></b><div><small>现在该做什么</small><strong>{props.sample ? '这是一条范例作品，点故事板看看每句话是怎么做的。' : nextAction}</strong></div>
         {processing && <button disabled={!!busy} onClick={props.onProcessing}>查看处理状态</button>}
@@ -949,7 +949,6 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
             <p className="gm-rw-muted">{qualityDetails.scope}</p>
             <dl>{qualityDetails.items.map(item => <Fragment key={item.key}><dt>{item.label}</dt><dd>{item.value}</dd></Fragment>)}</dl>
             <p>{qualityDetails.rate}</p>
-            <p className="gm-rw-muted">以上为当前所看报告及已保存配置，不含待应用修改；不代表实测语速或发布前检查通过。</p>
           </details>
           <div className="gm-rw-metrics">
             {owner && !historical && savedPreferences && mode !== 'original' && <label>播音速度<select disabled={!editable} value={draft.pacing ?? savedPreferences.pacing} onChange={e => patchPreferences({ pacing: e.target.value as EditingPacing })}>
@@ -1060,8 +1059,7 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
 
       {owner && <dialog ref={exportDialog} tabIndex={-1} onKeyDown={containDialogTab} className="gm-rw-export" aria-labelledby="gm-rw-export-title" onCancel={() => setExportOpen(false)}>
         <div className="gm-rw-section-head"><h2 id="gm-rw-export-title">导出 / 分享</h2><button onClick={() => setExportOpen(false)}>关闭</button></div>
-        <p>想保存到电脑或发给别人？选“视频 MP4”即可。生成独立文件，不覆盖成片。</p>
-        <p className="gm-rw-muted">待修改内容需要先应用或撤销；发布前检查没通过时仍可导出，但会先告诉你哪些没通过，由你确认。完成后还需点击下载。竖屏与正方形会居中裁切，请留意人物是否完整。</p>
+        <p>选好格式，点导出，完成后下载。</p>
         <fieldset disabled={!!busy || exporting || loading || checksLoading}><legend>导出选项</legend>
           <div className="gm-rw-format"><h3>导出什么</h3>{SIMPLE_EXPORT_FORMATS.map(f => <button key={f} type="button" aria-pressed={options.format === f} onClick={() => setOptions(o => normalizeExport({ ...o, format: f }))}>{({ mp4: '视频 MP4', gif: '动图 GIF', mp3: '音频 MP3', srt: '字幕 SRT', png: '封面图' } as const)[f]}</button>)}</div>
           {options.format === 'mp4' && <>
@@ -1070,7 +1068,7 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
               <label>清晰度<select aria-label="清晰度" value={options.resolution} onChange={e => setOptions(o => ({ ...o, resolution: Number(e.target.value) as ExportOptions['resolution'] }))}>{[720, 1080].map(n => <option value={n} key={n}>{n === 1080 ? '高清' : '标准'}（{n}p）</option>)}</select></label>
               <label>画幅<select aria-label="画幅" value={options.aspect} onChange={e => setOptions(o => ({ ...o, aspect: e.target.value as ExportOptions['aspect'] }))}>{(['16:9', '9:16', '1:1'] as const).map(a => <option value={a} key={a}>{({ '16:9': '横屏，适合电脑', '9:16': '竖屏，适合手机', '1:1': '正方形' } as const)[a]}（{a}）</option>)}</select></label>
               <label>字幕<select aria-label="字幕" value={options.subtitles} onChange={e => setOptions(o => ({ ...o, subtitles: e.target.value as ExportOptions['subtitles'] }))}>{exportSupport(options.format).subtitles.map(s => <option value={s} key={s}>{({ standard: '标准', large: '大字', none: '无字幕' } as Record<string, string>)[s]}</option>)}</select></label>
-            </div><p className="gm-rw-muted">竖屏与正方形会居中裁切，请留意人物是否完整。标准字幕保留原成片；改变字幕样式后的包装效果请检查导出文件。</p></details>
+            </div><p className="gm-rw-muted">竖屏和正方形会居中裁切，请留意人物是否完整。</p></details>
           </>}
         </fieldset>
         {options.format === 'gif' && <p>GIF 只取前 6 秒，没有声音，适合发群里做预告。</p>}

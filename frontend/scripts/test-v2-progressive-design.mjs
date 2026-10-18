@@ -278,7 +278,7 @@ test('VM A/B/C keep every effect in native more-settings, common choices outside
     assert.equal(settings.props.children[0].type, 'summary');
     assert.ok(visibleControls.filter(({ node }) => node.props.role === 'switch')
       .every(({ ancestors }) => ancestors.includes(settings)), 'all original effect switches remain mounted inside');
-    assert.ok(visibleControls.filter(({ node }) => ['字幕样式', '谁来配音', '旁白谁来读', '原声段的字幕'].includes(node.props['aria-label']))
+    assert.ok(visibleControls.filter(({ node }) => ['字幕', '谁来配音', '旁白谁来读', '原声字幕'].includes(node.props['aria-label']))
       .every(({ ancestors }) => !ancestors.some(n => n.type === 'details')), 'common choices stay immediately available');
     assert.equal(w.all().find(n => n.props.className === 'gm-wizard-actions').type, 'footer');
     for (const name of ['背景音乐', '画面慢慢推近', '新闻台标和片尾板', '开头结尾淡入淡出', '颜色统一', '现场原声降噪']) assert.ok(w.button(name));
@@ -295,7 +295,7 @@ test('VM M0 own voice stays mine while independent source_voice_preferred remain
     const w = harness(draft({ mode: 'voiceover', script: '社区新闻\n今天社区居民在广场共同参加现场活动',
       preferences: modes.defaultModePreferences(), ...(preferred === undefined ? {} : { source_voice_preferred: preferred }) }));
     await w.settle(); w.click('下一步：选效果'); w.click('我自己读');
-    assert.ok(text(w.tree).includes('先用 AI 播音生成，再替换需要自己读的句子'));
+    assert.ok(text(w.tree).includes('做好后可以逐句换成你的录音'));
     assert.equal(w.all().some(n => n.props.className === 'gm-voice-panel'), false);
     w.click('开始制作'); await w.settle();
     assert.equal(w.submissions[0].preferences.voice, 'mine');
@@ -312,7 +312,7 @@ test('VM stale ready UI cannot start after explicit GET refresh fails', async ()
       if (fail) throw Error('synthetic unavailable'); return snapshot(); },
   });
   await w.settle(); w.click('下一步：选效果'); assert.equal(w.button('开始制作').props.disabled, false);
-  w.click('← 上一步'); fail = true; w.click('重新读取状态'); await w.settle();
+  w.click('← 上一步'); fail = true; w.click('备注 / 只用片段 ▾'); w.click('重新读取状态'); await w.settle();
   assert.equal(w.button('下一步：选效果').props['aria-disabled'], true); assert.equal(w.submissions.length, 0);
   assert.ok(w.requests.every(c => !c.init.method)); w.unmount();
 });

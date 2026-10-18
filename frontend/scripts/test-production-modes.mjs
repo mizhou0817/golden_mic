@@ -595,7 +595,7 @@ test('preview cancellation and removed source hints do not accept or start stale
 
 // A deterministic hook adapter runs actual component branches/effects. It does
 // not simulate DOM geometry, browser decoding, React scheduling or native mic.
-function wizardHarness({ draft, uploadApi = {}, mediaApi = {}, props = {} } = {}) {
+function wizardHarness({ draft, uploadApi = {}, mediaApi = {}, effectsApi = {}, props = {} } = {}) {
   const hooks = [], effects = [], timers = clock(), drafts = [], submits = []; let cursor = 0, tree, dirty = false, live = true;
   const same = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
   const react = {
@@ -615,6 +615,7 @@ function wizardHarness({ draft, uploadApi = {}, mediaApi = {}, props = {} } = {}
   const draftTasks = load('draftTasks', { './appApi': { createAppRequest: forbidden('draft transport') } }, timers);
   const api = load('wizard', { react, 'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'fragment' }, '../styles/modes.css': {},
     './ui/Icon': icon, '../lib/draftTasks': draftTasks,
+    '../lib/effectsSuggest': { describeEffects: () => '', requestEffectsSuggestion: forbidden('effects request'), ...effectsApi },
     '../lib/productionModes': modes, '../lib/mediaInput': { ...media, ...mediaApi },
     '../lib/uploadSessions': { ...uploadsHarness().api, ...uploadApi } }, { ...timers,
     window: { confirm: () => true }, navigator: {}, performance: { now: () => 100 }, setInterval: forbidden('recording timer'), clearInterval() {} });
@@ -660,14 +661,33 @@ test('wizard defaults to voiceover with three Chinese cards and keeps optional e
   assert.equal(h.nodes().some(node => String(node.props?.className ?? '').includes('gm-mode-more')), false, 'no hidden-mode toggle');
   const cards = h.nodes().filter(node => node.props?.className === 'gm-mode-card'); assert.equal(cards.length, 3);
   assert.equal(cards.filter(card => card.props['aria-pressed']).length, 1); assert.equal(cards[0].props['aria-pressed'], true);
-  assert.ok(h.content(h.tree).includes('不是事实认证')); h.unmount();
+  assert.ok(h.content(h.tree).includes('已自查')); h.unmount();
+});
+
+test('AI 自动选效果 applies the whole suggested choice in one click, keeps voice and notes, and can be undone', async () => {
+  const calls = [];
+  const preferences = { ...modes.defaultModePreferences('original'), custom_instructions: '多用笑脸' };
+  const h = wizardHarness({ draft: uploadedDraft({ preferences }), uploadApi: { pollUploadStatus: readyPoll, requestMatchPreview: async () => [match()] }, effectsApi: {
+    describeEffects: value => `${value.tone}/${value.pacing}/${value.background_music}`,
+    requestEffectsSuggestion: async (mode, script) => { calls.push([mode, script]);
+      return { preferences: { tone: 'solemn', pacing: 'slow', background_music: false, music_mood: 'solemn' }, reason: '悼念活动', source: 'ai' }; } } });
+  await h.settle(); h.click('重新核对'); h.timers.fire(600); await h.settle(); h.click('下一步：选效果 →');
+  const before = plain(h.drafts.at(-1).preferences);
+  h.click('AI 自动选效果'); await h.settle();
+  assert.deepEqual(calls, [['original', '采访标题\n欢迎大家前来参观']]);
+  const after = h.drafts.at(-1).preferences;
+  assert.deepEqual([after.tone, after.pacing, after.background_music, after.music_mood], ['solemn', 'slow', false, 'solemn']);
+  assert.equal(after.custom_instructions, '多用笑脸'); assert.equal(after.voice, before.voice);
+  assert.ok(h.content(h.tree).includes('AI 已选好：solemn/slow/false（悼念活动）'));
+  h.click('撤销'); assert.deepEqual(plain(h.drafts.at(-1).preferences), before);
+  assert.ok(!h.content(h.tree).includes('AI 已选好')); h.unmount();
 });
 
 test('blank original mode can enter uploads without weakening the normal-script minimum', () => {
   const a = wizardHarness(); assert.equal(a.button('下一步：传素材 →').props['aria-disabled'], true); a.unmount();
   const c = wizardHarness({ draft: draft({ script: '', mode: 'original', preferences: modes.defaultModePreferences('original') }) });
   assert.equal(c.button('下一步：传素材 →').props['aria-disabled'], false); c.click('下一步：传素材 →');
-  assert.ok(c.content(c.tree).includes('选择文件即开始上传和转写')); assert.equal(c.button('下一步：选效果 →').props['aria-disabled'], true); c.unmount();
+  assert.ok(c.content(c.tree).includes('选好就开始上传和转写')); assert.equal(c.button('下一步：选效果 →').props['aria-disabled'], true); c.unmount();
 });
 
 test('next step is never a dead button: a blocked click says what is missing, a valid one proceeds', () => {
@@ -678,13 +698,13 @@ test('next step is never a dead button: a blocked click says what is missing, a 
   assert.ok(!h.content(h.tree).includes('还不能进入下一步'), 'no scolding before the user tries');
   next().props.onClick(); h.flush();
   assert.ok(h.content(h.tree).includes('还不能进入下一步：稿件至少写 20 字'));
-  assert.ok(!h.content(h.tree).includes('选择文件即开始上传和转写'), 'blocked click must not advance');
+  assert.ok(!h.content(h.tree).includes('选好就开始上传和转写'), 'blocked click must not advance');
   assert.equal(h.nodes().find(node => node.props?.role === 'alert' && String(node.props.className).includes('gm-action-error')) !== undefined, true);
   // Fixing the script clears the message and the same button now proceeds.
   h.script('真实新闻标题\n今天活动正式开幕，欢迎大家前来参观。');
   assert.equal(next().props['aria-disabled'], false); assert.ok(!h.content(h.tree).includes('还不能进入下一步'));
   next().props.onClick(); h.flush();
-  assert.ok(h.content(h.tree).includes('选择文件即开始上传和转写')); h.unmount();
+  assert.ok(h.content(h.tree).includes('选好就开始上传和转写')); h.unmount();
 });
 
 test('manual mixed chips preserve text and segmentation and invalidate element checks', () => {
@@ -717,7 +737,7 @@ test('restored ready uploads need no reselect; C effects hide voice, pacing and 
   h.click('重新核对'); h.timers.fire(600); await h.settle(); h.click('下一步：选效果 →');
   const body = h.content(h.tree);
   assert.ok(!body.includes('谁来配音')); assert.ok(!body.includes('播音速度')); assert.ok(!body.includes('AI 示意画面补充'));
-  assert.ok(body.includes('跳切怎么处理')); assert.ok(body.includes('原声段的字幕'));
+  assert.ok(body.includes('跳切怎么处理')); assert.ok(body.includes('原声字幕'));
   h.click('开始制作'); await h.settle();
   assert.equal(h.submits.length, 1); assert.equal(h.submits[0].files.length, 0); assert.deepEqual(plain(h.submits[0].uploadIds), [UPLOAD]);
   assert.equal(h.submits[0].preferences.background_music, false); assert.equal(h.submits[0].preferences.motion_effects, false); h.unmount();
@@ -841,7 +861,7 @@ test('server-status refresh failure revokes previously ready eligibility', async
   const h = wizardHarness({ draft: uploadedDraft(), uploadApi: { pollUploadStatus: async (...args) => { if (fail) throw new Error('Synthetic missing upload'); return readyPoll(...args); }, requestMatchPreview: async () => [match()] } });
   await h.settle(); h.click('重新核对'); h.timers.fire(600); await h.settle(); assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], false);
   fail = true;
-  h.click('重新读取状态'); await h.settle();
+  h.click('备注 / 只用片段 ▾'); h.click('重新读取状态'); await h.settle();
   assert.equal(h.button('下一步：选效果 →').props['aria-disabled'], true); h.unmount();
 });
 

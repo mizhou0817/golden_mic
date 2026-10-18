@@ -131,18 +131,15 @@ export default function Processing({ task, upload, uploading, error, now, title,
           : <p>暂时无法确认最新状态。下方是最后收到的记录，请先重新读取；不会自动重试制作。</p>)}
       {canReuseShots && <div className={styles.alternative} data-testid="processing-reuse">
         <h3>替代方案：允许画面重复出现</h3>
-        <p>素材里互不相同的画面不够，没法让每句话都配上不同的镜头。可以让同一段素材在不同时刻重复出现（同一场景的不同片段，不是定格补帧）；素材实在不够时，会循环使用这些真实片段，并优先用最相关的画面，保证能做完。从这一步继续，前面已完成的步骤不重做。</p>
-        <p>点击后会先让你确认，确认后才会继续（可能产生少量费用）。不想重复画面，请用下面的按钮回去删减稿子或多传素材。</p>
+        <p>不同的画面不够每句话用。可以让真实素材的画面重复出现，保证能做完。</p>
         <div className={styles.actions}>
           {canResumeWithReuse && <button type="button" className={styles.primary} data-control="processing-reuse-shots" onClick={() => onRetry({ allowShotReuse: true })} disabled={busy || connectionUncertain}>接受重复画面并继续…</button>}
           {onEdit && <button type="button" data-control="processing-reuse-restart" onClick={() => onEdit(1, undefined, { allowShotReuse: true })} disabled={busy}>用同样的稿子和素材重新开始，并允许重复画面…</button>}
         </div>
-        <p className={styles.advice}>“接受并继续”会从“给每句话找画面”接着做，前面的步骤不重做；若程序已更新、这个作品不能续作，请用“重新开始”，会先保存成一份新草稿，由你确认后再提交。</p>
       </div>}
       {canFallBackToVoiceover && <div className={styles.alternative} data-testid="processing-alternative">
         <h3>临时替代方案：改用 AI 配音</h3>
-        <p>如果问题出在素材原声上，可以用同一份稿子和素材改成“AI 配音”：由 AI 读稿，素材只出画面，不依赖原声。</p>
-        <p>点击后只会把作品恢复成一份新草稿，由你确认后才会重新提交制作（可能再次产生费用），原作品不变。不想用，可选择下面其他按钮。</p>
+        <p>问题可能出在素材原声上。可以用同样的稿子和素材改成“AI 配音”，由你确认后才会重新提交，原作品不变。</p>
         <button type="button" data-control="processing-switch-voiceover" onClick={() => onEdit?.(1, 'voiceover')} disabled={busy}>使用替代方案：改用 AI 配音继续</button>
       </div>}
       <div className={styles.actions}>
