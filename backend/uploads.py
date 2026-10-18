@@ -100,8 +100,15 @@ MAX_TRANSCRIPT_MEMORY_BYTES = 16 * 1024**2
 MAX_THUMB_BYTES = 2 * 1024**2
 QUIET_RMS = 10 ** (-50 / 20)
 CHUNK_TIMEOUT_SECONDS = 120.0
+# The slowest uplink a piece must still get through (the browser waits 120 s + 1 ms per 8 bytes, i.e. 8 KB/s).
+CHUNK_MIN_BYTES_PER_SECOND = 8_000
 _ID = re.compile(r"up_[0-9a-f]{32}\Z")
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def chunk_timeout_seconds(size: int) -> float:
+    """As long as the browser keeps sending a piece: a fixed allowance plus time for its size at 8 KB/s."""
+    return CHUNK_TIMEOUT_SECONDS + max(0, size) / CHUNK_MIN_BYTES_PER_SECOND
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 _ROOT_MARKER = b"golden-mic-uploads-v1\n"
 _FORMATS = {
@@ -415,7 +422,8 @@ class UploadStore:
         self._locks: dict[str, asyncio.Lock] = {}
         self._jobs: dict[str, asyncio.Task[None]] = {}
         self._admission = asyncio.Lock()
-        self._writers = asyncio.Semaphore(4)
+        # Writers stream to disk; slow visitors hold a slot for minutes, so allow more than a handful at once.
+        self._writers = asyncio.Semaphore(16)
         self._operations: dict[asyncio.Task[Any], int] = {}
         self._cache: OrderedDict[str, tuple[float, ASRTranscript, int]] = OrderedDict()
         self._cache_locks: dict[str, tuple[asyncio.Lock, int]] = {}
@@ -719,7 +727,7 @@ class UploadStore:
                 digest, count = hashlib.sha256(), 0
                 try:
                     with _open_file(temporary, exclusive=True) as target:
-                        async with asyncio.timeout(CHUNK_TIMEOUT_SECONDS):
+                        async with asyncio.timeout(chunk_timeout_seconds(expected)):
                             async for data in stream:
                                 if not isinstance(data, bytes):
                                     raise _error(400, "分块流无效。")

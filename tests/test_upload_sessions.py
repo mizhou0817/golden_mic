@@ -383,6 +383,12 @@ class UploadSessionTests(unittest.IsolatedAsyncioTestCase):
         await self.store.put_chunk(key, token, 0, _stream(b"raw"), 3)
         self.assertEqual(self.store.read(key, token)["chunks"], [0])
 
+    def test_piece_timeout_matches_the_browser_so_a_slow_uplink_is_not_cut_off(self) -> None:
+        # The browser waits 120 s + 1 ms per 8 bytes for a piece; the server must never give up first.
+        for size in (3, 1024 ** 2, module.CHUNK_SIZE):
+            self.assertGreaterEqual(module.chunk_timeout_seconds(size), 120 + size / 8000)
+        self.assertGreater(module.chunk_timeout_seconds(module.CHUNK_SIZE), 1000, "an 8 MiB piece gets well over 120 s")
+
     async def test_complete_checks_missing_chunks_declared_digest_and_tampered_parts(self) -> None:
         missing = await self._new()
         with self.assertRaises(HTTPException) as error:
