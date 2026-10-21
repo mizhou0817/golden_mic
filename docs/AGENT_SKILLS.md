@@ -155,7 +155,83 @@ gh skill install vercel-labs/agent-skills skills/react-best-practices --agent gi
 - insecure-defaults（安装后）：作者 Trail of Bits，来自 [trailofbits/skills](https://github.com/trailofbits/skills) 的提交 `9ea55c598763f7cb87ab56933d773d7dc34344a0`，按 [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) 授权。改动：gh 安装时在 frontmatter 里加入来源元数据并重新排列键，正文未改。这份改动后的副本同样按 CC BY-SA 4.0 授权。
 - gm-web-interface-guidelines 里的规则原文 `command.md`：MIT，Copyright (c) 2025 Vercel Labs，许可证原文随文件放在 `references/vercel-web-interface-guidelines/LICENSE`。
 
-## 8. 维护建议（未实施）
+## 8. 项目自建 skills
+
+| 名称 | 用途 | 触发方式 | 主要来源文件 |
+|---|---|---|---|
+| [gm-verify](../.github/skills/gm-verify/SKILL.md) | 按改动范围运行静态检查、受保护回归和构建，如实报告通过数和未运行项 | 自动加载；也可手动 `/gm-verify`，参数：静态、后端、前端、构建、全部 | `docs/DEVELOPMENT.md` 第 4–9 节、`frontend/package.json`、`tests/run_v2_validation.py`、`.github/workflows/linux-ci.yml` |
+| [gm-pipeline-map](../.github/skills/gm-pipeline-map/SKILL.md) | 十个制作阶段对应的模块、AI 服务、配置和测试；新增检查码、服务商、导出格式时的同步清单 | 自动加载 | `docs/DEVELOPMENT.md` 第 2 节、`backend/mode_pipeline.py`、`backend/pipeline.py`、`backend/mode_rules.json`、`backend/config.py`、`backend/providers/` |
+| [gm-ffmpeg-render](../.github/skills/gm-ffmpeg-render/SKILL.md) | FFmpeg 渲染、响度、字幕、配乐、导出和子进程约定 | 自动加载 | `backend/rendering.py`、`backend/graphics.py`、`backend/subtitles.py`、`backend/tts_pipeline.py`、`backend/audio_filters.py` 等 |
+| [gm-ai-labeling](../.github/skills/gm-ai-labeling/SKILL.md) | AI 内容标识（显式标识、隐式元数据、C2PA、AI 参与清单）的 P0 设计草稿 | 只能手动：`/gm-ai-labeling`，参数：调研、方案、任务拆解 | `references/regulations.md`（法规和标准要点）、`backend/graphics.py`、`backend/v2_editing.py`、`backend/publication.py`、`backend/provenance.py` |
+| [gm-ux-copy](../.github/skills/gm-ux-copy/SKILL.md) | 中文界面文案：术语、必须一直可见的提醒、语气、标点、限额写法 | 自动加载 | `docs/UI_SIMPLIFICATION_20261014.md`、`docs/USER_GUIDE.md`、`frontend/src` 现有文案 |
+| [gm-news-integrity](../.github/skills/gm-news-integrity/SKILL.md) | 新闻真实性红线、20 个检查码、发布门禁的现状和待定冲突 | 只由模型自动加载，不出现在 `/` 菜单 | `backend/mode_rules.json`、`backend/quality.py`、`backend/publication.py`、`backend/production_modes.py`、`backend/v2_editing.py`、`backend/script_assist.py` |
+| [gm-quality-benchmark](../.github/skills/gm-quality-benchmark/SKILL.md) | 用本地授权样本 `eval_sample/` 做质量基准的 P0 设计草稿 | 只能手动：`/gm-quality-benchmark`，参数：盘点、设计、报告 | `README.md`、`PIPELINE_PERFORMANCE_ANALYSIS.md`、`docs/V2_MODEL_SELECTION_20261002.md`、本地 `eval_sample/` |
+| [gm-web-interface-guidelines](../.github/skills/gm-web-interface-guidelines/SKILL.md) | 按固定版本的 Vercel Web Interface Guidelines 审查前端，只出问题清单 | 自动加载；也可手动 `/gm-web-interface-guidelines`，参数：文件或 glob | `references/vercel-web-interface-guidelines/command.md`（固定版本，MIT） |
+
+自建 skill 里的表格（检查码、术语、限额等）标了统计日期和提交号。改了 `mode_rules.json`、检查码、阈值或界面术语以后，要同步更新对应的 skill。
+
+## 9. 自建 skill 试用提问
+
+在 VS Code 里新开一个 Copilot 对话（Agent 模式），逐条输入。回复引用的文件里出现对应的 SKILL.md，就算触发了（界面细节以 VS Code 实际显示为准）。手动调用的 skill 要用 `/` 开头。
+
+### gm-verify
+- 应触发：
+  1. 我改完了 backend/production_modes.py，帮我验证一下能不能提交。
+  2. 跑一下类型检查，看看前端和 e2e 有没有报错。
+  3. `/gm-verify 静态`
+- 不应触发：帮我把最新版本部署到生产服务器。（部署不在本 skill 范围内）
+
+### gm-pipeline-map
+- 应触发：
+  1. 原话匹配是在哪个阶段、哪段代码里做的？
+  2. 哪个阶段会调用 Kimi？这里失败重试会不会重复收费？
+  3. 我想新增一个导出格式，要同步改哪些文件？
+- 不应触发：把结果页"开始导出"按钮的文案改短一点。（应由 gm-ux-copy 处理）
+
+### gm-ffmpeg-render
+- 应触发：
+  1. 成片响度偏低，loudnorm 的参数在哪里设置？
+  2. 字幕想换大一点的字号，ASS 样式在哪里改？
+  3. 导出 9:16 竖屏时画面被裁掉一块，FFmpeg 命令是怎么拼的？
+- 不应触发：怎么在 Windows 上安装最新版 FFmpeg？（安装和升级 FFmpeg 不在范围内）
+
+### gm-ai-labeling（只能手动调用）
+- 应触发：
+  1. `/gm-ai-labeling 调研`
+  2. `/gm-ai-labeling 方案：对照 GB 45438-2025，列出现在 AI 示意画面标识的差距`
+  3. `/gm-ai-labeling 任务拆解`
+- 不应触发：我们的 AI 示意画面标识合规吗？（没有用 `/` 调用时不应自动加载本 skill；模型可以参考 gm-news-integrity 回答，并提示可以手动调用 `/gm-ai-labeling`）
+
+### gm-ux-copy
+- 应触发：
+  1. 把结果页"开始导出"按钮的文案改得更清楚一点。
+  2. 上传失败时的报错提示怎么写比较好？
+  3. 界面上"发布前检查"和"质检"两种叫法，统一用哪个？
+- 不应触发：帮我润色一下这篇新闻稿。（稿件不由 AI 改写；本 skill 只管界面文案）
+
+### gm-news-integrity（不出现在 `/` 菜单）
+- 应触发：
+  1. QUOTE_MATCH_LOW 这个检查能确认后导出吗？
+  2. 原声剪短的时候，能不能删掉中间一句废话再接起来？
+  3. 含 AI 示意画面的作品能导出 SRT 字幕吗？
+- 不应触发：前端打包后体积太大，怎么拆分代码？
+- 另外核对：输入 `/` 时菜单里不应出现 gm-news-integrity。
+
+### gm-quality-benchmark（只能手动调用）
+- 应触发：
+  1. `/gm-quality-benchmark 盘点`
+  2. `/gm-quality-benchmark 设计：用评测样例1算 ASR 字错误率和原话命中率`
+  3. `/gm-quality-benchmark 报告`
+- 不应触发：跑一下样例，看看识别错字率是多少。（没有用 `/` 调用时不应自动加载；也不能未经批准就调用收费服务）
+
+### gm-web-interface-guidelines
+- 应触发：
+  1. 按界面规范审查一下 frontend/src/components/ResultWorkbench.tsx。
+  2. review my UI：检查 QuoteEditor 组件的焦点和表单处理。
+  3. 这个对话框的按钮、焦点和加载状态写得规范吗？按前端规范过一遍。
+- 不应触发：把整个界面换成深色玻璃拟态风格。（界面已定型，不做视觉重设计）
+
+## 10. 维护建议（未实施）
 
 - CI：可以在 `.github/workflows/linux-ci.yml` 里加一步 `python scripts/validate_agent_skills.py`（只用标准库，不用装依赖），防止 skill 的 frontmatter 和链接被改坏。本次按约束没有改 CI。
 - 新增 skill 前先数一下总数，不超过 22 个；同一能力只保留一个。
