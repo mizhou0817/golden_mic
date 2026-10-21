@@ -34,3 +34,5 @@ dist/
 # Local example footage (never committed) and macOS metadata
 /examples/
 .DS_Store
+# Playwright CLI agent skill output (page snapshots, traces, screenshots)
+.playwright-cli/
