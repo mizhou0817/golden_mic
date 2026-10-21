@@ -1,7 +1,7 @@
 # PC/移动端剪辑功能需求差距分析
 
 审计日期：2026-07-24  
-需求来源：[剪辑功能需求表PC端和移动端.xlsx](剪辑功能需求表PC端和移动端.xlsx)  
+需求来源：[剪辑功能需求表PC端和移动端.xlsx](../../../%E5%89%AA%E8%BE%91%E5%8A%9F%E8%83%BD%E9%9C%80%E6%B1%82%E8%A1%A8PC%E7%AB%AF%E5%92%8C%E7%A7%BB%E5%8A%A8%E7%AB%AF.xlsx)  
 对照对象：当前 `golden-mic` 源码、运行中的 Web 页面和 `/openapi.json`
 
 ## 1. 结论
@@ -9,7 +9,7 @@
 1. 工作簿包含 2 个工作表、97 条复合功能需求：
    - “剪辑PC端”：10 个模块、48 条。
    - “剪辑APP端”：9 个模块、49 条。
-2. 当前产品是“新闻稿 + 1–100 个视频 → 自动生成新闻成片”的单机 Web 流水线，不是通用非线性视频编辑器，也不是 iOS/Android 原生 App。[README](README.md#L3)明确了产品范围；[README](README.md#L26)说明任务队列为进程内实现且无数据库。
+2. 当前产品是“新闻稿 + 1–100 个视频 → 自动生成新闻成片”的单机 Web 流水线，不是通用非线性视频编辑器，也不是 iOS/Android 原生 App。[README](../../../README.md#L3)明确了产品范围；[README](../../../README.md#L26)说明任务队列为进程内实现且无数据库。
 3. 按“整行全部子要求均满足才算完成”的验收口径：
 
 | 工作表 | 完整实现 | 部分/仅内部能力 | 完全没有 | 不能按整行通过验收 |
@@ -63,19 +63,19 @@
 - 多时间线：PC 写“无限并可嵌套”；APP 写“最多 50 条”，不要求嵌套。
 - 音色克隆：PC 要求 10 秒样本；APP 要求 30 秒样本。
 - 导出：PC 最高 8K/120fps/Rec.2020；APP 最高 4K/60fps。
-- 当前实现没有按 PC/APP 提供两套产品能力；只有一套响应式 Web 页面。前端依赖仅为 React DOM/Vite，[frontend/package.json](frontend/package.json#L7-L25)中没有 React Native、Expo 或 Capacitor；工作区也不存在 Android/iOS 工程。
+- 当前实现没有按 PC/APP 提供两套产品能力；只有一套响应式 Web 页面。前端依赖仅为 React DOM/Vite，[frontend/package.json](../../../frontend/package.json#L7-L25)中没有 React Native、Expo 或 Capacitor；工作区也不存在 Android/iOS 工程。
 
 ## 3. 审计证据基线
 
-- **输入边界**：前端仅接受 MP4/MOV/AVI/MKV，最多 100 个文件，[App.tsx](frontend/src/App.tsx#L7-L8)、[上传控件](frontend/src/App.tsx#L442-L448)；后端白名单相同，[storage.py](backend/storage.py#L14-L22)。
-- **API 边界**：只有任务创建、状态、报告、句子删减重剪、MP4、缩略图和删除，[main.py](backend/main.py#L66-L163)；运行中的 OpenAPI 与源码一致。
-- **编辑模型边界**：`EDLClip` 只有源、入点、出点、自动定格，`EDLItem` 只有句子及片段，[models.py](backend/models.py#L156-L173)；重剪请求只有 `keep_sentence_ids`，[models.py](backend/models.py#L178-L188)。没有轨道、图层、关键帧、蒙版、转场或效果参数模型。
-- **输出边界**：固定 1920×1080/30fps，[rendering.py](backend/rendering.py#L21-L23)；固定 libx264/CRF 20/yuv420p，[rendering.py](backend/rendering.py#L284-L307)；下载接口固定 `final.mp4` 和 `video/mp4`，[main.py](backend/main.py#L133-L145)。
-- **字幕边界**：系统只生成内部 ASS，[subtitles.py](backend/subtitles.py#L21-L48)，样式写死为单一 News 样式，[subtitles.py](backend/subtitles.py#L89-L101)。
-- **音频边界**：TTS/同期声按句自动合成，固定 0.12 秒间隔和 12ms 边缘淡化，[tts_pipeline.py](backend/tts_pipeline.py#L14-L16)、[tts_pipeline.py](backend/tts_pipeline.py#L45-L109)；源音频会内部提取给 ASR，[asr_pipeline.py](backend/asr_pipeline.py#L42-L91)。
-- **历史边界**：历史记录存浏览器 `localStorage`，[App.tsx](frontend/src/App.tsx#L45)；结果页只提供 MP4 下载和按句删除重剪，[App.tsx](frontend/src/App.tsx#L631-L657)。
-- **移动原生边界**：服务响应明确禁用相机和麦克风权限，[main.py](backend/main.py#L46-L53)；没有原生相册、Live Photo、录音或系统分享桥接。
-- **云端边界**：无账号、登录、数据库，[README](README.md#L416-L417)，因此没有多设备身份、草稿云同步或团队空间基础。
+- **输入边界**：前端仅接受 MP4/MOV/AVI/MKV，最多 100 个文件，[App.tsx](../../../frontend/src/App.tsx#L7-L8)、[上传控件](../../../frontend/src/App.tsx#L442-L448)；后端白名单相同，[storage.py](../../../backend/storage.py#L14-L22)。
+- **API 边界**：只有任务创建、状态、报告、句子删减重剪、MP4、缩略图和删除，[main.py](../../../backend/main.py#L66-L163)；运行中的 OpenAPI 与源码一致。
+- **编辑模型边界**：`EDLClip` 只有源、入点、出点、自动定格，`EDLItem` 只有句子及片段，[models.py](../../../backend/models.py#L156-L173)；重剪请求只有 `keep_sentence_ids`，[models.py](../../../backend/models.py#L178-L188)。没有轨道、图层、关键帧、蒙版、转场或效果参数模型。
+- **输出边界**：固定 1920×1080/30fps，[rendering.py](../../../backend/rendering.py#L21-L23)；固定 libx264/CRF 20/yuv420p，[rendering.py](../../../backend/rendering.py#L284-L307)；下载接口固定 `final.mp4` 和 `video/mp4`，[main.py](../../../backend/main.py#L133-L145)。
+- **字幕边界**：系统只生成内部 ASS，[subtitles.py](../../../backend/subtitles.py#L21-L48)，样式写死为单一 News 样式，[subtitles.py](../../../backend/subtitles.py#L89-L101)。
+- **音频边界**：TTS/同期声按句自动合成，固定 0.12 秒间隔和 12ms 边缘淡化，[tts_pipeline.py](../../../backend/tts_pipeline.py#L14-L16)、[tts_pipeline.py](../../../backend/tts_pipeline.py#L45-L109)；源音频会内部提取给 ASR，[asr_pipeline.py](../../../backend/asr_pipeline.py#L42-L91)。
+- **历史边界**：历史记录存浏览器 `localStorage`，[App.tsx](../../../frontend/src/App.tsx#L45)；结果页只提供 MP4 下载和按句删除重剪，[App.tsx](../../../frontend/src/App.tsx#L631-L657)。
+- **移动原生边界**：服务响应明确禁用相机和麦克风权限，[main.py](../../../backend/main.py#L46-L53)；没有原生相册、Live Photo、录音或系统分享桥接。
+- **云端边界**：无账号、登录、数据库，[README](../../../README.md#L416-L417)，因此没有多设备身份、草稿云同步或团队空间基础。
 
 ## 4. PC 端 48 条逐项差距
 

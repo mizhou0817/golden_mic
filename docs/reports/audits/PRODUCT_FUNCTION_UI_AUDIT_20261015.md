@@ -31,33 +31,33 @@
 
 两处组件导入共享焦点函数，但对应模块没有实际落盘。编译器复现两处 `TS2307`；独立工作台测试也漏登记该依赖，出现八个失败。
 
-- 补齐 [dialogFocus.ts](frontend/src/lib/dialogFocus.ts)。
+- 补齐 [dialogFocus.ts](../../../frontend/src/lib/dialogFocus.ts)。
 - 组件和明确的 VM 依赖表使用同一真实实现；不使用空替身或允许任意导入。
-- [独立工作台测试](scripts/test-v2-result.mjs)恢复 43/43；四套 TypeScript 检查通过。
+- [独立工作台测试](../../../scripts/test-v2-result.mjs)恢复 43/43；四套 TypeScript 检查通过。
 
 ### 3.2 模态键盘焦点与小屏操作
 
 - 共享焦点圈补入原生 `summary`，不再略过抽屉末尾的保留说明；保留 radio、disabled、inert、隐藏内容筛选。
-- [Workspace](frontend/src/components/Workspace.tsx)抽屉与[结果工作台](frontend/src/components/ResultWorkbench.tsx)导出对话框共用处理，关闭/Escape 后恢复焦点。
-- [导航样式](frontend/src/styles.css)将抽屉关闭按钮改为滚动时仍可触达的 sticky 控件。
-- [结果样式](frontend/src/components/ResultWorkbench.css)按固定头部计算 sticky 偏移，导出使用动态视口高度，原声词按钮至少 44×44 CSS px。
-- [创建向导](frontend/src/components/CreateWizard.tsx)提交失败后将焦点与滚动定位到错误提示；320×568 原生测试同时断言提示在视口内、确实获取焦点、回调恰好一次。
+- [Workspace](../../../frontend/src/components/Workspace.tsx)抽屉与[结果工作台](../../../frontend/src/components/ResultWorkbench.tsx)导出对话框共用处理，关闭/Escape 后恢复焦点。
+- [导航样式](../../../frontend/src/styles.css)将抽屉关闭按钮改为滚动时仍可触达的 sticky 控件。
+- [结果样式](../../../frontend/src/components/ResultWorkbench.css)按固定头部计算 sticky 偏移，导出使用动态视口高度，原声词按钮至少 44×44 CSS px。
+- [创建向导](../../../frontend/src/components/CreateWizard.tsx)提交失败后将焦点与滚动定位到错误提示；320×568 原生测试同时断言提示在视口内、确实获取焦点、回调恰好一次。
 
 ### 3.3 低对比文字
 
 独立 axe 检查发现：提示区“更多”对比度约 4.48:1，浅绿状态文字约 4.37:1，浅色缩略图上的白色句子文字约 1.17:1，均低于小字 4.5:1。
 
-- [提示区](frontend/src/styles/modes.css)和[侧栏状态](frontend/src/styles.css)采用现有配色中的深色文字。
-- [状态徽章和分镜句子](frontend/src/components/ResultWorkbench.css)分别采用深色文字、实色深底白字；不依赖缩略图内容或阴影保证可读性。
-- [新增回归](frontend/scripts/test-v2-responsive-audit.mjs)读取真实计算样式验证对比度，相关样本最低约 9.97:1。
+- [提示区](../../../frontend/src/styles/modes.css)和[侧栏状态](../../../frontend/src/styles.css)采用现有配色中的深色文字。
+- [状态徽章和分镜句子](../../../frontend/src/components/ResultWorkbench.css)分别采用深色文字、实色深底白字；不依赖缩略图内容或阴影保证可读性。
+- [新增回归](../../../frontend/scripts/test-v2-responsive-audit.mjs)读取真实计算样式验证对比度，相关样本最低约 9.97:1。
 - 六次独立 axe 扫描均无自动确认的违规，仍保留对比度与视频字幕 `incomplete` 项；**不是完整 WCAG 认证**。
 
 ### 3.4 测试可信度与清理
 
-- [简化界面测试](frontend/scripts/test-v2-simple-ui.mjs)原先递增错误计数但不检查，现严格核对预期次数、错误可见性与真实焦点。
-- [原生下载测试](frontend/scripts/test-v2-final-browser.mjs)首次全量出现 35 秒取消。独立测量：业务约 13.97 秒、context 关闭约 0.10 秒、Edge 进程退出约 56.31 秒。外层改为有界清理预算，**原有 25 秒业务 watchdog、局部操作时限、零重试和所有下载/清理断言保留**。
+- [简化界面测试](../../../frontend/scripts/test-v2-simple-ui.mjs)原先递增错误计数但不检查，现严格核对预期次数、错误可见性与真实焦点。
+- [原生下载测试](../../../frontend/scripts/test-v2-final-browser.mjs)首次全量出现 35 秒取消。独立测量：业务约 13.97 秒、context 关闭约 0.10 秒、Edge 进程退出约 56.31 秒。外层改为有界清理预算，**原有 25 秒业务 watchdog、局部操作时限、零重试和所有下载/清理断言保留**。
 - 回执加入分段耗时及 `!t.signal.aborted` 条件，已取消测试不能再写出成功回执。原生进程退出慢的底层原因没有被宣称修复。
-- [音频契约测试](tests/test_studio_audio_clock.py)过时地要求共享模块只导入 `typing`；现与既有标准库 `math` / `Sequence` / `Final` 一致，仍禁止 pipeline/provider/renderer 依赖，DSP 和样本断言未弱化。
+- [音频契约测试](../../../tests/test_studio_audio_clock.py)过时地要求共享模块只导入 `typing`；现与既有标准库 `math` / `Sequence` / `Final` 一致，仍禁止 pipeline/provider/renderer 依赖，DSP 和样本断言未弱化。
 
 ## 4. 最终测试记录
 
@@ -69,12 +69,12 @@
 | 最终前端全 glob | **1291/1291**；426385.8536 ms；失败/取消/跳过 0 | dialog / recording / final 三个原生 opt-in 全开，源码冻结、退出 0、stderr 0 |
 | 独立结果工作台 | **43/43**；4207.1812 ms | 单独入口，退出 0；不混入前端 glob 数量 |
 | 类型 | **四套均退出 0** | app / workspace E2E / modes E2E / V2 E2E；不声称全部 Python strict diagnostics 清零 |
-| [效果](tests/test_editing_enhancements.py) / [运动](tests/test_motion_rendering.py) | **45/45** 所选测试 | 另有 16 个引导用例，共 61/61；真实本地编解码、几何、帧时钟、像素和披露；技术契约而非观感认证 |
-| [音频](tests/test_studio_audio_clock.py) | **14/14** 所选测试 | 另有 16 个引导用例，共 30/30；降噪、起止 PCM、采样率/格式/声道、变速/转场时钟；非真人听感认证 |
-| [字幕/烧录](tests/test_m5_rendering.py) | **14/14** 所选测试 | 另有 16 个引导用例，共 30/30；字幕保护、字体、1080p H.264/AAC、烧录像素区域 |
+| [效果](../../../tests/test_editing_enhancements.py) / [运动](../../../tests/test_motion_rendering.py) | **45/45** 所选测试 | 另有 16 个引导用例，共 61/61；真实本地编解码、几何、帧时钟、像素和披露；技术契约而非观感认证 |
+| [音频](../../../tests/test_studio_audio_clock.py) | **14/14** 所选测试 | 另有 16 个引导用例，共 30/30；降噪、起止 PCM、采样率/格式/声道、变速/转场时钟；非真人听感认证 |
+| [字幕/烧录](../../../tests/test_m5_rendering.py) | **14/14** 所选测试 | 另有 16 个引导用例，共 30/30；字幕保护、字体、1080p H.264/AAC、烧录像素区域 |
 | 独立效果开关对照 | **3/3** 所选实测 | 另有 16 个引导用例，共 19/19；真实颜色像素差、淡入、图文差和去除全局增益后的音乐残差 |
-| [原生 Edge 响应式 UI](frontend/scripts/test-v2-responsive-audit.mjs) | **168 次布局 + 31 次交互**，父/子测试 4/4 | 真实 Workspace/React，synthetic HTTP，视口/触摸模拟；零页面溢出/脚本错误/设备调用/越界请求，浏览器关闭完成 |
-| [简化流程 UI](frontend/scripts/test-v2-simple-ui.mjs) | **312 次布局，10 场景 + 父测试通过** | A/B/C、门禁、处理页、折叠、导出格式、待修改、原生 Space/Enter；含最终全 glob |
+| [原生 Edge 响应式 UI](../../../frontend/scripts/test-v2-responsive-audit.mjs) | **168 次布局 + 31 次交互**，父/子测试 4/4 | 真实 Workspace/React，synthetic HTTP，视口/触摸模拟；零页面溢出/脚本错误/设备调用/越界请求，浏览器关闭完成 |
+| [简化流程 UI](../../../frontend/scripts/test-v2-simple-ui.mjs) | **312 次布局，10 场景 + 父测试通过** | A/B/C、门禁、处理页、折叠、导出格式、待修改、原生 Space/Enter；含最终全 glob |
 | 自动可访问性 | **6 个页面状态无已确认违规** | 创建/结果各 390、768、1440px；22 次对比度节点与 3 次字幕节点 incomplete 为重复观察，不是唯一缺陷数 |
 | 修复前外观构建 B 的核心 | **6/6**；1069568.728 ms；零重试/全局错误 | 3 次成功制作、3 次 apply、7 个成功导出；C/A/B 的 r0 分别 62/37/37 文件不变 |
 | 修复前外观构建 B 的管理 | **4/4**；126051.044 ms；零重试/全局错误 | 独立一条短 A；重命名/CAS/复制/恢复；两个 B 主机均正常退出 0，全部关闭与哈希标志 true |
@@ -82,7 +82,7 @@
 | 最终 C 核心验收 | **6/6**；769956.979 ms；零重试/全局错误 | 3 次成功制作、3 次 apply、7 次成功文件导出（五格式）；36 次布局；C/A/B 的 r0 各 62/37/37 文件不变 |
 | 最终 C 独立管理验收 | **4/4**；82400.013 ms；零重试/全局错误 | 模式键盘、重命名/冲突/刷新、复制/恢复、无效链接；不是另一次核心六项通过 |
 
-最终 C 的两组主机各绑定 106 项源码、26 项验收输入和 49 项构建输入，运行后及报告收尾再次核对均无漂移；输入、源码、测试、模拟提供方和生命周期关闭标志全部 true，denied-egress 0，实际主机进程均退出 0、stderr 0，8787 无监听。原生录音、原生 SRT 下载与失效状态另见[测试入口](frontend/scripts/test-v2-final-browser.mjs)，它们与真实服务端 Range 导出不是同一种证据。
+最终 C 的两组主机各绑定 106 项源码、26 项验收输入和 49 项构建输入，运行后及报告收尾再次核对均无漂移；输入、源码、测试、模拟提供方和生命周期关闭标志全部 true，denied-egress 0，实际主机进程均退出 0、stderr 0，8787 无监听。原生录音、原生 SRT 下载与失效状态另见[测试入口](../../../frontend/scripts/test-v2-final-browser.mjs)，它们与真实服务端 Range 导出不是同一种证据。
 
 独立效果对照的可观测值：颜色开关解码 RGB 平均绝对差约 0.878；淡入时内部区域平均值约 126.86 → 16.18；图文区域平均差约 5.92；音乐底 RMS 约 0.01940，成片去除整体增益差后的残差 RMS 约 0.00878。它们证明开关产生输出差异，不证明感知美观或新闻正确性。
 
@@ -119,4 +119,4 @@
 5. **无障碍认证**：自动扫描存在人工复核项，视频样例无真实媒体的 fixture 不能认证字幕可达性；零确认违规不是完整 WCAG 通过。
 6. **上线状态**：当前结果是修复源码与隔离验证，不是部署。日常前端五项资产/清单保持原 hash，日常 8000 服务没有被启动、重启或替换。查看修复效果需在独立受控运行环境使用最终构建，不应误用旧日常页面判断修复是否存在。
 
-后续操作与费用/安全边界参见 [README](README.md)、[使用指南](docs/USER_GUIDE.md)和[开发验证指南](docs/DEVELOPMENT.md)。本报告是根目录日期审计记录，不自动进入最小运行包，也不改变旧发布包或旧验收签名。
+后续操作与费用/安全边界参见 [README](../../../README.md)、[使用指南](../../USER_GUIDE.md)和[开发验证指南](../../DEVELOPMENT.md)。本报告是根目录日期审计记录，不自动进入最小运行包，也不改变旧发布包或旧验收签名。

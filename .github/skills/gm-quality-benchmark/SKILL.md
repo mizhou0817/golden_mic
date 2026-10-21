@@ -37,7 +37,7 @@ argument-hint: "[盘点|设计|报告]"
 | `eval_sample/评测样例1/` | `新闻视频素材/` 48 个；稿件 docx；参考成片 `新闻视频稿件样例.mp4`；历史评测 `evaluation_work/`（含参考转写、对比指标、旧报告） | A、B |
 | `eval_sample/评测样例2/` | `新闻视频素材/` 8 个；`访谈文稿.docx` | B、C |
 
-仓库根目录另有一个约 2.35 GB 的 `eval_sample.zip`（被 git 忽略）。两份样本的授权范围：TODO(待确认)。
+两份样本的授权范围：TODO(待确认)。
 
 ## 指标定义
 
@@ -51,7 +51,7 @@ argument-hint: "[盘点|设计|报告]"
 | 阶段耗时 | 十个阶段每阶段的耗时，冷缓存和热缓存分开；同一样本至少跑 3 次，报均值、P50、P95，另报 ASR 实时率（RTF） | 任务记录 |
 | 费用 | 各服务的调用次数 × 单价，按阶段汇总，并折算成"每分钟成片费用" | 调用计数；单价以服务商账单或官网为准，TODO(待确认) |
 
-耗时的口径和目标参照 [PIPELINE_PERFORMANCE_ANALYSIS.md](../../../PIPELINE_PERFORMANCE_ANALYSIS.md) 第 6 节。匹配相关的历史分析见根目录的 `SEMANTIC_MATCHING_*.md`。
+耗时的口径和目标参照 [PIPELINE_PERFORMANCE_ANALYSIS.md](../../../docs/reports/pipeline/PIPELINE_PERFORMANCE_ANALYSIS.md) 第 6 节。匹配相关的历史分析见 `docs/reports/pipeline/` 下的 `SEMANTIC_MATCHING_*.md`。
 
 ## 步骤
 1. **盘点**：列出样本文件和已有真值，标出缺什么真值、要怎么标。
@@ -83,7 +83,7 @@ argument-hint: "[盘点|设计|报告]"
 
 ## 来源
 - [README.md](../../../README.md)（真实 AI 与语音质量未验收）
-- [PIPELINE_PERFORMANCE_ANALYSIS.md](../../../PIPELINE_PERFORMANCE_ANALYSIS.md) 第 5–6 节
+- [PIPELINE_PERFORMANCE_ANALYSIS.md](../../../docs/reports/pipeline/PIPELINE_PERFORMANCE_ANALYSIS.md) 第 5–6 节
 - [docs/V2_MODEL_SELECTION_20261002.md](../../../docs/V2_MODEL_SELECTION_20261002.md)（模型选型：CAMPPlus、CTC）
-- 根目录 `SEMANTIC_MATCHING_*.md`（匹配分析历史）
+- `docs/reports/pipeline/SEMANTIC_MATCHING_*.md`（匹配分析历史）
 - 本地 `eval_sample/`（被 git 忽略）

@@ -72,5 +72,6 @@
 | [THREE_MODE_IMPLEMENTATION_20260928.md](THREE_MODE_IMPLEMENTATION_20260928.md)、[THREE_MODE_VALIDATION_20260928.md](THREE_MODE_VALIDATION_20260928.md) | 更早三模式阶段，不拿其计数当当前回归 |
 | [CORE_WORKSPACE_20260927.md](CORE_WORKSPACE_20260927.md)、[CORE_WORKSPACE_VALIDATION_20260927.md](CORE_WORKSPACE_VALIDATION_20260927.md) | 旧核心工作区与当时本地部署背景 |
 | [历史 Canary 索引](https://github.com/mizhou0817/golden_mic/blob/main/canary_test/README.md) | 完整源码中的历史索引，不随最小包发布；本地证据不公开，旧主机/命令不自动适用于 V2 |
+| [历史审计与分析报告索引](https://github.com/mizhou0817/golden_mic/blob/main/docs/reports/README.md) | 完整源码中的审计、流水线分析与产品调研报告，不随最小包发布；均为日期快照，状态以当前源码为准 |
 
 课堂、队列、云作业和旧原型审计没有删除，但已不是当前新用户操作入口。不要据它们恢复登录流程、旧公共服务、付费调用或退役字段。

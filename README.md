@@ -171,6 +171,7 @@ GitHub `blob/main` / `tree/main` 链接指向**完整源码**，不是最小包�
 | [backend/](backend/) | Python / FastAPI、任务与媒体处理 |
 | [tests/](https://github.com/mizhou0817/golden_mic/tree/main/tests) | 完整源码中的测试与受保护验证入口；先读开发指南，勿直接对真实数据运行 |
 | [docs/](docs/) | 使用文档、接口与日期交付记录 |
+| [docs/reports/](https://github.com/mizhou0817/golden_mic/tree/main/docs/reports) | 完整源码中的历史审计、流水线分析与产品调研报告，按日期保留，不随最小包发布 |
 | [deploy/](deploy/) | 发布、校验和运维脚本，不代表生产已就绪 |
 | [canary_test/](https://github.com/mizhou0817/golden_mic/tree/main/canary_test) | 完整源码中的历史验收记录；本地 artifacts 未发布，不作为当前在线状态 |
 

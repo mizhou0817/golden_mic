@@ -165,7 +165,7 @@ gh skill install vercel-labs/agent-skills skills/react-best-practices --agent gi
 | [gm-ai-labeling](../.github/skills/gm-ai-labeling/SKILL.md) | AI 内容标识（显式标识、隐式元数据、C2PA、AI 参与清单）的 P0 设计草稿 | 只能手动：`/gm-ai-labeling`，参数：调研、方案、任务拆解 | `references/regulations.md`（法规和标准要点）、`backend/graphics.py`、`backend/v2_editing.py`、`backend/publication.py`、`backend/provenance.py` |
 | [gm-ux-copy](../.github/skills/gm-ux-copy/SKILL.md) | 中文界面文案：术语、必须一直可见的提醒、语气、标点、限额写法 | 自动加载 | `docs/UI_SIMPLIFICATION_20261014.md`、`docs/USER_GUIDE.md`、`frontend/src` 现有文案 |
 | [gm-news-integrity](../.github/skills/gm-news-integrity/SKILL.md) | 新闻真实性红线、20 个检查码、发布门禁的现状和待定冲突 | 只由模型自动加载，不出现在 `/` 菜单 | `backend/mode_rules.json`、`backend/quality.py`、`backend/publication.py`、`backend/production_modes.py`、`backend/v2_editing.py`、`backend/script_assist.py` |
-| [gm-quality-benchmark](../.github/skills/gm-quality-benchmark/SKILL.md) | 用本地授权样本 `eval_sample/` 做质量基准的 P0 设计草稿 | 只能手动：`/gm-quality-benchmark`，参数：盘点、设计、报告 | `README.md`、`PIPELINE_PERFORMANCE_ANALYSIS.md`、`docs/V2_MODEL_SELECTION_20261002.md`、本地 `eval_sample/` |
+| [gm-quality-benchmark](../.github/skills/gm-quality-benchmark/SKILL.md) | 用本地授权样本 `eval_sample/` 做质量基准的 P0 设计草稿 | 只能手动：`/gm-quality-benchmark`，参数：盘点、设计、报告 | `README.md`、`docs/reports/pipeline/PIPELINE_PERFORMANCE_ANALYSIS.md`、`docs/V2_MODEL_SELECTION_20261002.md`、本地 `eval_sample/` |
 | [gm-web-interface-guidelines](../.github/skills/gm-web-interface-guidelines/SKILL.md) | 按固定版本的 Vercel Web Interface Guidelines 审查前端，只出问题清单 | 自动加载；也可手动 `/gm-web-interface-guidelines`，参数：文件或 glob | `references/vercel-web-interface-guidelines/command.md`（固定版本，MIT） |
 
 自建 skill 里的表格（检查码、术语、限额等）标了统计日期和提交号。改了 `mode_rules.json`、检查码、阈值或界面术语以后，要同步更新对应的 skill。

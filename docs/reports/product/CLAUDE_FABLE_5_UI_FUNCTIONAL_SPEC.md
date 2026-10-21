@@ -1535,38 +1535,38 @@ AppShell
 
 | 主题 | 主要来源 |
 | --- | --- |
-| HTTP API、安全中间件、会话、限流、静态前端 | [backend/main.py](backend/main.py) |
-| 匿名签名会话与 CSRF | [backend/anonymous_access.py](backend/anonymous_access.py) |
-| 配置、运行限制与生产约束 | [backend/config.py](backend/config.py) |
-| 任务状态、队列、轮询响应、TTL、恢复、revision | [backend/task_manager.py](backend/task_manager.py) |
-| 数据模型与公开响应 | [backend/models.py](backend/models.py) |
-| 上传保存与原子 JSON | [backend/storage.py](backend/storage.py) |
-| 磁盘预留和容量 | [backend/operations.py](backend/operations.py) |
-| 十阶段总编排 | [backend/pipeline.py](backend/pipeline.py) |
-| 媒体规格化与镜头切分 | [backend/media.py](backend/media.py) |
-| ASR、VAD、缓存和同期声匹配 | [backend/asr_pipeline.py](backend/asr_pipeline.py) |
-| 多帧画面理解和 ASR 融合 | [backend/vision_pipeline.py](backend/vision_pipeline.py) |
-| 稿件保真断句 | [backend/script_segmentation.py](backend/script_segmentation.py) |
-| 视觉节拍、召回、精排与唯一分配 | [backend/matching.py](backend/matching.py)、[backend/assignment.py](backend/assignment.py) |
-| 数字读音 | [backend/pronunciation.py](backend/pronunciation.py) |
-| TTS、同期声提取与旁白时间轴 | [backend/tts_pipeline.py](backend/tts_pipeline.py) |
-| 固定字幕模板 | [backend/subtitles.py](backend/subtitles.py) |
-| EDL、片段、混音和成片 | [backend/rendering.py](backend/rendering.py) |
-| 音乐 | [backend/music.py](backend/music.py) |
-| 新闻图文与 AI 披露叠层 | [backend/graphics.py](backend/graphics.py) |
-| 生成式补拍 | [backend/providers/generative.py](backend/providers/generative.py) |
-| QC | [backend/quality.py](backend/quality.py) |
-| 逐句报告 | [backend/reporting.py](backend/reporting.py) |
-| 删句重剪 | [backend/remix.py](backend/remix.py) |
-| 文字换镜 | [backend/shot_replacement.py](backend/shot_replacement.py) |
-| 可复现 manifest | [backend/provenance.py](backend/provenance.py) |
-| readiness 与生产预检 | [backend/readiness.py](backend/readiness.py)、[backend/preflight.py](backend/preflight.py) |
-| 当前前端页面、状态和交互 | [frontend/src/App.tsx](frontend/src/App.tsx) |
-| 前端 API、CSRF、超时和响应校验 | [frontend/src/api.ts](frontend/src/api.ts) |
-| 前端类型 | [frontend/src/types.ts](frontend/src/types.ts) |
-| 当前视觉 Token | [frontend/tailwind.config.ts](frontend/tailwind.config.ts)、[frontend/src/styles.css](frontend/src/styles.css) |
-| 产品说明与运维边界 | [README.md](README.md)、[deploy/README.md](deploy/README.md) |
-| 真实产品复测 | [LOCAL_PRODUCT_FUNCTIONAL_AUDIT_20260905.md](LOCAL_PRODUCT_FUNCTIONAL_AUDIT_20260905.md)、[LOCAL_PRODUCT_LIVE_RETEST_20260905.md](LOCAL_PRODUCT_LIVE_RETEST_20260905.md) |
+| HTTP API、安全中间件、会话、限流、静态前端 | [backend/main.py](../../../backend/main.py) |
+| 匿名签名会话与 CSRF | [backend/anonymous_access.py](../../../backend/anonymous_access.py) |
+| 配置、运行限制与生产约束 | [backend/config.py](../../../backend/config.py) |
+| 任务状态、队列、轮询响应、TTL、恢复、revision | [backend/task_manager.py](../../../backend/task_manager.py) |
+| 数据模型与公开响应 | [backend/models.py](../../../backend/models.py) |
+| 上传保存与原子 JSON | [backend/storage.py](../../../backend/storage.py) |
+| 磁盘预留和容量 | [backend/operations.py](../../../backend/operations.py) |
+| 十阶段总编排 | [backend/pipeline.py](../../../backend/pipeline.py) |
+| 媒体规格化与镜头切分 | [backend/media.py](../../../backend/media.py) |
+| ASR、VAD、缓存和同期声匹配 | [backend/asr_pipeline.py](../../../backend/asr_pipeline.py) |
+| 多帧画面理解和 ASR 融合 | [backend/vision_pipeline.py](../../../backend/vision_pipeline.py) |
+| 稿件保真断句 | [backend/script_segmentation.py](../../../backend/script_segmentation.py) |
+| 视觉节拍、召回、精排与唯一分配 | [backend/matching.py](../../../backend/matching.py)、[backend/assignment.py](../../../backend/assignment.py) |
+| 数字读音 | [backend/pronunciation.py](../../../backend/pronunciation.py) |
+| TTS、同期声提取与旁白时间轴 | [backend/tts_pipeline.py](../../../backend/tts_pipeline.py) |
+| 固定字幕模板 | [backend/subtitles.py](../../../backend/subtitles.py) |
+| EDL、片段、混音和成片 | [backend/rendering.py](../../../backend/rendering.py) |
+| 音乐 | [backend/music.py](../../../backend/music.py) |
+| 新闻图文与 AI 披露叠层 | [backend/graphics.py](../../../backend/graphics.py) |
+| 生成式补拍 | [backend/providers/generative.py](../../../backend/providers/generative.py) |
+| QC | [backend/quality.py](../../../backend/quality.py) |
+| 逐句报告 | [backend/reporting.py](../../../backend/reporting.py) |
+| 删句重剪 | [backend/remix.py](../../../backend/remix.py) |
+| 文字换镜 | [backend/shot_replacement.py](../../../backend/shot_replacement.py) |
+| 可复现 manifest | [backend/provenance.py](../../../backend/provenance.py) |
+| readiness 与生产预检 | [backend/readiness.py](../../../backend/readiness.py)、[backend/preflight.py](../../../backend/preflight.py) |
+| 当前前端页面、状态和交互 | [frontend/src/App.tsx](../../../frontend/src/App.tsx) |
+| 前端 API、CSRF、超时和响应校验 | [frontend/src/api.ts](../../../frontend/src/api.ts) |
+| 前端类型 | [frontend/src/types.ts](../../../frontend/src/types.ts) |
+| 当前视觉 Token | [frontend/tailwind.config.ts](../../../frontend/tailwind.config.ts)、[frontend/src/styles.css](../../../frontend/src/styles.css) |
+| 产品说明与运维边界 | [README.md](../../../README.md)、[deploy/README.md](../../../deploy/README.md) |
+| 真实产品复测 | [LOCAL_PRODUCT_FUNCTIONAL_AUDIT_20260905.md](../audits/LOCAL_PRODUCT_FUNCTIONAL_AUDIT_20260905.md)、[LOCAL_PRODUCT_LIVE_RETEST_20260905.md](../audits/LOCAL_PRODUCT_LIVE_RETEST_20260905.md) |
 | 通用剪辑器需求差距 | [REQUIREMENTS_GAP_ANALYSIS.md](REQUIREMENTS_GAP_ANALYSIS.md) |
 
 ---
@@ -1699,56 +1699,56 @@ UI 只能把这些数据用于解释“通常需要数分钟、修订通常更�
 
 ### 后端入口与基础设施
 
-- [backend/main.py](backend/main.py)：FastAPI 生命周期、中间件、安全头、CORS/Host、会话、限流、所有公开 API、静态前端挂载。
-- [backend/config.py](backend/config.py)：全部运行配置、Provider 路由、资源边界和生产强校验。
-- [backend/models.py](backend/models.py)：任务、镜头、句子、节拍、匹配、音频时间、EDL、披露、报告与 QC 模型。
-- [backend/task_manager.py](backend/task_manager.py)：进程内排队、并发、状态、耗时、持久化、恢复、TTL、排空、取消和 revision。
-- [backend/storage.py](backend/storage.py)：上传白名单、流式落盘、日志脱敏、原子 JSON。
-- [backend/operations.py](backend/operations.py)：上传并发槽、磁盘安全余量和按请求体倍数预留。
-- [backend/anonymous_access.py](backend/anonymous_access.py)：匿名 Cookie、HMAC 签名、过期和 CSRF。
-- [backend/instance_lock.py](backend/instance_lock.py)：生产单实例排他锁。
-- [backend/readiness.py](backend/readiness.py)：前端制品、字体、磁盘、媒体能力、Provider 与动态就绪检查。
-- [backend/preflight.py](backend/preflight.py)：命令行预检入口。
+- [backend/main.py](../../../backend/main.py)：FastAPI 生命周期、中间件、安全头、CORS/Host、会话、限流、所有公开 API、静态前端挂载。
+- [backend/config.py](../../../backend/config.py)：全部运行配置、Provider 路由、资源边界和生产强校验。
+- [backend/models.py](../../../backend/models.py)：任务、镜头、句子、节拍、匹配、音频时间、EDL、披露、报告与 QC 模型。
+- [backend/task_manager.py](../../../backend/task_manager.py)：进程内排队、并发、状态、耗时、持久化、恢复、TTL、排空、取消和 revision。
+- [backend/storage.py](../../../backend/storage.py)：上传白名单、流式落盘、日志脱敏、原子 JSON。
+- [backend/operations.py](../../../backend/operations.py)：上传并发槽、磁盘安全余量和按请求体倍数预留。
+- [backend/anonymous_access.py](../../../backend/anonymous_access.py)：匿名 Cookie、HMAC 签名、过期和 CSRF。
+- [backend/instance_lock.py](../../../backend/instance_lock.py)：生产单实例排他锁。
+- [backend/readiness.py](../../../backend/readiness.py)：前端制品、字体、磁盘、媒体能力、Provider 与动态就绪检查。
+- [backend/preflight.py](../../../backend/preflight.py)：命令行预检入口。
 
 ### 内容分析与剪辑流水线
 
-- [backend/pipeline.py](backend/pipeline.py)：初版、重剪、换镜三条编排路径及偏好注入。
-- [backend/media.py](backend/media.py)：ffprobe、1080p30 规格化、镜头检测、命令日志、超时和进程终止。
-- [backend/asr_pipeline.py](backend/asr_pipeline.py)：音轨抽取、VAD、ASR 缓存、稀疏重试、同期声匹配。
-- [backend/vision_pipeline.py](backend/vision_pipeline.py)：缩略图、五帧联系表、Vision 并发、ASR 时间证据融合。
-- [backend/script_segmentation.py](backend/script_segmentation.py)：断句对齐、原文保真、CRLF 映射和危险断点合并。
-- [backend/matching.py](backend/matching.py)：标题/句子/节拍解析、召回、精排、实体证据、多样性、唯一分配。
-- [backend/assignment.py](backend/assignment.py)：容量约束最小费用流分配。
-- [backend/pronunciation.py](backend/pronunciation.py)：数字表达式提取、LLM 读音结果验证与 TTS 文本生成。
-- [backend/tts_pipeline.py](backend/tts_pipeline.py)：连续合成、同期声提取、音频切分、语速、响度、时间轴和旁白拼接。
-- [backend/subtitles.py](backend/subtitles.py)：固定字幕模板、中文规范化、保护性排版、词时对齐和防篡改清单。
-- [backend/rendering.py](backend/rendering.py)：事实叠层镜头、EDL、定格、片段渲染、音乐混音、字幕/图形烧录与成片校验。
-- [backend/music.py](backend/music.py)：本地授权音乐库、mood 选择和音乐床准备。
-- [backend/graphics.py](backend/graphics.py)：新闻主题条、片尾信息板和 AI 生成披露 ASS。
-- [backend/quality.py](backend/quality.py)：视觉、音频、字幕关联和生成披露质量门禁。
-- [backend/reporting.py](backend/reporting.py)：把匹配、时间轴和 QC 汇总为公开逐句报告。
-- [backend/remix.py](backend/remix.py)：删句重剪验证、EDL 重排、披露过滤、原子提交与回滚。
-- [backend/shot_replacement.py](backend/shot_replacement.py)：当前 revision 换镜上下文、占用排除、历史与原子提交。
-- [backend/provenance.py](backend/provenance.py)：非秘密设置、偏好、Prompt 和源文件 hash 的可复现清单。
+- [backend/pipeline.py](../../../backend/pipeline.py)：初版、重剪、换镜三条编排路径及偏好注入。
+- [backend/media.py](../../../backend/media.py)：ffprobe、1080p30 规格化、镜头检测、命令日志、超时和进程终止。
+- [backend/asr_pipeline.py](../../../backend/asr_pipeline.py)：音轨抽取、VAD、ASR 缓存、稀疏重试、同期声匹配。
+- [backend/vision_pipeline.py](../../../backend/vision_pipeline.py)：缩略图、五帧联系表、Vision 并发、ASR 时间证据融合。
+- [backend/script_segmentation.py](../../../backend/script_segmentation.py)：断句对齐、原文保真、CRLF 映射和危险断点合并。
+- [backend/matching.py](../../../backend/matching.py)：标题/句子/节拍解析、召回、精排、实体证据、多样性、唯一分配。
+- [backend/assignment.py](../../../backend/assignment.py)：容量约束最小费用流分配。
+- [backend/pronunciation.py](../../../backend/pronunciation.py)：数字表达式提取、LLM 读音结果验证与 TTS 文本生成。
+- [backend/tts_pipeline.py](../../../backend/tts_pipeline.py)：连续合成、同期声提取、音频切分、语速、响度、时间轴和旁白拼接。
+- [backend/subtitles.py](../../../backend/subtitles.py)：固定字幕模板、中文规范化、保护性排版、词时对齐和防篡改清单。
+- [backend/rendering.py](../../../backend/rendering.py)：事实叠层镜头、EDL、定格、片段渲染、音乐混音、字幕/图形烧录与成片校验。
+- [backend/music.py](../../../backend/music.py)：本地授权音乐库、mood 选择和音乐床准备。
+- [backend/graphics.py](../../../backend/graphics.py)：新闻主题条、片尾信息板和 AI 生成披露 ASS。
+- [backend/quality.py](../../../backend/quality.py)：视觉、音频、字幕关联和生成披露质量门禁。
+- [backend/reporting.py](../../../backend/reporting.py)：把匹配、时间轴和 QC 汇总为公开逐句报告。
+- [backend/remix.py](../../../backend/remix.py)：删句重剪验证、EDL 重排、披露过滤、原子提交与回滚。
+- [backend/shot_replacement.py](../../../backend/shot_replacement.py)：当前 revision 换镜上下文、占用排除、历史与原子提交。
+- [backend/provenance.py](../../../backend/provenance.py)：非秘密设置、偏好、Prompt 和源文件 hash 的可复现清单。
 
 ### Provider 适配层
 
-- [backend/providers/vision.py](backend/providers/vision.py)：Kimi、火山 Responses 与 OpenAI-compatible 视觉适配。
-- [backend/providers/embedding.py](backend/providers/embedding.py)：文本/视频多模态 Embedding、候选视频代理与缓存。
-- [backend/providers/embedding_concurrency.py](backend/providers/embedding_concurrency.py)：账号级公平并发、429 冷却、退避和指标。
-- [backend/providers/asr.py](backend/providers/asr.py)：Seed ASR WebSocket 协议与转写模型。
-- [backend/providers/tts.py](backend/providers/tts.py)：Seed TTS、Edge TTS、OpenAI TTS 与词时间能力。
-- [backend/providers/llm.py](backend/providers/llm.py)：Kimi/兼容 LLM 的断句、精排、读音和音乐分类。
-- [backend/providers/generative.py](backend/providers/generative.py)：Seedance/Seedream、轮询、安全下载、标准化和披露。
+- [backend/providers/vision.py](../../../backend/providers/vision.py)：Kimi、火山 Responses 与 OpenAI-compatible 视觉适配。
+- [backend/providers/embedding.py](../../../backend/providers/embedding.py)：文本/视频多模态 Embedding、候选视频代理与缓存。
+- [backend/providers/embedding_concurrency.py](../../../backend/providers/embedding_concurrency.py)：账号级公平并发、429 冷却、退避和指标。
+- [backend/providers/asr.py](../../../backend/providers/asr.py)：Seed ASR WebSocket 协议与转写模型。
+- [backend/providers/tts.py](../../../backend/providers/tts.py)：Seed TTS、Edge TTS、OpenAI TTS 与词时间能力。
+- [backend/providers/llm.py](../../../backend/providers/llm.py)：Kimi/兼容 LLM 的断句、精排、读音和音乐分类。
+- [backend/providers/generative.py](../../../backend/providers/generative.py)：Seedance/Seedream、轮询、安全下载、标准化和披露。
 
 ### 前端
 
-- [frontend/src/App.tsx](frontend/src/App.tsx)：全部页面状态、历史、表单、轮询、处理、结果、重剪与换镜交互。
-- [frontend/src/api.ts](frontend/src/api.ts)：API 基址、超时、错误解析、匿名会话、CSRF 自动刷新、Token 和 URL 构建。
-- [frontend/src/types.ts](frontend/src/types.ts)：公开响应和偏好类型。
-- [frontend/src/styles.css](frontend/src/styles.css)：全局基础样式。
-- [frontend/tailwind.config.ts](frontend/tailwind.config.ts)：颜色、字体和阴影 Token。
-- [frontend/index.html](frontend/index.html)：中文文档入口与应用挂载点。
+- [frontend/src/App.tsx](../../../frontend/src/App.tsx)：全部页面状态、历史、表单、轮询、处理、结果、重剪与换镜交互。
+- [frontend/src/api.ts](../../../frontend/src/api.ts)：API 基址、超时、错误解析、匿名会话、CSRF 自动刷新、Token 和 URL 构建。
+- [frontend/src/types.ts](../../../frontend/src/types.ts)：公开响应和偏好类型。
+- [frontend/src/styles.css](../../../frontend/src/styles.css)：全局基础样式。
+- [frontend/tailwind.config.ts](../../../frontend/tailwind.config.ts)：颜色、字体和阴影 Token。
+- [frontend/index.html](../../../frontend/index.html)：中文文档入口与应用挂载点。
 
 ---
 

@@ -2,8 +2,8 @@
 
 日期：2026-08-04  
 最新成片任务：`8f1941a88a8d4f1d97266838a189e4ec`  
-最新成片：[data/tasks/8f1941a88a8d4f1d97266838a189e4ec/final.mp4](data/tasks/8f1941a88a8d4f1d97266838a189e4ec/final.mp4)  
-参考片：[eval_sample/评测样例1/新闻视频稿件样例.mp4](eval_sample/评测样例1/新闻视频稿件样例.mp4)
+最新成片：[data/tasks/8f1941a88a8d4f1d97266838a189e4ec/final.mp4](../../../data/tasks/8f1941a88a8d4f1d97266838a189e4ec/final.mp4)  
+参考片：[eval_sample/评测样例1/新闻视频稿件样例.mp4](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/%E6%96%B0%E9%97%BB%E8%A7%86%E9%A2%91%E7%A8%BF%E4%BB%B6%E6%A0%B7%E4%BE%8B.mp4)
 
 ## 1. 审计结论
 
@@ -52,23 +52,23 @@
 
 全部逐帧明细位于：
 
-- [逐帧汇总 JSON](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/frame_level_summary.json)
-- [最新片每帧指标](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/current_frame_metrics.csv)
-- [参考片每帧指标](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/reference_frame_metrics.csv)
-- [最新片相邻帧指标](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/current_frame_pair_metrics.csv)
-- [参考片相邻帧指标](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/reference_frame_pair_metrics.csv)
-- [最新片全部切点](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/current_boundaries.csv)
-- [参考片全部切点](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/reference_boundaries.csv)
-- [最终包装逐帧覆盖](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/current_overlay_frame_metrics.csv)
-- [切点、顺序、字幕同步和音频派生指标](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/derived_findings.json)
+- [逐帧汇总 JSON](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/frame_level_summary.json)
+- [最新片每帧指标](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/current_frame_metrics.csv)
+- [参考片每帧指标](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/reference_frame_metrics.csv)
+- [最新片相邻帧指标](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/current_frame_pair_metrics.csv)
+- [参考片相邻帧指标](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/reference_frame_pair_metrics.csv)
+- [最新片全部切点](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/current_boundaries.csv)
+- [参考片全部切点](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/reference_boundaries.csv)
+- [最终包装逐帧覆盖](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/current_overlay_frame_metrics.csv)
+- [切点、顺序、字幕同步和音频派生指标](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/derived_findings.json)
 
 可视化复核：
 
-![统一进度逐帧对照](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/timeline_all_frame_alignment_contact_sheet.jpg)
+![统一进度逐帧对照](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/timeline_all_frame_alignment_contact_sheet.jpg)
 
-![最新片全部 16 个切点](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/current_all_cut_boundaries_contact_sheet.jpg)
+![最新片全部 16 个切点](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/current_all_cut_boundaries_contact_sheet.jpg)
 
-![问题证据帧](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/problem_evidence_contact_sheet.jpg)
+![问题证据帧](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/problem_evidence_contact_sheet.jpg)
 
 说明：参考片是专业编辑基准，但不是唯一正确剪法；因此报告把“与参考不同”与“客观缺陷”分开判断。像字幕破坏专名、克隆补帧、门禁放过错误属于客观缺陷；采用不同但语义成立的镜头只属于创作差异。
 
@@ -143,8 +143,8 @@
 
 代码根因：
 
-- [克隆补帧滤镜](backend/rendering.py#L68-L76)
-- [单镜头填充与冻结](backend/rendering.py#L565-L620)
+- [克隆补帧滤镜](../../../backend/rendering.py#L68-L76)
+- [单镜头填充与冻结](../../../backend/rendering.py#L565-L620)
 
 ### 4.3 相邻镜头亮度和运动不连续
 
@@ -179,8 +179,8 @@
 
 代码根因：
 
-- [Ken Burns 以片段总帧数归一化](backend/rendering.py#L57-L65)
-- [所有启用 motion 的视频片段统一应用](backend/rendering.py#L68-L86)
+- [Ken Burns 以片段总帧数归一化](../../../backend/rendering.py#L57-L65)
+- [所有启用 motion 的视频片段统一应用](../../../backend/rendering.py#L68-L86)
 
 ### 4.5 “转场”选项没有镜头间转场
 
@@ -193,7 +193,7 @@
 
 新闻片采用硬切本身没有错误，参考片同样主要依赖硬切。真正的问题是当前没有先优化硬切两侧的景别、亮度、主体位置和运动方向，却把“首尾淡入淡出”暴露为用户的“转场”能力，存在产品语义偏差。
 
-相关实现：[FinishOptions 只含首尾 fade](backend/rendering.py#L97-L109)、[最终 fade 构建](backend/rendering.py#L1101-L1113)。
+相关实现：[FinishOptions 只含首尾 fade](../../../backend/rendering.py#L97-L109)、[最终 fade 构建](../../../backend/rendering.py#L1101-L1113)。
 
 ## 5. 画面语义和整片结构差异
 
@@ -260,7 +260,7 @@
 
 shot 20 被句子 1 占用，shot 8 被句子 10 占用，于是开场退到参考片的结尾素材。当前严格“一镜一次”约束保证去重，却没有同时保证开场与结尾角色。
 
-当前全局容量求解只含“item → resource”的单点 utility，不含相邻镜头 transition cost，见 [容量分配实现](backend/assignment.py#L24-L99)。严格全局唯一分配见 [matching.py](backend/matching.py#L1526-L1569)。
+当前全局容量求解只含“item → resource”的单点 utility，不含相邻镜头 transition cost，见 [容量分配实现](../../../backend/assignment.py#L24-L99)。严格全局唯一分配见 [matching.py](../../../backend/matching.py#L1526-L1569)。
 
 优化方向不是取消唯一性，而是把下面这些项目放入全片目标：
 
@@ -293,7 +293,7 @@ shot 20 被句子 1 占用，shot 8 被句子 10 占用，于是开场退到参�
 
 结尾又同时出现顶部主题栏、中央结束卡和底部日期字幕，信息层级拥挤。
 
-最新图文包装清单显示顶部主题栏从 0 到 59.77 秒全程存在，见 [graphics.ass](data/tasks/8f1941a88a8d4f1d97266838a189e4ec/graphics.ass)。
+最新图文包装清单显示顶部主题栏从 0 到 59.77 秒全程存在，见 [graphics.ass](../../../data/tasks/8f1941a88a8d4f1d97266838a189e4ec/graphics.ass)。
 
 ### 6.2 自动检测到的错误字幕边界
 
@@ -318,11 +318,11 @@ shot 20 被句子 1 占用，shot 8 被句子 10 占用，于是开场退到参�
 
 `script_segmented.txt` 中地址、日期和活动名仍在同一个播音单元，说明阶段 5 的模型分句没有犯这些错误。错误发生在字幕生成阶段：
 
-- 固定 `MAX_SUBTITLE_CHARS = 15`，见 [subtitles.py](backend/subtitles.py#L24)；
-- 每个播音单元再次调用 `split_subtitle_text()`，见 [subtitles.py](backend/subtitles.py#L289-L301)；
-- Jieba token + 动态规划只优化行长、短行惩罚和通用标点/词边界强度，见 [subtitles.py](backend/subtitles.py#L609-L760)；
+- 固定 `MAX_SUBTITLE_CHARS = 15`，见 [subtitles.py](../../../backend/subtitles.py#L24)；
+- 每个播音单元再次调用 `split_subtitle_text()`，见 [subtitles.py](../../../backend/subtitles.py#L289-L301)；
+- Jieba token + 动态规划只优化行长、短行惩罚和通用标点/词边界强度，见 [subtitles.py](../../../backend/subtitles.py#L609-L760)；
 - 没有地址、日期、数字单位、引号内活动名、定中结构、动宾结构的不可拆分约束；
-- 时间分配按 chunk/word 的累计“阅读权重”映射，不是按字幕字符在 TTS 词序列中的精确位置对齐，见 [subtitles.py](backend/subtitles.py#L512-L562)。
+- 时间分配按 chunk/word 的累计“阅读权重”映射，不是按字幕字符在 TTS 词序列中的精确位置对齐，见 [subtitles.py](../../../backend/subtitles.py#L512-L562)。
 
 因此上游分句模型即使做对，字幕模块仍会独立把语义单元拆坏。
 
@@ -330,7 +330,7 @@ shot 20 被句子 1 占用，shot 8 被句子 10 占用，于是开场退到参�
 
 句子 4、10、11、12 因为 `overlay_kind` 是 organization/abstract，被改成 `NewsSentence2024` 固定整句样式；其他正文使用短句滚动样式。也就是说，字幕是否固定、字号多大、位置多高，不是由阅读长度和语言结构决定，而是由镜头是否属于“语境叠层”决定。
 
-相关调用：[pipeline.py](backend/pipeline.py#L984-L992)。
+相关调用：[pipeline.py](../../../backend/pipeline.py#L984-L992)。
 
 这造成同一篇新闻中字幕行为突然变化，是职责耦合错误：
 
@@ -351,9 +351,9 @@ shot 20 被句子 1 占用，shot 8 被句子 10 占用，于是开场退到参�
 
 相关实现：
 
-- [长句节拍 densify](backend/matching.py#L292-L325)
-- [视觉节拍提取](backend/matching.py#L328-L371)
-- [多节拍 EDL](backend/rendering.py#L622-L669)
+- [长句节拍 densify](../../../backend/matching.py#L292-L325)
+- [视觉节拍提取](../../../backend/matching.py#L328-L371)
+- [多节拍 EDL](../../../backend/rendering.py#L622-L669)
 
 正确策略应当是：
 
@@ -383,9 +383,9 @@ shot 20 被句子 1 占用，shot 8 被句子 10 占用，于是开场退到参�
 - overlay assignment utility 仅 0.231；
 - 仍作为最终收尾发布。
 
-语境叠层分配见 [overlay_shot_assignment.json](data/tasks/8f1941a88a8d4f1d97266838a189e4ec/overlay_shot_assignment.json)。
+语境叠层分配见 [overlay_shot_assignment.json](../../../data/tasks/8f1941a88a8d4f1d97266838a189e4ec/overlay_shot_assignment.json)。
 
-当前默认 `QUALITY_GATE_MODE=warn`，见 [config.py](backend/config.py#L94)；`enforce_quality_gate()` 只在 block 模式抛错，见 [quality.py](backend/quality.py#L429-L437)。因此“有阻断项但任务完成”是配置允许的预期行为，却不适合专业成片自动交付。
+当前默认 `QUALITY_GATE_MODE=warn`，见 [config.py](../../../backend/config.py#L94)；`enforce_quality_gate()` 只在 block 模式抛错，见 [quality.py](../../../backend/quality.py#L429-L437)。因此“有阻断项但任务完成”是配置允许的预期行为，却不适合专业成片自动交付。
 
 ## 9. 播音节奏仍会反向影响画面节奏
 
@@ -411,11 +411,11 @@ shot 20 被句子 1 占用，shot 8 被句子 10 占用，于是开场退到参�
 - 这些未追踪文件实际影响图文、音乐、生成式补图和清单自身；
 - 当前 `provenance.py` 的实现版本常量与任务清单版本也不一致。
 
-明细：[provenance_audit.json](eval_sample/评测样例1/evaluation_work/latest_frame_audit_20260804/provenance_audit.json)。
+明细：[provenance_audit.json](../../../eval_sample/%E8%AF%84%E6%B5%8B%E6%A0%B7%E4%BE%8B1/evaluation_work/latest_frame_audit_20260804/provenance_audit.json)。
 
 这意味着：虽然本报告对 `matching.py`、`tts_pipeline.py`、`subtitles.py`、`rendering.py` 的根因定位可靠——这些文件哈希与任务一致——但仅凭当前 `pipeline.py` 无法精确重放该任务的全部增强调用。
 
-源清单生成目前采用固定文件列表，见 [provenance.py](backend/provenance.py#L32-L70)。应改为：
+源清单生成目前采用固定文件列表，见 [provenance.py](../../../backend/provenance.py#L32-L70)。应改为：
 
 - 对实际 import/调用图中的全部自有模块做递归清单；
 - 包含前端构建哈希、音乐素材清单、字体、图文模板；

@@ -95,6 +95,6 @@ description: 金话筒中文界面文案规范（UX copy / 文案 / 术语 / 提
 ## 来源
 - [docs/UI_SIMPLIFICATION_20261014.md](../../../docs/UI_SIMPLIFICATION_20261014.md)"改动范围"和"明确边界"两节
 - [docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md)
-- [PRODUCT_FUNCTION_UI_AUDIT_20261015.md](../../../PRODUCT_FUNCTION_UI_AUDIT_20261015.md)
+- [PRODUCT_FUNCTION_UI_AUDIT_20261015.md](../../../docs/reports/audits/PRODUCT_FUNCTION_UI_AUDIT_20261015.md)
 - `frontend/src` 现有文案（2026-10-21 按提交 af1e4e7 统计）
 - 排版参考：sparanoid/chinese-copywriting-guidelines（MIT）https://github.com/sparanoid/chinese-copywriting-guidelines ；Ant Design 文案规范 https://ant.design/docs/spec/copywriting-cn
