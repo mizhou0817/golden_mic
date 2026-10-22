@@ -38,3 +38,9 @@
 | [PROJECT_FUNCTION_INVENTORY_20261019.md](product/PROJECT_FUNCTION_INVENTORY_20261019.md) | 2026-10-19 | 当前 V2 功能盘点（源码只读核查） |
 | [AI_VIDEO_EDITOR_MARKET_RESEARCH_20261019.md](product/AI_VIDEO_EDITOR_MARKET_RESEARCH_20261019.md) | 2026-10-19 | 22 个 AI 视频剪辑产品的市场调研 |
 | [AI_VIDEO_EDITOR_COMPARISON_20261019.md](product/AI_VIDEO_EDITOR_COMPARISON_20261019.md) | 2026-10-19 | 与金话筒的功能对比和产品建议 |
+
+## tooling/ · 开发工具与 Agent Skills
+
+| 报告 | 日期 | 内容 |
+|---|---|---|
+| [AGENT_SKILLS_SELECTION_20261021.md](tooling/AGENT_SKILLS_SELECTION_20261021.md) | 2026-10-21 | Agent Skills 选型与安全审查：候选来源、审查结论、安装方式。现行清单见 [AGENT_SKILLS.md](../AGENT_SKILLS.md) |

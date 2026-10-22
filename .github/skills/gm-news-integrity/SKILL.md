@@ -74,7 +74,7 @@ B 模式稿件里原话的写法：`同期 姓名（身份）：原话`（[USER_
 
 另外，`quality.py` 和 `publication.py` 里还会产生约 22 个码，例如响度、真峰值、镜头复用、`GENERATED_MEDIA_DISCLOSURE_MISSING`、`PUBLICATION_QC_*`。前端不按检查码写死逻辑，统一显示服务端返回的 `message`；唯一的特例是 `workbenchApi.ts` 的 `canConfirmCheck`。
 
-新增或修改检查码时要同步改哪些文件，见 [gm-pipeline-map 的改动清单](../gm-pipeline-map/references/change-checklists.md) 第 1 节。总数 17 写死在测试里。
+新增或修改检查码时要同步改哪些文件，见 [golden-mic-backend-map 的改动清单](../golden-mic-backend-map/references/change-checklists.md) 第 1 节。总数 17 写死在测试里。
 
 ## 禁止的捷径
 - 为了通过检查，把错误降成警告、扩大 `acknowledgeable`、放宽阈值，或关闭 QC、发布门禁。

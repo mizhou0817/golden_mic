@@ -13,8 +13,11 @@ Errors (exit status 1):
   * description shorter than 1 or longer than 1024 characters
   * user-invocable / disable-model-invocation that are not true/false,
     compatibility outside 1-500 characters, metadata that is not a mapping
-  * relative Markdown links in project skills (gm-*) that do not resolve
-    (exact case), or any link that leaves the repository root
+  * allowed-tools that is not a space-separated string, or that pre-approves
+    a shell or terminal tool (Bash, shell, PowerShell, runInTerminal, ...):
+    project rule, every terminal command needs the user's approval
+  * relative Markdown links in project skills (gm-*, golden-mic-*) that do not
+    resolve (exact case), or any link that leaves the repository root
   * bidirectional control characters in any text file
 Warnings: body over 500 lines, zero-width characters, binary files, unknown
 frontmatter keys, context other than inline/fork, folders without SKILL.md,
@@ -38,7 +41,9 @@ from pathlib import Path
 from urllib.parse import unquote
 
 SKILL_ROOTS = (".github/skills", ".agents/skills", ".claude/skills")
-PROJECT_PREFIX = "gm-"
+PROJECT_PREFIXES = ("gm-", "golden-mic-")
+# Tool names (lowercased, non-alphanumerics removed) that run arbitrary commands.
+SHELL_TOOL_RE = re.compile(r"bash|shell|terminal|powershell|pwsh|cmd|command|exec|^z?sh$")
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 KEY_RE = re.compile(r"^([A-Za-z0-9_][A-Za-z0-9_.-]*)[ \t]*:(?:[ \t]+(.*))?$")
 BLOCK_HEADER_RE = re.compile(r"^([|>])([+-]?)([1-9]?)([+-]?)[ \t]*(#.*)?$")
@@ -363,6 +368,17 @@ def check_skill(folder: Path, repo: Path, report: Report) -> Skill | None:
             report.error(where, f"compatibility must be a string of 1-{MAX_COMPATIBILITY} characters")
     if "metadata" in fields and not isinstance(fields["metadata"], Collection):
         report.error(where, "metadata must be a mapping")
+    if "allowed-tools" in fields:
+        tools = fields["allowed-tools"]
+        if not isinstance(tools, str):
+            report.error(where, "allowed-tools must be a space-separated string")
+        else:
+            # Split on spaces outside parentheses: "Bash(npx playwright:*)" is one tool.
+            for token in re.findall(r"[^\s(]+(?:\([^)]*\))?", tools):
+                base = re.sub(r"[^a-z0-9]", "", token.split("(", 1)[0].lower())
+                if SHELL_TOOL_RE.search(base):
+                    report.error(where, f"allowed-tools pre-approves a shell or terminal tool "
+                                        f"{token!r}; terminal commands need per-command approval")
     if "context" in fields and fields["context"] not in ("inline", "fork"):
         report.warn(where, "context should be 'inline' or 'fork'")
     for key in sorted(set(fields) - KNOWN_KEYS):
@@ -373,7 +389,7 @@ def check_skill(folder: Path, repo: Path, report: Report) -> Skill | None:
         body.pop()
     if len(body) > MAX_BODY_LINES:
         report.warn(where, f"body has {len(body)} lines (recommended <= {MAX_BODY_LINES})")
-    strict = folder.name.startswith(PROJECT_PREFIX)
+    strict = folder.name.startswith(PROJECT_PREFIXES)
     check_links(skill_file, body, close + 1, repo, report, strict)
     scan_files(folder, repo, report, strict)
 

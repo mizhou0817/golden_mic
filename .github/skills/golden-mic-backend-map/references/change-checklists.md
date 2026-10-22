@@ -1,6 +1,6 @@
 # 改动清单：检查码、AI 服务商、导出格式
 
-本文依据提交 af1e4e7 的代码整理（2026-10-21）。以函数名为准，行号会变。改完按 gm-verify 验证。
+本文依据提交 af1e4e7 的代码整理（2026-10-21）。以函数名为准，行号会变。改完按 golden-mic-verify 验证；涉及接口和配置时，另按 golden-mic-api-change 的同步清单检查。
 
 ## 1. 新增发布检查码
 
@@ -41,7 +41,15 @@
    - 把服务地址加进生产环境的 `provider_urls` 检查。
    - 把凭证加进 `sensitive_values`。
 3. **凭证命名**：`provenance.py` 只会剔除名字里含 `api_key`、`api_keys`、`access_token`、`app_key`、`secret` 的设置。其他命名的凭证会写进 `pipeline_manifest.json`，造成泄露。新源文件和提示词也要加进 provenance 的散列清单。
-4. **缓存键**：新增的 TTS 设置必须进配音签名（`mode_pipeline.py` 里组装 voice signature 的地方），ASR 上传缓存的作用域在 `uploads.py`。`_stage_signature` 具体包含哪些字段：TODO(待确认)。
+4. **缓存键**：
+   - 新增的 TTS 设置必须加进配音签名（`mode_pipeline.py` 里组装 voice signature 的地方）。ASR 上传缓存的作用域在 `uploads.py`。
+   - `mode_pipeline._stage_signature` 按**设置名前缀**决定哪些设置参与各阶段回执的签名。签名里存的是散列，不存设置值。签名还包含各阶段源文件的 sha 和输入。各阶段的前缀：
+     - 阶段 2：`asr_`、`sync_sound_`、`volcengine_asr_`、`local_speech_`、`local_speaker_`
+     - 阶段 3：`scene_`、`shot_`
+     - 阶段 4：`vision_`、`kimi_`、`volcengine_vision_`
+     - 阶段 6：`retrieval_`、`video_embedding_`、`entity_`、`llm_`、`embed_`、`kimi_`、`volcengine_embedding_`、`generative_`
+     - 阶段 7：`tts_`、`volcengine_tts_`、`volcengine_voice_`、`llm_`、`kimi_`
+   - **新设置要用对应阶段的前缀命名**，否则改了这个设置，旧回执仍会被复用。新源文件要加进该函数的 `stage_sources`。
 5. 启动校验：`pipeline._validate_pipeline_configuration`，由 `readiness.py` 调用。
 6. 调用点：`mode_pipeline.py`、`uploads.py`、`workbench.py`、`main.py`、`media_input.py` 里创建服务商的地方。用 `grep -n "create_.*_provider\|from_settings"` 找全。
 7. 配置模板：`.env.example` 和 `deploy/golden-mic.env.production.example` 都要更新，由 `tests/test_v2_config_template.py` 约束（只改字段名和说明，不写真实值）。CI 的占位值在 `.github/workflows/linux-ci.yml`，改 CI 只提建议，不直接改。
@@ -62,4 +70,4 @@
 3. 旧路由：`main.py` 的旧 `/export` 走 Studio 的 `ExportOptions`，披露拒绝逻辑在 `studio.py`。
 4. 前端：`frontend/src/lib/workbenchApi.ts` 的格式类型和请求；`ResultWorkbench.tsx` 的导出选项和说明文字。含 AI 画面的作品，界面目前仍显示 MP3/SRT，由服务端用 422 拒绝。
 5. 测试：test_v2_exports、test_mode_exports、test_v2_export_download_auth、test_v2_export_unresolved；前端 `scripts/test-v2-result.mjs`。
-6. 文档：`docs/USER_GUIDE.md` 的导出章节、`docs/THREE_MODE_API_20260928.md`。
+6. 文档：`docs/USER_GUIDE.md` 的导出章节；接口变化写进 `docs/README.md` 或不带日期的 `*_API.md`。`docs/THREE_MODE_API_20260928.md` 带日期，是当时的快照，不要改写（`docs/README.md` 第 5 行）。
