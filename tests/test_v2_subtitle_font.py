@@ -42,6 +42,8 @@ class SubtitleFontTests(unittest.TestCase):
         readiness.validate_font_asset()
 
     def test_libass_renders_chinese_with_the_bundled_faces_only(self):
+        # The same escaping the renderer applies: the colon after a Windows drive letter ends the option otherwise.
+        from backend.rendering import _escape_filter_path
         ffmpeg = shutil.which("ffmpeg")
         self.assertIsNotNone(ffmpeg, "FFmpeg is required for the subtitle renderer check")
         with tempfile.TemporaryDirectory(prefix="gm-subtitle-font-") as directory:
@@ -49,7 +51,7 @@ class SubtitleFontTests(unittest.TestCase):
             ass.write_text(ASS.format(font=SUBTITLE_FONT_NAME), encoding="utf-8")
             result = subprocess.run(
                 [ffmpeg, "-hide_banner", "-nostdin", "-v", "verbose", "-f", "lavfi", "-i", "color=c=black:s=320x180:d=1",
-                 "-vf", f"ass=filename={ass.as_posix()}:fontsdir={FONTS.as_posix()}", "-frames:v", "1",
+                 "-vf", f"ass=filename='{_escape_filter_path(ass)}':fontsdir='{_escape_filter_path(FONTS)}'", "-frames:v", "1",
                  "-f", "rawvideo", "-pix_fmt", "gray", "-"],
                 capture_output=True, timeout=120, check=False)
         self.assertEqual(result.returncode, 0, result.stderr[-800:])

@@ -106,7 +106,7 @@ class GenerativeFillProvider:
         api_key: str,
         image_model: str,
         video_model: str,
-        mode: str = "image",
+        mode: str = "video",
         duration: int = 5,
         ratio: str = "16:9",
         resolution: str = "1080p",

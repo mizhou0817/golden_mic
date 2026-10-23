@@ -400,7 +400,7 @@ class VisionAnnotationPipelineTest(unittest.IsolatedAsyncioTestCase):
                     backoff_base=0,
                 )
                 with patch("backend.vision_pipeline.extract_shot_thumbnail", side_effect=fake_extract):
-                    with self.assertRaisesRegex(VisionProcessingError, "检查 VOLCENGINE_VISION_BASE_URL"):
+                    with self.assertRaisesRegex(VisionProcessingError, "检查 VISION_BASE_URL / VISION_API_KEY / VISION_MODEL"):
                         await annotate_shots(task_dir, _make_shots(2), provider, lambda *args: None)
 
             self.assertEqual(attempts, 6)

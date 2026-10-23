@@ -4,7 +4,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, PropertyMock, patch
 
 import httpx
 
@@ -39,6 +39,70 @@ class CleaningAndChecksTests(unittest.TestCase):
             with self.assertRaises(sa.ScriptAssistError):
                 sa.check_result(action="edit", mode="mixed", brief="", text=original, result=changed)
 
+    def test_every_quote_form_the_parser_accepts_is_protected(self):
+        # The guard follows the manuscript parser: named and bracketed quote lines are real quotes too.
+        for quote in ("同期 张三（市民）：我们今年很满意。", "张三（市民）：我们今年很满意。", "【同期】我们今年很满意。"):
+            original = f"标题\n旁白一。\n{quote}\n旁白二。"
+            kept, warnings = sa.check_result(action="edit", mode="mixed", brief="", text=original,
+                                             result=f"标题\n更顺的旁白一。\n{quote}\n旁白二。")
+            self.assertEqual(warnings, []); self.assertIn(quote, kept)
+            with self.assertRaises(sa.ScriptAssistError):
+                sa.check_result(action="edit", mode="mixed", brief="", text=original,
+                                result=f"标题\n旁白一。\n{quote.replace('很满意', '非常满意')}\n旁白二。")
+            written, notes = sa.check_result(action="write", mode="mixed", brief="市集开幕", text="",
+                                             result=f"市集开幕\n市集今天开幕。\n{quote}")
+            self.assertNotIn("很满意", written); self.assertTrue(any("同期" in note for note in notes))
+        # A colon line without a "（身份）" part is ordinary narration and may be polished.
+        _, warnings = sa.check_result(action="edit", mode="mixed", brief="", text="标题\n时间：下午三点。",
+                                      result="标题\n时间：今天下午三点。")
+        self.assertEqual(warnings, [])
+
+    def test_voiceover_reads_every_line_as_narration_so_only_explicit_sync_marks_stay_frozen(self):
+        # parse_sentences makes every line narration in voiceover mode: "姓名（说明）：" is ordinary text there.
+        original = "标题\n天气（周五）：晴转多云，气温20度。\n数据（截至昨日）：累计120人。\n同期：我们很满意。"
+        polished = "标题\n周五晴转多云，气温20度。\n截至昨日累计120人。\n同期：我们很满意。"
+        kept, warnings = sa.check_result(action="edit", mode="voiceover", brief="", text=original, result=polished)
+        self.assertEqual((kept, warnings), (polished, []))
+        with self.assertRaises(sa.ScriptAssistError):  # an explicit mark is still kept verbatim
+            sa.check_result(action="edit", mode="voiceover", brief="", text=original, result=polished.replace("很满意", "非常满意"))
+        written, notes = sa.check_result(action="write", mode="voiceover", brief="截至昨日累计120人", text="",
+                                         result="标题\n数据（截至昨日）：累计120人。")
+        self.assertEqual((written, notes), ("标题\n数据（截至昨日）：累计120人。", []))
+        voiceover = {"同期：x": True, "同期 张三（市民）：x": True, "【同期】x": True, "张三（市民）：x": False, "旁白：x": False, "普通句子。": False}
+        mixed = {"同期：x": True, "同期 张三（市民）：x": True, "【同期】x": True, "张三（市民）：x": True, "旁白：x": False, "普通句子。": False}
+        for mode, expected in (("voiceover", voiceover), ("mixed", mixed)):
+            for line, frozen in expected.items():
+                with self.subTest(mode=mode, line=line):
+                    self.assertEqual(sa.is_quote_line(line, mode), frozen)
+
+    def test_the_guard_cuts_lines_like_the_parser(self):
+        # parse_sentences uses str.splitlines: a quote after U+2028, U+0085 or a lone carriage return is a quote to the pipeline.
+        for separator in ("\n", "\u2028", "\u0085", "\r", "\r\n"):
+            with self.subTest(separator=repr(separator)):
+                original = f"标题{separator}旁白一。{separator}同期：我们今年很满意。"
+                kept, warnings = sa.check_result(action="edit", mode="mixed", brief="", text=original,
+                                                 result="标题\n更顺的旁白一。\n同期：我们今年很满意。")
+                self.assertEqual(warnings, [])
+                for changed in ("标题\n旁白一。\n同期：我们今年非常满意。", "标题\n更顺的旁白一。"):
+                    with self.assertRaises(sa.ScriptAssistError):
+                        sa.check_result(action="edit", mode="mixed", brief="", text=original, result=changed)
+
+    def test_the_prompt_freezes_exactly_what_the_guard_freezes(self):
+        mixed, _ = sa.build_prompts(action="edit", mode="mixed", brief="", text="标题\n正文", instruction="", length="normal")
+        self.assertIn("姓名（身份）：", mixed)
+        for action in ("edit", "write"):
+            voiceover, _ = sa.build_prompts(action=action, mode="voiceover", brief="要点", text="标题\n正文", instruction="", length="normal")
+            self.assertIn("同期", voiceover); self.assertNotIn("姓名（身份）", voiceover)
+
+    def test_title_uses_the_product_limit_and_never_ends_like_a_sentence(self):
+        self.assertEqual(sa.MAX_TITLE_CHARS, 40)
+        self.assertEqual(sa.clean_output("春运今天开始。\n正文"), "春运今天开始\n正文")
+        title = "标" * 40
+        result, _ = sa.check_result(action="write", mode="voiceover", brief="要点", text="", result=f"{title}\n正文")
+        self.assertTrue(result.startswith(title + "\n"))
+        with self.assertRaises(sa.ScriptAssistError):
+            sa.check_result(action="write", mode="voiceover", brief="要点", text="", result=f"{title}标\n正文")
+
     def test_edit_reports_changed_numbers_but_ignores_unchanged_ones(self):
         text = "标题\n共120人参加，增长15%。"
         _, same = sa.check_result(action="edit", mode="voiceover", brief="", text=text, result="标题\n参加者共120人，增长15%。")
@@ -47,7 +111,7 @@ class CleaningAndChecksTests(unittest.TestCase):
         self.assertEqual(len(changed), 1); self.assertIn("120", changed[0]); self.assertIn("130", changed[0])
 
     def test_unusable_answers_are_refused_with_a_plain_reason(self):
-        for result in ("只有一行", "标题太长" * 10 + "\n正文", "标题\n" + "字" * 3001):
+        for result in ("只有一行", "标题太长" * 11 + "\n正文", "标题\n" + "字" * 3001):
             with self.assertRaises(sa.ScriptAssistError):
                 sa.check_result(action="write", mode="voiceover", brief="要点", text="", result=result)
 
@@ -108,6 +172,22 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
         with self.valid, patch.object(LLMProvider, "complete_text", AsyncMock()) as model:
             response = await self.post({"action": "write", "mode": "original", "brief": "x"})
         self.assertEqual(response.status_code, 422); model.assert_not_awaited()
+
+    async def test_draining_refuses_new_ai_writing_before_any_model_call(self):
+        with self.valid, patch.object(type(main.task_manager), "is_draining", new_callable=PropertyMock, return_value=True), \
+                patch.object(LLMProvider, "complete_text", AsyncMock()) as model:
+            response = await self.post({"action": "write", "mode": "voiceover", "brief": "要点"})
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertEqual(response.headers["Retry-After"], "60"); model.assert_not_awaited()
+
+    async def test_draining_still_answers_effects_from_the_keywords_without_the_model(self):
+        with self.valid, patch.object(type(main.task_manager), "is_draining", new_callable=PropertyMock, return_value=True), \
+                patch.object(LLMProvider, "complete_text", AsyncMock()) as model:
+            response = await self.client.post("/api/script/effects", json={"mode": "voiceover", "script": "迎春市集\n热闹开市。"},
+                                              headers={"Origin": "http://localhost"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["source"], "rules")
+        model.assert_not_awaited()
 
     async def test_missing_configuration_is_a_clear_503(self):
         response = await self.post({"action": "write", "mode": "voiceover", "brief": "x"})

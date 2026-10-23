@@ -327,7 +327,8 @@ class _MainCases(unittest.TestCase):
         for path in ("/api/tasks", "/api/config/workspace", self.path(),
                      self.path("/workbench/context"), self.path("/studio/sources")):
             self.assertEqual(self.client.get(path).status_code, 200)
-        self.assertEqual(self.client.post("/api/tasks", json={}).status_code, 422)
+        # {} is the draft-creation request (201); a request that names a script is validated before anything is stored.
+        self.assertEqual(self.client.post("/api/tasks", json={"script": ""}).status_code, 422)
         response = self.client.post(self.path("/duplicate"), json={"expected_revision": 0},
                                     headers={"Origin": self.base})
         self.assertEqual(response.status_code, 201)
@@ -529,7 +530,8 @@ class _MainCases(unittest.TestCase):
         self.assertEqual(set(body), {"tasks", "total"})
         self.assertEqual(body["total"], 2)
         for row in body["tasks"]:
-            self.assertEqual(set(row), {"task_id", "title", "mode", "status", "revision", "created_at", "updated_at"})
+            self.assertEqual(set(row), {"task_id", "title", "mode", "status", "revision", "metadata_revision", "version_count",
+                                        "created_at", "updated_at", "expires_at"})
             self.assertEqual(row["mode"], "mixed" if row["task_id"] == self.record.task_id else "voiceover")
         for value in (private, self.token, self.legacy_token, self.record.access_token_hash, str(self.root)):
             self.assertFalse(value in response.text, "Local history leaked private metadata")

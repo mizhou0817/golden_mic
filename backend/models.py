@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
-from .production_modes import Kind, Mode, QuoteTake, SentenceInput, Speaker, JumpCut
+from .production_modes import SCRIPT_MAX_CHARS, Kind, Mode, QuoteTake, SentenceInput, Speaker, JumpCut
 
 
 PIPELINE_STAGE_NAMES = [
@@ -198,6 +198,9 @@ class EditingPreferences(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def normalize_spoken_caption(cls, value: Any) -> Any:
+        # The API and mode_rules.json call the value "spoken"; these shared preferences keep the
+        # legacy alias "asr" so stored and legacy tasks stay valid. V2 subtitle artifacts write
+        # "spoken" (graphics.py), and both spellings are accepted everywhere.
         if isinstance(value, dict) and value.get("quote_caption") == "spoken":
             return {**value, "quote_caption": "asr"}
         return value
@@ -475,6 +478,8 @@ class PublicLimitsResponse(BaseModel):
     max_video_duration_seconds: float | None = Field(default=None, gt=0.0)
     max_total_video_duration_seconds: float | None = Field(default=None, gt=0.0)
     allowed_extensions: list[str] | None = None
+    # The defaults below only keep older minimal payloads valid. main.public_limits sets every field
+    # from where the limit is enforced (mode_rules.json, Settings or a module constant), and a test checks it.
     quote_max_sec: float = 30.0
     quote_warn_sec: float = 20.0
     quote_min_sec: float = 1.0
@@ -521,7 +526,10 @@ class TaskStatusResponse(BaseModel):
     stages: list[StageSnapshot]
     current: int | None = None
     queue: int = 0
-    errorKind: Literal["network", "transient", "shortage", "qc", "quote_missing"] | None = None
+    # Every value a failure path writes (task_manager fallback, matching, mode_pipeline,
+    # providers.local_speech). "network" is never written here; it stays accepted for
+    # clients that also use it for an interrupted connection.
+    errorKind: Literal["network", "transient", "shortage", "qc", "quote_missing", "speech_prerequisite"] | None = None
     badRows: list[int] = Field(default_factory=list)
 
 
@@ -592,7 +600,7 @@ class TaskCreateRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore", allow_inf_nan=False)
     mode: Mode = "voiceover"
-    script: str = Field(min_length=1, max_length=8000)
+    script: str = Field(min_length=1, max_length=SCRIPT_MAX_CHARS)
     sentences: list[SentenceInput] = Field(default_factory=list, max_length=200)
     upload_ids: list[str] = Field(min_length=1, max_length=20)
     upload_tokens: dict[str, str] = Field(default_factory=dict)

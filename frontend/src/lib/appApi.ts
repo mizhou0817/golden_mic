@@ -289,8 +289,10 @@ export function createAppRequest(access: Access): AppRequest {
     signals.forEach(s => { if (s.aborted) abort(); s.addEventListener('abort', abort, { once: true }); });
     // AI writing is one slow model call; everything else keeps the short JSON timeout.
     // A file piece gets time for its size even on a slow uplink (8 KB/s), not a flat 120 s.
+    // Starting or recovering a draft copies (and may transcribe) the media before answering, like an upload.
     const timer = setTimeout(abort, init.body instanceof FormData ? 30 * 60_000 : init.body instanceof Blob ? 120_000 + Math.ceil(init.body.size / 8)
-      : url === '/api/script/assist' ? 170_000 : url === '/api/script/effects' ? 60_000 : 30_000);
+      : /^\/api\/tasks\/[^/?]+\/(start|recover-draft)$/.test(url) ? 30 * 60_000
+        : url === '/api/script/assist' ? 170_000 : url === '/api/script/effects' ? 60_000 : 30_000);
     try {
       if (controller.signal.aborted) throw new DOMException('已取消', 'AbortError');
       const uploadScope = access.taskId === undefined && access.token === undefined && (
@@ -328,7 +330,7 @@ export function parseTask(value: unknown): TaskStatusResponse {
     // Legacy tasks may omit these fields. Supplied metadata must be typed;
     // never infer quote failures from prose or silently discard invalid rows.
     || value.errorKind !== undefined && value.errorKind !== null && (typeof value.errorKind !== 'string'
-      || !['network', 'transient', 'shortage', 'qc', 'quote_missing'].includes(value.errorKind))
+      || !['network', 'transient', 'shortage', 'qc', 'quote_missing', 'speech_prerequisite'].includes(value.errorKind))
     || value.badRows !== undefined && (!Array.isArray(value.badRows) || value.badRows.length > 2048
       || !value.badRows.every(row => typeof row === 'number' && Number.isSafeInteger(row) && row > 0 && row <= 100_000))
     || typeof value.progress !== 'number' || value.progress < 0 || value.progress > 100 || !Number.isFinite(value.progress)

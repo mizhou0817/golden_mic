@@ -58,6 +58,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .instance_lock import InstanceLock, InstanceLockError
+from .media import kill_windows_descendants
 from .models import UploadedAsset
 from .production_modes import QuoteTake, Speaker, TranscriptSegment, Word
 from .providers.asr import ASRTranscript, create_asr_provider
@@ -882,6 +883,10 @@ class UploadStore:
         if not task.cancelled():
             task.exception()  # Retrieved, never log raw provider/path/credential errors.
 
+    def active_jobs(self) -> int:
+        """Uploads whose probing and speech recognition are still running. They are not tasks, and close() cancels them."""
+        return sum(not job.done() for job in self._jobs.values())
+
     def _timeout(self, seconds: float) -> float:
         return max(5.0, min(float(self.settings.media_command_timeout_seconds), seconds * 0.5))
 
@@ -1036,6 +1041,9 @@ class UploadStore:
         audio = _safe_path(self._directory(record) / "audio.wav")
         audio_hash, _ = await _blocking(_digest_file, audio, MAX_PCM_BYTES + 4096)
         async with create_asr_provider(self.settings) as provider:
+            # One billable request per explicit action: a failure is reported, never silently resent.
+            if hasattr(provider, "max_retries"):
+                provider.max_retries = 0
             key = self._cache_key(record, audio_hash, provider)
             record.asr_cache_key = key
             async with self._cache_lock(key):
@@ -1297,6 +1305,8 @@ def _number(value: Any) -> float:
 async def _reap_process(process: asyncio.subprocess.Process, readers: tuple[asyncio.Task[Any], ...] = ()) -> None:
     if process.returncode is None:
         try:
+            # Windows: also end a shim's real ffprobe/ffmpeg child (POSIX keeps the direct kill).
+            kill_windows_descendants(getattr(process, "pid", None))
             process.kill()
         except ProcessLookupError:
             pass

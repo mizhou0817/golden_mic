@@ -767,6 +767,19 @@ test('multipart task requests get a bounded 30-minute deadline rather than the J
   assert.equal(sent.signal.aborted, true); assert.equal(h.calls.filter(row => row.path === ROOT).length, 1); idle(h);
 });
 
+test('starting or recovering a draft gets the 30-minute deadline (media is copied first); other task JSON keeps 30 seconds', async () => {
+  for (const [suffix, delay] of [['/start', 30 * 60_000], ['/recover-draft', 30 * 60_000], ['/retry', 30_000], ['/start/extra', 30_000]]) {
+    const reached = deferred(), h = harness({ respond: (path, init) => {
+      if (path === '/api/session') return json(development());
+      reached.resolve(init); return pendingFetch(init.signal);
+    } });
+    const pending = request(h)(ROOT + suffix, { method: 'POST', body: '{}' }), rejected = assert.rejects(pending, isAbort);
+    await reached.promise;
+    assert.equal(h.timers.size, 1, suffix); const [id, timer] = [...h.timers][0]; assert.equal(timer.delay, delay, suffix);
+    h.fireTimer(id); await rejected; idle(h);
+  }
+});
+
 test('task media uses exact selected capability/revision or a truly token-free local path, without network calls', () => {
   const h = harness();
   assert.equal(h.api.taskMedia(TASK), `${ROOT}/video?revision=0`);
@@ -929,7 +942,7 @@ test('task failure metadata rejects malformed values rather than coercing or sil
 test('legacy task metadata may be absent and valid modern metadata is preserved without invented defaults', () => {
   const h = harness(), legacy = failedTask(); delete legacy.mode; delete legacy.errorKind; delete legacy.badRows;
   assert.deepEqual(plain(h.api.parseTask(legacy)), legacy);
-  for (const errorKind of [null, 'network', 'transient', 'shortage', 'qc', 'quote_missing']) {
+  for (const errorKind of [null, 'network', 'transient', 'shortage', 'qc', 'quote_missing', 'speech_prerequisite']) {
     for (const badRows of [[], [1], [100_000], [2, 1, 2], Array(2048).fill(1)]) {
       const value = failedTask({ errorKind, badRows });
       assert.deepEqual(plain(h.api.parseTask(value)), value);

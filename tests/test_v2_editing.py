@@ -198,6 +198,12 @@ class RealApplyTests(unittest.IsolatedAsyncioTestCase):
         receipt = (await self.client.get(self.prefix + "/operations/" + response.json()["operation_id"])).json()
         self.assertEqual(receipt["state"], "succeeded", receipt)
         self.assertEqual(receipt["steps"][0]["state"], "succeeded")
+        missing = await self.client.post(self.prefix + "/restore", json={"rev": 0})
+        self.assertEqual(missing.status_code, 422, missing.text)
+        stale = await self.client.post(self.prefix + "/restore", json={"rev": 0, "expected_revision": 0})
+        self.assertEqual(stale.status_code, 409, stale.text)
+        self.assertEqual(stale.json()["detail"]["code"], "stale_revision")
+        self.assertEqual(self.record.revision, 1)
         restore = await self.client.post(self.prefix + "/restore", json={"rev": 0, "expected_revision": 1})
         self.assertEqual(restore.status_code, 202, restore.text)
         await self.record.background

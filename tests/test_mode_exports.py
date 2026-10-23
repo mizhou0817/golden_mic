@@ -141,7 +141,7 @@ class ModeExportTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(max(self.pixels(output, 1.5, "20:20:300:150")), 200)
             self.assertLess(max(self.pixels(output, 2.2, "20:20:300:150")), 30)
             self.assertLess(max(self.pixels(output, 1.4, "640:50:0:310")), 30)  # actual word gap
-        counts = {k: sum(v > 150 for v in self.pixels(p, .8, "640:60:0:300")) for k, p in outputs.items()}
+        counts = {k: sum(v > 150 for v in self.pixels(p, 2.6, "640:60:0:300")) for k, p in outputs.items()}
         self.assertGreater(counts["large"], counts["standard"] * 1.3)
         self.assertGreater(counts["standard"], 100)
         self.assertEqual(counts["none"], 0)
@@ -227,7 +227,10 @@ class ModeExportTests(unittest.IsolatedAsyncioTestCase):
                 manifest.write_bytes(original_manifest)
                 payload = json.loads(original_manifest)
                 if tamper in {"raw", "rehash"}:
-                    ass.write_bytes(original_ass.replace(b"abcdefghijklmnopqr", b"{\\p1}m 0 0 l 1 1"))
+                    # The second caption line is whole whatever the wrap width; a no-op replace would prove nothing.
+                    tampered = original_ass.replace(b"STUVWXYZ", b"{\\p1}m 0 0 l 1 1")
+                    self.assertNotEqual(tampered, original_ass, "the tamper must change the document")
+                    ass.write_bytes(tampered)
                     if tamper == "rehash":
                         payload["ass_sha256"] = sha(ass)
                 elif tamper == "events":

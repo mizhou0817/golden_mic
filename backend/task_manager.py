@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import traceback
 import hashlib
 import json
 import math
@@ -25,6 +26,7 @@ from .operations import UploadCapacityGuard
 from .production_modes import Mode, SentenceInput, Speaker, MODE_RULES, STAGE_WEIGHTS
 from .pipeline import run_pipeline, run_remix_pipeline, run_shot_replacement_pipeline
 from .revisions import snapshot_revision
+from .task_metadata import TERMINAL_RETENTION
 from .remix import validate_remix_selection
 from .shot_replacement import load_shot_replacement_context
 from .storage import sanitize_sensitive_text, write_json_atomic, write_text_log
@@ -561,14 +563,14 @@ class TaskManager:
                 continue
             if not record.mode_contract and self.settings.task_ttl_hours <= 0:
                 continue
-            record_cutoff = current_time - timedelta(hours=72) if record.mode_contract else cutoff
+            record_cutoff = current_time - TERMINAL_RETENTION if record.mode_contract else cutoff
             if self._record_retention_reference(record) <= record_cutoff:
                 expired_task_ids.append(task_id)
         for task_id in expired_task_ids:
             record = self._tasks.get(task_id)
             if record is None or record.local_only:
                 continue
-            record_cutoff = current_time - timedelta(hours=72) if record.mode_contract else cutoff
+            record_cutoff = current_time - TERMINAL_RETENTION if record.mode_contract else cutoff
             if self._record_retention_reference(record) > record_cutoff:
                 continue
             if record.status not in {TaskState.done, TaskState.failed, TaskState.cancelled}:
@@ -842,6 +844,8 @@ class TaskManager:
                 record.stages[record.current_stage - 1].status = StageState.failed
                 record.stages[record.current_stage - 1].message = safe_error
             write_text_log(record.task_dir, f"任务失败：{safe_error}")
+            # Same technical tail as failed edits (workbench), sanitized by write_text_log.
+            write_text_log(record.task_dir, "失败详情：\n" + "".join(traceback.format_exception(exc))[-4000:])
             self._persist_record(record)
         finally:
             await self._release_disk_reservation(record)

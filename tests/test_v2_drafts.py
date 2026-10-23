@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import json
 import tempfile
 import time
 import unittest
-from contextlib import ExitStack
+from contextlib import ExitStack, redirect_stdout
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -920,7 +921,8 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
         _, old_item = await self.file(old)
         current = await self.new_draft_for(source)
         _, current_item = await self.file(current)
-        with patch.object(self.service, "_storage_shortfall", new=AsyncMock(return_value=1)):  # never enough
+        output = io.StringIO()
+        with patch.object(self.service, "_storage_shortfall", new=AsyncMock(return_value=1)), redirect_stdout(output):  # never enough
             with self.assertRaises(HTTPException) as caught:
                 await self.service.add_file(current, {"name": "x.mp4", "size": 1}, "")
         self.assertEqual(caught.exception.status_code, 507)
@@ -928,6 +930,33 @@ class DraftTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.manager.get(source.task_id), "the oldest finished work was removed")
         self.assertIn(current_item["up_id"], self.store._records, "the draft being edited keeps its clips")
         self.assertIsNotNone(self.manager.get(current.task_id))
+        # The owner of the emptied draft, the requesting draft and the operator can each see what was cleared.
+        self.assertIn(f"已清理本草稿的一个素材（{old_item['file_id']}）", (old.task_dir / "task.log").read_text(encoding="utf-8"))
+        self.assertIn("其他草稿的素材 1 个", (current.task_dir / "task.log").read_text(encoding="utf-8"))
+        self.assertRegex(output.getvalue(), rf"Low disk: freed staging=\d+ draft_clips=1 works=1 for task {current.task_id}")
+
+    async def test_a_note_that_cannot_be_written_to_another_owners_draft_does_not_stop_the_cleanup(self):
+        source, _, _ = await self.recovery_fixture()
+        old = await self.new_draft_for(source)
+        await self.file(old)
+        current = await self.new_draft_for(source)
+        await self.file(current)
+        from backend.storage import write_text_log as real_log
+
+        def log(task_dir, message):
+            if Path(task_dir) == Path(old.task_dir):
+                raise OSError(28, "No space left on device")
+            return real_log(task_dir, message)
+
+        with patch.object(self.service, "_storage_shortfall", new=AsyncMock(return_value=1)), \
+                patch("backend.drafts.write_text_log", side_effect=log), \
+                patch.object(self.manager, "_persist_record", wraps=self.manager._persist_record) as persist, \
+                redirect_stdout(io.StringIO()):
+            with self.assertRaises(HTTPException) as caught:
+                await self.service.add_file(current, {"name": "x.mp4", "size": 1}, "")
+        self.assertEqual(caught.exception.status_code, 507, "still the storage answer, not a server error")
+        self.assertEqual(old.draft_context["files"], [])
+        self.assertIn(old, [call.args[0] for call in persist.call_args_list], "the emptied draft was saved")
 
     async def test_recovery_copies_do_not_consume_the_hourly_new_upload_budget(self):
         source, _, _ = await self.recovery_fixture()

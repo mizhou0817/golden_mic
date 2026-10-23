@@ -830,8 +830,12 @@ class ModeMediaIntegration(unittest.IsolatedAsyncioTestCase):
         broll_manifest = mp.read_json(self.root, mp.MODE_MANIFEST)
         self.assertEqual(broll_manifest["jumpcuts"][0]["cover"], "broll")
         cover = broll_manifest["jumpcut_rendering"][0]
-        self.assertGreaterEqual(cover["duration"], 1.5)
-        self.assertLessEqual(cover["duration"], 3.0)
+        # V2 contract (build_mode_edl): the cover lasts 40% of the sentence it covers, at most 2 s, in whole frames.
+        plan_ids = [item["sentence_id"] for item in mp.read_json(self.root, "match_plan.json")]
+        covered = mp.read_json(self.root, "timings.json")[plan_ids.index(broll_manifest["jumpcuts"][0]["after_row"]) + 1]
+        self.assertAlmostEqual(cover["duration"], math.floor(min(2.0, covered["duration"] * 0.4) * 30) / 30, places=3)
+        self.assertGreater(cover["duration"], 0.5)
+        self.assertLessEqual(cover["duration"], 2.0)
         broll_frame = video_frame(self.root / "video_only.mp4", cover["timeline_start"] + 0.4)
         broll_audio = audio_bytes(self.root / "final.mp4")
         snapshots = mp.read_json(self.root, "pretranscripts.json")
@@ -995,7 +999,9 @@ def isolated_main():
 
         def audit(event, args):
             if event == "open" and isinstance(args[0], (str, bytes, os.PathLike)):
-                path = Path(os.fsdecode(args[0])).absolute()
+                name = os.fsdecode(args[0])
+                # backend.revisions copies through Win32 extended paths; the prefix names the same location.
+                path = Path(name[4:] if name.startswith("\\\\?\\") else name).absolute()
                 if path == Path(os.devnull).absolute():
                     return
                 if any(path == p or path.is_relative_to(p) for p in forbidden):

@@ -70,7 +70,8 @@ const time = (value?: number | null) => typeof value === 'number' && Number.isFi
 const confidence = (v?: number | null) => typeof v === 'number' && Number.isFinite(v)
   ? `${Math.round(v * 100)}%（模型匹配，非事实核实）` : '未提供置信度';
 const audioLabel = (r: Row) => ({ tts: 'AI 配音', sync: '现场原声', recording: '本人录音' }[r.audio_source ?? r.audio_kind]);
-const PACING_LABELS: Record<EditingPacing, string> = { slow: '舒缓', normal: '正常', fast: '紧凑' };
+// Same words as the create page and the select below.
+const PACING_LABELS: Record<EditingPacing, string> = { slow: '慢一点', normal: '正常', fast: '快一点' };
 const CAPTION_LABELS: Record<CaptionStyle, string> = { news: '新闻标准', big: '大字清晰', none: '不显示旁白字幕' };
 const hasEdit = (d: Draft) => !!(Object.keys(d.sentences).length || d.deleted.length || hasWorkbenchPreferenceChanges(d)
   || Object.keys(d.pendTrim ?? {}).length || Object.keys(d.pendTake ?? {}).length || (d.pendToNarration ?? []).length || Object.keys(d.pendSpeakers ?? {}).length);
@@ -826,6 +827,13 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
     if (draft.deleted.includes(r.sentence_id)) badges.push({ label: draft.submitted ? '删除已提交' : '待删除', tone: 'danger' });
     return badges;
   };
+  // Any generated picture, as the server judges it (it refuses MP3/SRT with 422: both would lose the burned-in AI label).
+  const hasGeneratedPictures = rows.some(r => shotOrigin(r.shot_id, r.media_origin) === 'generated'
+    || r.visual_beats.some(b => shotOrigin(b.shot_id, b.media_origin) === 'generated'));
+  const exportFormats = SIMPLE_EXPORT_FORMATS.filter(f => !hasGeneratedPictures || (f !== 'mp3' && f !== 'srt'));
+  useEffect(() => {
+    if (hasGeneratedPictures && (options.format === 'mp3' || options.format === 'srt')) setOptions(o => normalizeExport({ ...o, format: 'mp4' }));
+  }, [hasGeneratedPictures, options.format]);
   return <section className="gm-rw" aria-label="作品结果工作台" aria-busy={loading || !!busy} tabIndex={-1} onKeyDown={e => {
     // Native disclosures own Space/Enter; do not turn their activation into playback.
     if (e.target instanceof HTMLElement && e.target.closest('input,textarea,select,button,a,summary,[contenteditable=true]')) return;
@@ -1061,7 +1069,8 @@ function ResultWorkbenchEditor(props: ResultWorkbenchProps) {
         <div className="gm-rw-section-head"><h2 id="gm-rw-export-title">导出 / 分享</h2><button onClick={() => setExportOpen(false)}>关闭</button></div>
         <p>选好格式，点导出，完成后下载。</p>
         <fieldset disabled={!!busy || exporting || loading || checksLoading}><legend>导出选项</legend>
-          <div className="gm-rw-format"><h3>导出什么</h3>{SIMPLE_EXPORT_FORMATS.map(f => <button key={f} type="button" aria-pressed={options.format === f} onClick={() => setOptions(o => normalizeExport({ ...o, format: f }))}>{({ mp4: '视频 MP4', gif: '动图 GIF', mp3: '音频 MP3', srt: '字幕 SRT', png: '封面图' } as const)[f]}</button>)}</div>
+          <div className="gm-rw-format"><h3>导出什么</h3>{exportFormats.map(f => <button key={f} type="button" aria-pressed={options.format === f} onClick={() => setOptions(o => normalizeExport({ ...o, format: f }))}>{({ mp4: '视频 MP4', gif: '动图 GIF', mp3: '音频 MP3', srt: '字幕 SRT', png: '封面图' } as const)[f]}</button>)}</div>
+          {hasGeneratedPictures && <p className="gm-rw-muted" data-testid="export-no-audio-formats">这条片子含 AI 示意画面，不能导出音频 MP3 或字幕 SRT：这两种格式会丢掉画面上的 AI 标注。</p>}
           {options.format === 'mp4' && <>
             <p className="gm-rw-export-summary">{options.resolution}p · {({ '16:9': '横屏', '9:16': '竖屏', '1:1': '正方形' } as const)[options.aspect]} · {({ standard: '标准字幕', large: '大字字幕', none: '无字幕' } as const)[options.subtitles]}</p>
             <details className="gm-rw-export-settings"><summary>调整清晰度、画面比例和字幕</summary><div className="gm-rw-export-grid">

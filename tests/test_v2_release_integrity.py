@@ -12,6 +12,7 @@ import hashlib
 import io
 import json
 import os
+import platform
 import re
 import shutil
 import sys
@@ -29,6 +30,10 @@ from deploy.frontend_binding import (
     validate_frontend_binding,
 )
 from deploy.verify_release_archive import REQUIRED_MEMBERS, validate_release_archive
+
+# Some Windows builds run `ver` on the first platform.uname(). Fill its cache now, before tests patch
+# subprocess.run to fail, so a dependency's later platform.system() is not mistaken for a native tool.
+platform.uname()
 
 
 V2_REQUIRED = (

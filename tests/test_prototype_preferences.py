@@ -28,7 +28,7 @@ from pydantic import ValidationError
 
 from backend import pipeline, rendering, tts_pipeline, workbench
 from backend.config import Settings
-from backend.graphics import generate_news_graphics
+from backend.graphics import DISCLOSURE_MARGIN_V, generate_news_graphics
 from backend.models import (
     AnnotatedShot, CaptionStyle, EDLClip, EDLItem, EditingPreferences,
     MatchCandidate, MatchPlanItem, PIPELINE_STAGE_NAMES, SegmentManifestItem,
@@ -1107,8 +1107,14 @@ class PrototypePreferenceLocalMediaTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLess(int(frame[956, 250, 2]), 90)
                 title = frame[180:360, 250:1670]
                 self.assertGreater(int(np.count_nonzero((title[:, :, 2] > 170) & (title[:, :, 1] > 140) & (title[:, :, 0] < 120))), 100)
-                disclosure = frame[20:100, 1450:1900]
-                self.assertGreater(int(np.count_nonzero(np.all(disclosure > 180, axis=2))), 100)
+                # The opening label and the label of the generated shot are stacked on the right edge, below the
+                # title and the topic band; the old top corner stays empty.
+                for slot in range(2):
+                    top = DISCLOSURE_MARGIN_V + 100 * slot
+                    label = frame[top:top + 100, 1300:1900]
+                    self.assertGreater(int(np.count_nonzero(np.all(label > 180, axis=2))), 100)
+                corner = frame[0:DISCLOSURE_MARGIN_V - 10, 1450:1900]
+                self.assertEqual(int(np.count_nonzero(np.all(corner > 180, axis=2))), 0)
                 topic = frame[50:120, 90:700]
                 self.assertGreater(int(np.count_nonzero(np.all(topic > 180, axis=2))), 100)
             self.assertGreater(boxes["news"][0], 100)

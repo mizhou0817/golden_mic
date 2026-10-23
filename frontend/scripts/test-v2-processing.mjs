@@ -109,8 +109,9 @@ test('all errors, notices, progress, upload and action controls remain outside t
     { uploading: true, task: null, upload: { loaded: 80, total: 100, startedAt: 0 } },
     { error: RECOVERY_UNAVAILABLE }, { error: 'HTTP 500 /api/private Traceback secret' },
     { task: makeTask({ status: 'cancelled' }), onNew: noop },
-    ...['qc', 'shortage', 'quote_missing', 'network', 'transient'].map(errorKind => ({ task: makeTask({ status: 'failed', errorKind }) })),
-    { task: makeTask({ plan: { idx: 0, steps: [{ op: 'voice', run: [7] }, { op: 'render', run: [9] }] } }) }];
+    ...['qc', 'shortage', 'quote_missing', 'network', 'transient', 'speech_prerequisite'].map(errorKind => ({ task: makeTask({ status: 'failed', errorKind }) })),
+    { task: makeTask({ plan: { state: 'running', steps: [{ kind: 'remix', stages: [7, 8, 9, 10], state: 'running' },
+      { kind: 'replace', row_id: 2, stages: [6, 9, 10], state: 'pending' }] } }) }];
   const seenControls = new Set();
   for (const patch of cases) {
     const tree = nodes(Processing(props(patch))), inside = new Set(nodes(tree.find(n => n.type === 'details')));
@@ -260,9 +261,27 @@ test('upload byte progress remains distinct from production, finished transfer i
   assert.equal((html.match(/data-state="pending"/g) ?? []).length, 10);
   assert.doesNotMatch(html, />上传完成<|已完成|data-state="done"/);
 });
-test('multi-operation plan uses trusted Chinese labels, never arbitrary server op text', () => {
-  const html = render({ task: makeTask({ plan: { idx: 0, steps: [{ op: 'edit', run: [7] }, { op: 'constructor', run: [9] }, { op: 'replace_shot', run: [6, 9] }] } }) });
-  assert.match(html, /第 1\/3 步 · 改字/); assert.match(html, /接下来：应用修改 → 换画面/); assert.doesNotMatch(html, /constructor/);
+test('apply receipt progress uses trusted Chinese labels, never arbitrary server step text', () => {
+  const steps = [{ kind: 'remix', stages: [7, 8, 9, 10], state: 'succeeded' }, { kind: 'constructor', stages: [9], state: 'running' },
+    { kind: 'replace', row_id: 3, stages: [6, 9, 10], state: 'pending' }];
+  const html = render({ task: makeTask({ plan: { operation_id: 'a'.repeat(32), state: 'running', steps } }) });
+  assert.match(html, /第 2\/3 步 · 应用修改/); assert.match(html, /接下来：换画面/); assert.doesNotMatch(html, /constructor/);
+  const recompose = render({ task: makeTask({ plan: { state: 'queued', steps: [{ kind: 'remix', stages: [9, 10], state: 'pending' },
+    { kind: 'replace', row_id: 1, stages: [6, 9, 10], state: 'pending' }] } }) });
+  assert.match(recompose, /第 1\/2 步 · 重新合成/); assert.match(recompose, /接下来：换画面/);
+  // The receipt stays in the status after its run; a finished one says nothing about the current production.
+  for (const state of ['succeeded', 'failed', undefined]) {
+    const stale = render({ task: makeTask({ revision: 2, plan: { state, steps } }) });
+    assert.doesNotMatch(stale, /第 \d\/3 步|processing-plan/); assert.match(stale, /正在重新制作：/);
+  }
+});
+test('speech_prerequisite: a server setup problem, never offered as a retry', () => {
+  for (const mode of ['voiceover', 'mixed']) {
+    const html = render({ task: makeTask({ status: 'failed', errorKind: 'speech_prerequisite', mode }) });
+    assert.match(html, /分析原声用的本地组件没有准备好/); assert.match(html, /请联系维护人员/);
+    assert.doesNotMatch(html, /processing-retry|往往再试一次/);
+    assert.equal(/改用 AI 配音继续。/.test(html), mode !== 'voiceover', mode);
+  }
 });
 test('dev-only static diagnostics contain no server messages or paths', () => {
   const Dev = loader(true)('src/components/Processing.tsx').default;

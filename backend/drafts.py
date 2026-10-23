@@ -31,12 +31,13 @@ from .admission import AdmissionLedger, owner_digest
 from .media_input import prepare_media_inputs
 from .models import EditingPreferences, TaskState
 from .operations import InsufficientDiskSpaceError
-from .production_modes import (Mode, SentenceInput, Speaker, align_quotes, parse_sentences,
-                               quote_text_is_contiguous)
+from .production_modes import (MATCH_LOW, MATCH_OK, SCRIPT_MAX_CHARS, TITLE_END_PUNCTUATION, TITLE_MAX_CHARS, Mode,
+                               SentenceInput, Speaker, align_quotes, parse_sentences, quote_text_is_contiguous)
 from .storage import create_task_dir, write_json_atomic, write_text_log
 from .task_manager import TaskManager, TaskRecord
+from .task_metadata import DRAFT_IDLE_TTL, TERMINAL_RETENTION
 from .task_operations import drain_task, _operation as task_operation
-from .uploads import (CHUNK_SIZE, IO_BLOCK, UploadStore, _blocking, _check_stop,
+from .uploads import (CHUNK_SIZE, IO_BLOCK, UPLOAD_TTL_SECONDS, UploadStore, _blocking, _check_stop,
                       _open_file, _safe_path, _copy_verified, _Chunk, _Manifest)
 
 
@@ -288,11 +289,15 @@ def _iso(stamp: float) -> str:
 
 async def bounded_json(request: Request) -> dict:
     data = bytearray()
-    async with asyncio.timeout(30):
-        async for chunk in request.stream():
-            if len(data) + len(chunk) > 256 * 1024:
-                raise HTTPException(413, "Request is too large")
-            data.extend(chunk)
+    try:
+        async with asyncio.timeout(30):
+            async for chunk in request.stream():
+                if len(data) + len(chunk) > 256 * 1024:
+                    raise HTTPException(413, "Request is too large")
+                data.extend(chunk)
+    except TimeoutError as exc:
+        # TimeoutError is an OSError: unhandled, the middleware would re-raise it as a 500.
+        raise HTTPException(408, "Request body timed out") from exc
     try:
         raw = json.loads(data or b"{}")
     except (ValueError, UnicodeError):
@@ -482,13 +487,13 @@ class DraftService:
     def touch(self, record: TaskRecord) -> None:
         self.check(record, draft=True)
         record.updated_at = datetime.now(timezone.utc)
-        record.draft_context["expires_at"] = time.time() + 86400
+        record.draft_context["expires_at"] = time.time() + DRAFT_IDLE_TTL.total_seconds()
         for item in record.draft_context["files"]:
             upload = self.uploads.authorize(item["up_id"], item["capability"])
             # Upload manifests are restored against their original 72h ceiling.
             # Extending beyond it makes an otherwise valid probe disappear on
             # restart; task edits cannot renew the original staging lease.
-            upload.expires_at = min(upload.created_at + 72 * 3600, max(upload.expires_at, time.time() + 72 * 3600))
+            upload.expires_at = min(upload.created_at + UPLOAD_TTL_SECONDS, max(upload.expires_at, time.time() + UPLOAD_TTL_SECONDS))
             self.uploads._save(upload)
         self.manager._persist_record(record)
 
@@ -510,7 +515,7 @@ class DraftService:
             record = TaskRecord(key, directory, "", [], mode=payload.mode, mode_contract=True,
                                 lifecycle_v2=True, owner_hash=owner, status=TaskState.draft,
                                 message="草稿", draft_context={"version": 2, "files": [],
-                                "expires_at": time.time() + 86400, "type_marks": {}, "speaker_names": {},
+                                "expires_at": time.time() + DRAFT_IDLE_TTL.total_seconds(), "type_marks": {}, "speaker_names": {},
                                 "source_voice_preferred": False})
             try:
                 self.manager._persist_record(record)
@@ -579,7 +584,7 @@ class DraftService:
                 "received_bytes": sum(f["received_bytes"] for f in files),
                 "upload_seconds": sum(f["sec"] or 0 for f in files),
                 "expires_at": (_iso(record.draft_context["expires_at"]) if record.status == TaskState.draft else
-                               _iso(self.manager._record_retention_reference(record).timestamp() + 72 * 3600)
+                               _iso(self.manager._record_retention_reference(record).timestamp() + TERMINAL_RETENTION.total_seconds())
                                if record.status in {TaskState.done, TaskState.failed, TaskState.cancelled} else None),
                 "accepted": self.ledger.accepted(record.task_id),
                 "retry_same_supported": self.retry_hook is not None,
@@ -633,6 +638,12 @@ class DraftService:
                     continue
                 draft.draft_context["files"].remove(item)
                 freed["draft_clips"] += 1
+                # Otherwise the owner's draft loses a clip without any trace of why. Best effort: the clip is gone
+                # already, and a full disk or a vanished folder must not stop the cleanup half way.
+                try:
+                    write_text_log(draft.task_dir, f"服务器存储不足，已清理本草稿的一个素材（{item.get('file_id')}），需要时请重新上传。")
+                except OSError:
+                    pass
             self.manager._persist_record(draft)
             if await fits():
                 return self._log_freed(record, freed)
@@ -652,6 +663,9 @@ class DraftService:
         if any(freed.values()):
             write_text_log(record.task_dir, f"服务器存储不足，已按时间顺序清理最早的素材：完成作品的上传副本 {freed['staging']} 个、"
                                             f"其他草稿的素材 {freed['draft_clips']} 个、最早的已完成作品 {freed['works']} 个。")
+            # Operators read service output (journalctl / docker logs), not every draft's task.log.
+            print(f"Low disk: freed staging={freed['staging']} draft_clips={freed['draft_clips']} "
+                  f"works={freed['works']} for task {record.task_id}")
         return freed
 
     async def _remove_work(self, record: TaskRecord, reason: str) -> None:
@@ -842,7 +856,7 @@ class DraftService:
         if mode not in {"voiceover", "mixed", "original"}:
             raise HTTPException(422, "Invalid mode")
         script = raw.get("script", record.script)
-        if not isinstance(script, str) or len(script) > 8000 or any(ord(c) < 32 and c not in "\n\r\t" for c in script):
+        if not isinstance(script, str) or len(script) > SCRIPT_MAX_CHARS or any(ord(c) < 32 and c not in "\n\r\t" for c in script):
             raise HTTPException(422, "Invalid script")
         preferences = raw.get("prefs", raw.get("preferences", record.preferences.model_dump()))
         if not isinstance(preferences, dict):
@@ -892,7 +906,7 @@ class DraftService:
             lines = script.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").strip().splitlines()
             title = lines[0].strip() if lines else ""
             body = "\n".join(lines[1:]).strip()
-            if not title or len(title) > 40 or title[-1] in "。！？.!?；;" or not body:
+            if not title or len(title) > TITLE_MAX_CHARS or title[-1] in TITLE_END_PUNCTUATION or not body:
                 raise HTTPException(422, "A headline and nonempty body are required")
             if unicodedata.normalize("NFKC", title) == "(写一个标题)":
                 raise HTTPException(422, "Replace the placeholder headline")
@@ -1088,7 +1102,7 @@ class DraftService:
             # there are no ready sources. Never commit projected editorial data.
             record.draft_context["local_speech"] = speech
             self.manager._persist_record(record)
-            return {"matches": rows, "match_ok": .85, "match_low": .6, "local_speech": speech,
+            return {"matches": rows, "match_ok": MATCH_OK, "match_low": MATCH_LOW, "local_speech": speech,
                     "rules_version": record.rules_version}
 
     async def start(self, record: TaskRecord, raw: dict, ip: str, task_token: str | None = None) -> dict:
@@ -1279,7 +1293,7 @@ class DraftService:
                 directory = create_task_dir(self.settings, key)
                 record = TaskRecord(key, directory, "", [], mode=payload.mode or original["mode"],
                     mode_contract=True, lifecycle_v2=True, owner_hash=source.owner_hash, status=TaskState.draft,
-                    message="恢复草稿", draft_context={"version": 2, "files": [], "expires_at": time.time() + 86400,
+                    message="恢复草稿", draft_context={"version": 2, "files": [], "expires_at": time.time() + DRAFT_IDLE_TTL.total_seconds(),
                                                       **({"shot_reuse": {"accepted": True}} if payload.allow_shot_reuse else {})})
                 imports = []
                 try:
@@ -1398,7 +1412,7 @@ class DraftService:
                              and record.draft_context.get("expires_at", float("inf")) <= stamp
                              and not self.ledger.accepted(record.task_id))
             terminal_expired = (record.status in {TaskState.done, TaskState.failed, TaskState.cancelled}
-                                and self.manager._record_retention_reference(record).timestamp() + 72 * 3600 <= stamp)
+                                and self.manager._record_retention_reference(record).timestamp() + TERMINAL_RETENTION.total_seconds() <= stamp)
             if draft_expired or terminal_expired:
                 try:
                     self.manager._ensure_media_idle(record)

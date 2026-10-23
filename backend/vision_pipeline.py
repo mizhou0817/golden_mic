@@ -135,11 +135,9 @@ async def annotate_shots(
     available_count = sum(shot.status == "available" for shot in annotated_shots)
     if available_count == 0:
         first_error = next((shot.error for shot in annotated_shots if shot.error), "未知错误")
-        raise VisionProcessingError(
-            "所有镜头画面理解均失败，请检查 VOLCENGINE_VISION_BASE_URL / "
-            "VOLCENGINE_VISION_API_KEYS / VOLCENGINE_VISION_MODEL 配置。"
-            f"首个错误：{first_error}"
-        )
+        keys = getattr(provider, "config_keys", None)
+        hint = " / ".join(keys) if keys else "画面理解服务的"
+        raise VisionProcessingError(f"所有镜头画面理解均失败，请检查 {hint} 配置。首个错误：{first_error}")
     return annotated_shots
 
 

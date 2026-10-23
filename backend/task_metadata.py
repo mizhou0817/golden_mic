@@ -15,6 +15,10 @@ from .storage import sanitize_sensitive_text
 if TYPE_CHECKING:
     from .task_manager import TaskManager, TaskRecord
 
+# V2 retention: one definition for expiry shown to users, cleanup and /api/config/limits.
+DRAFT_IDLE_TTL = timedelta(hours=24)
+TERMINAL_RETENTION = timedelta(hours=72)
+
 
 def validate_title(value: str) -> str:
     # Code points, not UTF-8 bytes. Preserve exactly; never silently trim.
@@ -51,7 +55,7 @@ def expires_at(record: TaskRecord) -> datetime | None:
     if record.status == TaskState.draft:
         return datetime.fromtimestamp(record.draft_context["expires_at"], timezone.utc)
     if record.status in {TaskState.done, TaskState.failed, TaskState.cancelled}:
-        return (record.processing_completed_at or record.updated_at or record.created_at) + timedelta(hours=72)
+        return (record.processing_completed_at or record.updated_at or record.created_at) + TERMINAL_RETENTION
     return None
 
 

@@ -49,11 +49,15 @@ from .models import (
     SentenceTiming,
     TaskState,
 )
-from .production_modes import SentenceInput, Speaker, align_quotes, parse_sentences
-from .uploads import UploadStore, create_upload_router
+from .production_modes import (LIMITS, MATCH_LOW, MATCH_OK, PACING_CPM, SCRIPT_MAX_CHARS, SentenceInput, Speaker,
+                               align_quotes, parse_sentences)
+from .uploads import (CHUNK_SIZE as UPLOAD_CHUNK_SIZE, MAX_FILE_BYTES, MAX_WORK_BYTES, MAX_WORK_FILES, UploadStore,
+                      create_upload_router)
 from .drafts import DraftService, DraftUploadStore, create_draft_router
-from .admission import AdmissionLedger, owner_digest
-from .task_metadata import MetadataInput, commit as commit_metadata, expires_at, history_entry
+from .admission import TOMBSTONE_SECONDS, AdmissionLedger, owner_digest
+from .task_metadata import (DRAFT_IDLE_TTL, TERMINAL_RETENTION, MetadataInput, commit as commit_metadata, expires_at,
+                            history_entry)
+from .quality import MAX_VISUAL_CLIP_SECONDS
 from .publication import confirm_checks, publication_gate, require_publication
 from .remix import RemixValidationError
 from .operations import InsufficientDiskSpaceError, UploadCapacityGuard
@@ -359,14 +363,31 @@ async def browser_availability(request: Request) -> JSONResponse:
 @app.get("/api/config/limits", response_model=PublicLimitsResponse)
 async def public_limits() -> PublicLimitsResponse:
     return PublicLimitsResponse(
-        max_files=min(settings.max_files, 20),
-        max_upload_bytes=min(settings.upload_limit_bytes, 500 * 1024**2),
-        max_total_upload_bytes=min(settings.total_upload_limit_bytes, 5 * 1024**3),
-        max_script_length=8000,
+        max_files=min(settings.max_files, MAX_WORK_FILES),
+        max_upload_bytes=min(settings.upload_limit_bytes, MAX_FILE_BYTES),
+        max_total_upload_bytes=min(settings.total_upload_limit_bytes, MAX_WORK_BYTES),
+        max_script_length=SCRIPT_MAX_CHARS,
         max_video_duration_seconds=settings.max_source_duration_seconds_per_file,
         max_total_video_duration_seconds=settings.max_total_source_duration_seconds,
         allowed_extensions=sorted(ALLOWED_EXTENSIONS),
         max_shots=settings.max_shots,
+        # Every value comes from where it is enforced: mode_rules.json, Settings or a module constant.
+        quote_max_sec=LIMITS["quote_max_seconds"],
+        quote_warn_sec=LIMITS["quote_warn_seconds"],
+        quote_min_sec=LIMITS["quote_min_seconds"],
+        match_ok=MATCH_OK,
+        match_low=MATCH_LOW,
+        script_soft_max=LIMITS["script_soft_chars"],
+        rate_tolerance=settings.tts_news_rate_tolerance,
+        pacing_cpm=dict(PACING_CPM),
+        chunk_size=UPLOAD_CHUNK_SIZE,
+        max_visual_sec=MAX_VISUAL_CLIP_SECONDS,
+        retention_hours=int(TERMINAL_RETENTION.total_seconds() // 3600),
+        draft_ttl_hours=int(DRAFT_IDLE_TTL.total_seconds() // 3600),
+        tombstone_days=TOMBSTONE_SECONDS // 86400,
+        browser_submissions_per_hour=settings.effective_session_start_limit,
+        ip_submissions_per_hour=settings.anonymous_ip_task_rate_limit_per_hour,
+        global_submissions_per_hour=settings.anonymous_global_task_rate_limit_per_hour,
         max_concurrent_tasks=min(settings.max_concurrent_tasks, 1),
         max_pending_tasks=min(settings.max_pending_tasks, 5),
         maxPending=settings.v2_max_waiting_tasks,
@@ -449,23 +470,29 @@ async def browser_session(request: Request) -> JSONResponse:
     return response
 
 
+def _drain_snapshot(snapshot: dict[str, int | bool]) -> dict[str, int | bool]:
+    # Uploads being transcribed are not tasks, yet a restart cancels them (UploadStore.close). _uploads() would
+    # create the store, and asking how much work is running must not.
+    return {**snapshot, "upload_jobs": _upload_store.active_jobs() if _upload_store is not None else 0}
+
+
 @app.get("/api/admin/drain", include_in_schema=False)
 async def drain_status(request: Request) -> JSONResponse:
     _require_loopback(request)
-    return JSONResponse(task_manager.operational_snapshot())
+    return JSONResponse(_drain_snapshot(task_manager.operational_snapshot()))
 
 
 @app.post("/api/admin/drain", include_in_schema=False)
 async def begin_drain(request: Request) -> JSONResponse:
     _require_loopback(request)
-    return JSONResponse(task_manager.begin_drain())
+    return JSONResponse(_drain_snapshot(task_manager.begin_drain()))
 
 
 @app.delete("/api/admin/drain", include_in_schema=False)
 async def cancel_drain(request: Request) -> JSONResponse:
     _require_loopback(request)
     task_manager.start_accepting()
-    return JSONResponse(task_manager.operational_snapshot())
+    return JSONResponse(_drain_snapshot(task_manager.operational_snapshot()))
 
 
 async def _create_multipart_task(
@@ -481,8 +508,8 @@ async def _create_multipart_task(
     # creating a task directory or starting any paid processing.
     if "classroom" in await request.form():
         raise HTTPException(422, "提交方式已更新，请刷新页面后直接创建视频任务。")
-    if len(script) > 8000:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新闻稿不能超过 8000 字。")
+    if len(script) > SCRIPT_MAX_CHARS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"新闻稿不能超过 {SCRIPT_MAX_CHARS} 字。")
     if any(ord(character) < 32 and character not in "\n\r\t" for character in script):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新闻稿包含不支持的控制字符。")
     # Only explicit wizard submissions impose a first-line headline. Legacy
@@ -493,8 +520,8 @@ async def _create_multipart_task(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if not clean_script:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新闻稿不能为空。")
-    if len(clean_script) > 8000:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新闻稿不能超过 8000 字。")
+    if len(clean_script) > SCRIPT_MAX_CHARS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"新闻稿不能超过 {SCRIPT_MAX_CHARS} 字。")
     editing_preferences = _parse_editing_preferences(preferences)
 
     task_id = uuid4().hex
@@ -534,11 +561,15 @@ async def _create_multipart_task(
 
 async def _bounded_json(request: Request, limit: int = 256 * 1024) -> dict[str, Any]:
     body = bytearray()
-    async with asyncio.timeout(30):
-        async for chunk in request.stream():
-            if len(body) + len(chunk) > limit:
-                raise HTTPException(413, "请求内容过大，请缩短后重试。")
-            body.extend(chunk)
+    try:
+        async with asyncio.timeout(30):
+            async for chunk in request.stream():
+                if len(body) + len(chunk) > limit:
+                    raise HTTPException(413, "请求内容过大，请缩短后重试。")
+                body.extend(chunk)
+    except TimeoutError as exc:
+        # TimeoutError is an OSError: unhandled, the middleware would re-raise it as a 500.
+        raise HTTPException(408, "请求内容传输超时，请检查网络后重试。") from exc
     try:
         value = json.loads(body)
     except (ValueError, UnicodeError) as exc:
@@ -556,8 +587,8 @@ def _mode_payload(raw: dict[str, Any]) -> TaskCreateRequest:
             payload.sentences = parse_sentences(payload.script, payload.mode)
         if not payload.sentences:
             raise ValueError("至少需要一句正文——请写稿或从转写中挑一句。")
-        if sum(len(s.text) for s in payload.sentences) > 8000:
-            raise ValueError("稿子不能超过 8000 字。")
+        if sum(len(s.text) for s in payload.sentences) > SCRIPT_MAX_CHARS:
+            raise ValueError(f"稿子不能超过 {SCRIPT_MAX_CHARS} 字。")
         def literal(value: str) -> str:
             return "".join(c for c in unicodedata.normalize("NFKC", value) if c.isalnum())
         parsed = parse_sentences(payload.script, payload.mode)
@@ -676,8 +707,8 @@ async def preview_match(request: Request) -> dict[str, Any]:
         payload = MatchPreviewRequest.model_validate(await _bounded_json(request))
     except ValidationError as exc:
         raise HTTPException(422, "原话预检参数无效，请核对稿句和素材。") from exc
-    if sum(len(sentence.text) for sentence in payload.sentences) > 8000:
-        raise HTTPException(422, "稿子不能超过 8000 字。")
+    if sum(len(sentence.text) for sentence in payload.sentences) > SCRIPT_MAX_CHARS:
+        raise HTTPException(422, f"稿子不能超过 {SCRIPT_MAX_CHARS} 字。")
     snapshots = _uploads().snapshots(payload.upload_ids, payload.upload_tokens)
     if _preview_slot.locked():
         raise HTTPException(429, "另一份原话正在核对，请稍后重试。", headers={"Retry-After": "1"})
@@ -761,7 +792,7 @@ async def assist_script_endpoint(request: Request) -> dict[str, Any]:
 class EffectsSuggestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mode: Literal["voiceover", "mixed", "original"]
-    script: str = Field(min_length=1, max_length=8000)
+    script: str = Field(min_length=1, max_length=SCRIPT_MAX_CHARS)
 
 
 @app.post("/api/script/effects")
@@ -774,10 +805,13 @@ async def suggest_effects_endpoint(request: Request) -> dict[str, Any]:
     from .effects_suggest import suggest_effects
     from .providers.llm import LLMConfigurationError, LLMProvider
     provider = LLMProvider.from_settings(settings)
+    usable = False
     try:
         provider.validate_configuration()
-        _enforce_assist_budget(_client_ip(request))
-        usable = not _assist_slot.locked()
+        # A drain stops new paid work. The keyword reading is free, so the page still gets an answer.
+        if not task_manager.is_draining:
+            _enforce_assist_budget(_client_ip(request))
+            usable = not _assist_slot.locked()
     except (LLMConfigurationError, HTTPException):
         usable = False
     if not usable:
@@ -1214,7 +1248,9 @@ def _must_reject_for_drain(request: Request) -> bool:
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return False
     path = request.url.path
-    return request.method in {"POST", "PUT", "PATCH"} and path.startswith(("/api/tasks", "/api/uploads", "/api/match"))
+    # /api/script/assist calls the paid LLM and has no free fallback: none may start while draining.
+    # /api/script/effects keeps answering; without the model it reads the manuscript's keywords.
+    return request.method in {"POST", "PUT", "PATCH"} and path.startswith(("/api/tasks", "/api/uploads", "/api/match", "/api/script/assist"))
 
 
 def _must_check_origin(request: Request) -> bool:

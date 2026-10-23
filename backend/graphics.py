@@ -3,8 +3,9 @@
 This layer is intentionally independent from the validated dialogue subtitle
 template (``subs.ass`` / ``subtitle_manifest.json``): it is burned as a second
 ``ass`` filter after the subtitles and never mutates the hashed subtitle
-artifacts. It can contain the optional top-left news package and mandatory,
-time-bounded generated-media disclosures. The opening title ("片头") is already
+artifacts. It can contain the optional top-left news package and the mandatory
+generated-media disclosures: an opening label for the whole video plus one over
+each generated shot. The opening title ("片头") is already
 handled by the subtitle title style, so it is deliberately not duplicated here.
 """
 
@@ -35,26 +36,60 @@ _ACCENT_BGR = {
 }
 _TOPIC_MAX_CHARS = 12
 _END_CARD_SECONDS = 2.5
+# GB 45438-2025 5.4: an explicit label on an edge or corner of the frame from the first frame for at
+# least 2 s, its text at least 5% of the frame's short side. libass maps the bundled Noto Sans SC's
+# 1448-unit line box (win ascent + descent) to the ASS font size, so 96 on the 1080 canvas keeps the ink
+# of every Chinese label character (845 units or more, Regular or Bold) above 54 px; the Latin "AI"
+# is shorter, as capitals are. The persistent line of Studio exports is separate (studio_render.subtitle_document).
+DISCLOSURE_FONT_SIZE = 96
+DISCLOSURE_SHORT_SIDE_RATIO = DISCLOSURE_FONT_SIZE / _PLAY_RES_Y
+OPENING_DISCLOSURE_TEXT = "本片含AI生成内容"
+OPENING_DISCLOSURE_SECONDS = 3.0
+# Top margin of the labels in ASS units of the 1080-high canvas: on the right edge, BELOW the headline title
+# (subs.ass ModeTitle: margin 55, 60 tall, outline 3) and the topic band (top 50, 64 tall, shadow 6). Positions scale
+# with the frame height but glyph widths do not follow the frame width, so a label at the very top covered the title
+# in 1:1 (54% of its pixels) and in 9:16 (94%) exports; 130 clears both in every shape.
+DISCLOSURE_MARGIN_V = 130
 
-_HEADER = (
-    "[Script Info]\n"
-    "ScriptType: v4.00+\n"
-    "WrapStyle: 2\n"
-    "ScaledBorderAndShadow: yes\n"
-    f"PlayResX: {_PLAY_RES_X}\n"
-    f"PlayResY: {_PLAY_RES_Y}\n"
-    "YCbCr Matrix: TV.709\n\n"
-    "[V4+ Styles]\n"
-    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
-    "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
-    "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-    "Style: GfxBand,Noto Sans SC,20,&H00FFFFFF&,&H00FFFFFF&,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n"
-    "Style: GfxTopic,Noto Sans SC,38,&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H00000000&,-1,0,0,0,100,100,0,0,1,1,1,7,0,0,0,1\n"
-    "Style: GfxEnd,Noto Sans SC,60,&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H00000000&,-1,0,0,0,100,100,0,0,1,3,2,5,0,0,0,1\n"
-    "Style: GfxDisclosure,Noto Sans SC,30,&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H80141018&,-1,0,0,0,100,100,0,0,3,1,0,9,40,40,40,1\n\n"
-    "[Events]\n"
-    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
-)
+# graphics.ass is a hashed artifact that a V2 export regenerates and compares byte for byte
+# (studio.prepare_mode_export), so a work finished before the opening label keeps the overlay it was
+# made with, as the captions keep LEGACY_MODE_CAPTION_TEMPLATE. The current label generation names
+# itself in a comment line; the first generation has none.
+DISCLOSURE_TEMPLATE = "GM-GFX-DISCLOSURE-V2-20261022"
+_DISCLOSURE_MARKER = f"; template: {DISCLOSURE_TEMPLATE}"
+
+
+def uses_disclosure_v2(content: bytes) -> bool:
+    """Whether a stored graphics.ass was written with the opening label (False: first generation)."""
+    return _DISCLOSURE_MARKER.encode("ascii") in content
+
+
+def _header(disclosure_v2: bool = True) -> str:
+    style = (
+        f"Style: GfxDisclosure,Noto Sans SC,{DISCLOSURE_FONT_SIZE},&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H80141018&,-1,0,0,0,100,100,0,0,3,1,0,9,40,50,{DISCLOSURE_MARGIN_V},1\n\n"
+        if disclosure_v2 else
+        "Style: GfxDisclosure,Noto Sans SC,30,&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H80141018&,-1,0,0,0,100,100,0,0,3,1,0,9,40,40,40,1\n\n"
+    )
+    return (
+        "[Script Info]\n"
+        + (_DISCLOSURE_MARKER + "\n" if disclosure_v2 else "")
+        + "ScriptType: v4.00+\n"
+        "WrapStyle: 2\n"
+        "ScaledBorderAndShadow: yes\n"
+        f"PlayResX: {_PLAY_RES_X}\n"
+        f"PlayResY: {_PLAY_RES_Y}\n"
+        "YCbCr Matrix: TV.709\n\n"
+        "[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
+        "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+        "Alignment, MarginL, MarginR, MarginV, Encoding\n"
+        "Style: GfxBand,Noto Sans SC,20,&H00FFFFFF&,&H00FFFFFF&,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n"
+        "Style: GfxTopic,Noto Sans SC,38,&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H00000000&,-1,0,0,0,100,100,0,0,1,1,1,7,0,0,0,1\n"
+        "Style: GfxEnd,Noto Sans SC,60,&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H00000000&,-1,0,0,0,100,100,0,0,1,3,2,5,0,0,0,1\n"
+        + style
+        + "[Events]\n"
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+    )
 
 
 class GraphicsError(RuntimeError):
@@ -125,17 +160,34 @@ def _end_card_events(headline: str, total_duration: float, accent: str) -> list[
 def _disclosure_events(
     intervals: Sequence[tuple[float, float]],
     text: str,
+    total_duration: float = 0.0,
+    *,
+    disclosure_v2: bool = True,
 ) -> list[str]:
     label = _sanitize(text)
-    if not label:
+    if not label or not intervals:
         return []
-    events: list[str] = []
     for start_time, end_time in intervals:
         if start_time < 0 or end_time <= start_time:
             raise GraphicsError("AI 生成画面披露时间范围无效。")
-        events.append(
+    if not disclosure_v2:
+        # First generation: a small label over each generated shot only.
+        return [
             f"Dialogue: 10,{_ass_time(start_time)},{_ass_time(end_time)},"
             f"GfxDisclosure,,0,0,0,,{{\\an9\\pos(1870,40)\\bord1.5\\shad1}}{label}"
+            for start_time, end_time in intervals
+        ]
+    # Any generated shot labels the whole video from its first frame, wherever the shot is.
+    # No \pos: the style anchors the right edge under the title and the topic band, so libass stacks labels that overlap
+    # (the opening one is listed first and keeps the top slot) instead of printing one over the other.
+    video_end = max(total_duration, *(end_time for _, end_time in intervals))
+    opening_end = min(OPENING_DISCLOSURE_SECONDS, video_end)
+    events = [f"Dialogue: 10,{_ass_time(0)},{_ass_time(opening_end)},"
+              f"GfxDisclosure,,0,0,0,,{{\\an9\\bord1.5\\shad1}}{OPENING_DISCLOSURE_TEXT}"]
+    for start_time, end_time in intervals:
+        events.append(
+            f"Dialogue: 10,{_ass_time(start_time)},{_ass_time(end_time)},"
+            f"GfxDisclosure,,0,0,0,,{{\\an9\\bord1.5\\shad1}}{label}"
         )
     return events
 
@@ -150,17 +202,18 @@ def generate_news_graphics(
     output_path: Path | None = None,
     disclosure_intervals: Sequence[tuple[float, float]] = (),
     disclosure_text: str = "AI生成示意画面",
+    disclosure_v2: bool = True,
 ) -> Path | None:
     """Write one ASS overlay for optional news graphics and mandatory disclosures."""
     events = (
         _topic_events(topic, total_duration, accent)
         + _end_card_events(headline, total_duration, accent)
-        + _disclosure_events(disclosure_intervals, disclosure_text)
+        + _disclosure_events(disclosure_intervals, disclosure_text, total_duration, disclosure_v2=disclosure_v2)
     )
     if not events:
         return None
     destination = output_path or task_dir / GRAPHICS_FILE_NAME
-    destination.write_text(_HEADER + "\n".join(events) + "\n", encoding="utf-8")
+    destination.write_text(_header(disclosure_v2) + "\n".join(events) + "\n", encoding="utf-8")
     write_text_log(
         task_dir,
         f"新闻图文包装已生成 accent={accent} topic={'有' if topic.strip() else '无'} "
@@ -336,6 +389,7 @@ def generate_mode_graphics(
     speakers: Sequence[Speaker], preferences: EditingPreferences, *, title: str = "",
     disclosure_intervals: Sequence[tuple[float, float]] = (),
     v2: bool = True,
+    disclosure_v2: bool = True,
 ) -> tuple[Path | None, list[dict[str, Any]]]:
     """Fixed brown/gold lower thirds, first 2.5s, then >=60s after last showing.
 
@@ -391,9 +445,9 @@ def generate_mode_graphics(
     if preferences.news_graphics:
         # V2 never covers the last spoken words with a retrospective end card.
         events = _topic_events(title[:12], total, preferences.tone) + ([] if v2 else _end_card_events(title, total, preferences.tone)) + events
-    events += _disclosure_events(disclosure_intervals, "AI生成示意画面")
+    events += _disclosure_events(disclosure_intervals, "AI生成示意画面", total, disclosure_v2=disclosure_v2)
     if not events:
         return None, receipts
     destination = task_dir / GRAPHICS_FILE_NAME
-    destination.write_text(_HEADER + "\n".join(events) + "\n", encoding="utf-8", newline="\n")
+    destination.write_text(_header(disclosure_v2) + "\n".join(events) + "\n", encoding="utf-8", newline="\n")
     return destination, receipts

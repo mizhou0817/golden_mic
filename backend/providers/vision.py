@@ -57,6 +57,9 @@ def _validate_vision_annotation(content: str) -> VisionAnnotation:
 
 
 class VisionProvider:
+    # The configuration keys an operator actually sets for this provider, used in error messages.
+    config_keys: tuple[str, str, str] = ("VISION_BASE_URL", "VISION_API_KEY", "VISION_MODEL")
+
     def __init__(
         self,
         *,
@@ -96,17 +99,13 @@ class VisionProvider:
     def validate_configuration(self) -> None:
         missing = [
             name
-            for name, value in (
-                ("VISION_BASE_URL", self.base_url),
-                ("VISION_API_KEY", self.api_key),
-                ("VISION_MODEL", self.model),
-            )
+            for name, value in zip(self.config_keys, (self.base_url, self.api_key, self.model))
             if not value
         ]
         if missing:
-            raise VisionConfigurationError(f"Vision 配置缺失：{', '.join(missing)}。请检查 .env。")
+            raise VisionConfigurationError(f"Vision 配置缺失：{', '.join(missing)}。请在 .env 或部署环境文件里补上。")
         if not self.base_url.startswith(("http://", "https://")):
-            raise VisionConfigurationError("VISION_BASE_URL 必须是 http:// 或 https:// 地址。")
+            raise VisionConfigurationError(f"{self.config_keys[0]} 必须是 http:// 或 https:// 地址。")
 
     async def annotate_image(self, image_path: Path) -> VisionAnnotation:
         self.validate_configuration()
@@ -240,6 +239,8 @@ class VisionProvider:
 
 
 class VolcengineVisionProvider(VisionProvider):
+    config_keys = ("VOLCENGINE_VISION_BASE_URL", "VOLCENGINE_VISION_API_KEYS", "VOLCENGINE_VISION_MODEL")
+
     def __init__(
         self,
         *,
@@ -414,6 +415,8 @@ class VolcengineVisionProvider(VisionProvider):
 
 
 class KimiVisionProvider(VisionProvider):
+    config_keys = ("KIMI_BASE_URL", "KIMI_API_KEY", "KIMI_MODEL")
+
     def __init__(
         self,
         *,

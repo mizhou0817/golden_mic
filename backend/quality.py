@@ -488,7 +488,9 @@ def generate_quality_report(
             issues.append(_issue("MODE_UNIT_LOUDNESS_UNMEASURABLE", "error", "部分原声或旁白单元无法测量响度；不视为通过。"))
         for value in sentence_loudness:
             if abs(value["integrated_lufs"] - target_loudness_lufs) > loudness_tolerance or value.get("true_peak_dbfs", 0) > maximum_true_peak_dbfs:
-                issues.append(_issue("MODE_UNIT_AUDIO_OUT_OF_RANGE", "error", f"此音频单元未达到 -20±{loudness_tolerance:g} LUFS / -3 dBTP。", sentence_id=value["sentence_id"]))
+                issues.append(_issue("MODE_UNIT_AUDIO_OUT_OF_RANGE", "error",
+                                     f"此音频单元未达到 {target_loudness_lufs:g}±{loudness_tolerance:g} LUFS / {maximum_true_peak_dbfs:g} dBTP。",
+                                     sentence_id=value["sentence_id"]))
         for issue in issues:
             if issue["code"] in {"LOUDNESS_OUT_OF_RANGE", "TRUE_PEAK_TOO_HIGH"}:
                 issue["severity"] = "error"

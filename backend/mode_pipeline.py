@@ -63,6 +63,13 @@ if TYPE_CHECKING:
 MODE_MANIFEST = "production_mode.json"
 MODE_RECIPE = "three-mode-evidence-v1"
 V2_MEDIA_CONTRACT = "approved-v2-m0-20260929"
+# Loudness: the narration track and the mixed programme are normalised to -20 LUFS / LRA 5 with a
+# -3.5 dBTP limiter target (tts_pipeline.normalize_mode_unit does the same per unit); the 0.5 dB
+# below the -3.0 dBTP QC ceiling is headroom for the AAC encode. The old pipeline keeps -2.0.
+V2_TARGET_LUFS = -20
+V2_TARGET_LRA = 5
+V2_TRUE_PEAK_TARGET_DBFS = -3.5
+V2_TRUE_PEAK_MAX_DBFS = -3.0
 REQUIRED_ARTIFACTS = (
     "pipeline_manifest.json", "asr_transcripts.json", "pretranscripts.json",
     "shots.json", "shots_annotated.json", "script_structure.json", "script_segmented.txt",
@@ -938,7 +945,7 @@ async def _match_narration(record: Any, sentences: list[Sentence], pool: list[An
     available = [s for s in pool if s.status == "available" and s.description and s.quality is not None]
     if not available:
         raise ShotShortageError("没有可用的空镜画面：请多传一些视频或图片素材，或把旁白句子改为原声。")
-    if len(available) < len(sentences) and not reuse_window_seconds and not best_effort:
+    if len(available) < len(sentences) and not reuse_window_seconds and not best_effort:
         raise ShotShortageError("镜头不足：可用非原声画面不足以逐句唯一分配；请增加空镜或减少旁白，不会冻结补帧。")
     async with AsyncExitStack() as stack:
         embedding = await stack.enter_async_context(EmbeddingProvider.from_settings(settings, task_dir=record.task_dir))
@@ -1321,7 +1328,7 @@ async def _assemble_audio(
                     full_script=record.script, pronunciation_plan=pronunciations,
                     target_chars_per_minute=preferences.target_chars_per_minute,
                     rate_tolerance=settings.tts_news_rate_tolerance,
-                    target_lufs=-20, target_lra=5, true_peak_dbfs=-3.5,
+                    target_lufs=V2_TARGET_LUFS, target_lra=V2_TARGET_LRA, true_peak_dbfs=V2_TRUE_PEAK_TARGET_DBFS,
                     # The exact track is assembled below from real PCM samples; a provisional one would only fail
                     # its coarse length check as small per-sentence edge trims add up over many sentences.
                     assemble_narration=False,
@@ -1377,7 +1384,8 @@ async def _assemble_audio(
         if _sha(root / "narration.m4a") != previous_mix.get("sha256"):
             raise TTSProcessingError("完整音轨缓存绑定不一致。")
     else:
-        await concatenate_narration(root, timings, target_lufs=-20, target_lra=5, true_peak_dbfs=-3.5, pre_normalized=True)
+        await concatenate_narration(root, timings, target_lufs=V2_TARGET_LUFS, target_lra=V2_TARGET_LRA,
+                                    true_peak_dbfs=V2_TRUE_PEAK_TARGET_DBFS, pre_normalized=True)
         actual = await probe_audio_duration(root / "narration.m4a", root)
         if abs(actual - timings[-1].end) > 0.03:
             raise TTSProcessingError("完整音轨与真实 PCM 时长不一致；不会裁切原声以强行同步。")
@@ -1387,7 +1395,8 @@ async def _assemble_audio(
     _write_models(root, "timings.json", timings)
     write_json_atomic(root / "pronunciation_plan.json", manifest["pronunciation_plan"])
     write_json_atomic(root / "narration_profile.json", {
-        "schema_version": 1, "mode": manifest["mode"], "target_lufs": -20.0, "maximum_true_peak_dbfs": -3.0,
+        "schema_version": 1, "mode": manifest["mode"], "target_lufs": float(V2_TARGET_LUFS),
+        "maximum_true_peak_dbfs": V2_TRUE_PEAK_MAX_DBFS,
         "target_chars_per_minute": preferences.target_chars_per_minute,
         "rate_tolerance": settings.tts_news_rate_tolerance,
         "provider_profile": manifest.get("tts_provider_profile", {}),
@@ -1654,7 +1663,7 @@ async def _complete_mode(record: Any, plan: list[MatchPlanItem], shots: list[Ann
         target_chars_per_minute=_preferences(record).target_chars_per_minute,
         rate_tolerance=settings.tts_news_rate_tolerance,
         maximum_loudness_spread_lu=settings.tts_max_loudness_spread_lu,
-        target_loudness_lufs=-20.0, maximum_true_peak_dbfs=-3.0,
+        target_loudness_lufs=float(V2_TARGET_LUFS), maximum_true_peak_dbfs=V2_TRUE_PEAK_MAX_DBFS,
         mode=manifest["mode"], mode_rows=_rows(plan),
         speakers=[Speaker.model_validate(value) for value in manifest["speakers"]],
         preferences=_preferences(record).model_dump(mode="json"), gate_mode=gate,
@@ -1768,7 +1777,8 @@ async def _ambient_narration(root: Path, edl: Sequence[EDLItem], snapshots: list
             await run_logged_command(["ffmpeg", "-y", "-i", str(mixed), "-i", str(stem), "-filter_complex", graph,
                                       "-map", "[out]", "-c:a", "pcm_s16le", str(output)], root, "混入非语音环境声（保留完整旁白）")
             mixed = output
-        normalization = await _two_pass_loudnorm_filter(root, mixed, target_lufs=-20, target_lra=5, true_peak_dbfs=-3.5, strict=True)
+        normalization = await _two_pass_loudnorm_filter(root, mixed, target_lufs=V2_TARGET_LUFS, target_lra=V2_TARGET_LRA,
+                                                        true_peak_dbfs=V2_TRUE_PEAK_TARGET_DBFS, strict=True)
         result = root / "ambient_narration.m4a"
         # FFmpeg 6 loudnorm/resampling can leave a stretched final timestamp
         # despite unchanged PCM samples. Rebuild PTS from the emitted samples;

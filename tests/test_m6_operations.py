@@ -731,11 +731,15 @@ class OperationalEndpointTest(unittest.TestCase):
             with self.subTest(max_files=files), patch.multiple(
                 app_settings, max_files=files, max_upload_mb=upload_mb,
                 max_total_upload_mb=total_mb, max_concurrent_tasks=concurrent,
-                max_pending_tasks=pending, max_shots=shots,
+                max_pending_tasks=pending, max_shots=shots, tts_news_rate_tolerance=0.08,
+                anonymous_session_task_rate_limit_per_hour=2, anonymous_ip_task_rate_limit_per_hour=5,
+                anonymous_global_task_rate_limit_per_hour=10,
             ), TestClient(app) as client:
                 response = client.get("/api/config/limits")
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json(), {
+            body = response.json()
+            self.assertIsInstance(body.pop("retry_same_supported"), bool)  # true only once the lifespan installed the retry hook
+            self.assertEqual(body, {
                 "max_files": min(files, 20),
                 "max_upload_bytes": min(upload_mb, 500) * 1024**2,
                 "max_total_upload_bytes": min(total_mb, 5120) * 1024**2,
@@ -750,6 +754,8 @@ class OperationalEndpointTest(unittest.TestCase):
                 "retention_hours": 72, "browser_submissions_per_hour": 2,
                 "ip_submissions_per_hour": 5, "global_submissions_per_hour": 10,
                 "max_concurrent_tasks": min(concurrent, 1), "max_pending_tasks": min(pending, 5),
+                "legacy_max_pending_tasks": min(pending, 5), "maxPending": app_settings.v2_max_waiting_tasks,
+                "draft_ttl_hours": 24, "tombstone_days": 30, "maintenance": False,
             })
 
     def test_negative_thumbnail_id_is_rejected(self) -> None:

@@ -4,8 +4,10 @@ The caller holds its async admission/capacity reservation BEFORE accept(). All
 SQL transactions contain only SQL: no await, provider, callback or media I/O.
 An accepted row is never refunded, even if enqueue/persistence subsequently fails.
 RetrySame reads this acceptance; it never inserts another row or extends the
-hourly budget. V2 terminal retention (done/failed/cancelled) is 72 hours; deletion
-keeps accepted rows and retains capability-bound tombstones for 30 days.
+hourly budget. V2 terminal retention (done/failed/cancelled) is 72 hours. Expiry
+(idle drafts, terminal retention, early cleanup under disk pressure) keeps accepted
+rows and leaves capability-bound tombstones for 30 days; a manual delete keeps the
+accepted row but writes no tombstone, so later requests get 404.
 """
 from __future__ import annotations
 
@@ -19,6 +21,8 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from .uploads import _safe_path
+
+TOMBSTONE_SECONDS = 30 * 86400
 
 
 def owner_digest(owner: str) -> str:
@@ -126,7 +130,7 @@ class AdmissionLedger:
         with closing(self._connect()) as db, db:
             db.execute("INSERT OR IGNORE INTO tombstones VALUES (?,?,?,?,?)",
                        (task_id, owner, token_hash, stamp, reason))
-            db.execute("DELETE FROM tombstones WHERE at<=?", (stamp - 30 * 86400,))
+            db.execute("DELETE FROM tombstones WHERE at<=?", (stamp - TOMBSTONE_SECONDS,))
 
     @classmethod
     def existing(cls, data_dir: Path) -> AdmissionLedger | None:
@@ -151,7 +155,7 @@ class AdmissionLedger:
         stamp = time.time() if now is None else now
         with closing(self._connect()) as db:
             row = db.execute("SELECT owner,token_hash FROM tombstones WHERE task_id=? AND at>?",
-                             (task_id, stamp - 30 * 86400)).fetchone()
+                             (task_id, stamp - TOMBSTONE_SECONDS)).fetchone()
         if row is None:
             return False
         if tokens:
@@ -165,4 +169,4 @@ class AdmissionLedger:
         with closing(self._connect()) as db:
             return [{"id": row[0], "task_id": row[0], "status": "gone", "title": "未命名视频"}
                     for row in db.execute("SELECT task_id FROM tombstones WHERE owner=? AND at>? ORDER BY at DESC",
-                                          (owner, stamp - 30 * 86400))]
+                                          (owner, stamp - TOMBSTONE_SECONDS))]

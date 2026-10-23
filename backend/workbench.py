@@ -996,6 +996,9 @@ async def _ingest_recording(record: Any, sentence_id: int, upload: UploadFile, s
                 "-f", "wav", "-i", str(decoded), "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(asr_audio)],
                 temporary, "Prepare recording ASR")
             async with create_asr_provider(settings) as provider:
+                # One billable request per explicit action: a failure is reported, never silently resent.
+                if hasattr(provider, "max_retries"):
+                    provider.max_retries = 0
                 transcript = await provider.transcribe(asr_audio)
             metadata.update(transcript=transcript.text, asr_confidence=transcript.confidence,
                             cpm=sum(c.isalnum() for c in transcript.text) * 60 / duration,
@@ -1452,8 +1455,7 @@ def create_workbench_router(settings: Settings, task_manager: Any, authorize: An
             payload = await parse_request(request, V2RestoreRequest)
             if await access(request, task_id, write=True) is not record:
                 raise HTTPException(403, "Task authorization changed")
-            return await restore(request, task_id, RestoreRequest(revision=payload.rev,
-                expected_revision=record.revision if payload.expected_revision is None else payload.expected_revision))
+            return await restore(request, task_id, RestoreRequest(revision=payload.rev, expected_revision=payload.expected_revision))
 
         @router.post("/recordings", status_code=201)
         async def recordings_v2(request: Request, task_id: str, rowid: int | None = Form(default=None, ge=0),

@@ -124,6 +124,9 @@ class LLMConfigurationError(LLMProviderError):
     """Raised when required LLM environment variables are missing."""
 
 
+KIMI_CONFIG_KEYS = ("KIMI_BASE_URL", "KIMI_API_KEY", "KIMI_MODEL")
+
+
 class LLMProvider:
     def __init__(
         self,
@@ -138,6 +141,7 @@ class LLMProvider:
         disable_thinking: bool = False,
         reasoning_effort: str | None = None,
         supports_temperature: bool = True,
+        config_keys: tuple[str, str, str] = ("LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"),
     ) -> None:
         self.base_url = base_url.strip().rstrip("/")
         self.api_key = api_key.strip()
@@ -147,6 +151,8 @@ class LLMProvider:
         self.disable_thinking = disable_thinking
         self.reasoning_effort = reasoning_effort
         self.supports_temperature = supports_temperature
+        # The configuration keys an operator actually sets for this provider, used in error messages.
+        self.config_keys = config_keys
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(timeout),
@@ -163,6 +169,7 @@ class LLMProvider:
                 model=settings.kimi_model,
                 reasoning_effort=settings.kimi_reasoning_effort,
                 supports_temperature=False,
+                config_keys=KIMI_CONFIG_KEYS,
             )
         if provider_name in {"volcengine", "doubao", "ark"}:
             api_keys = settings.volcengine_llm_api_keys or settings.volcengine_vision_api_keys
@@ -172,6 +179,7 @@ class LLMProvider:
                 api_key=first_key,
                 model=settings.volcengine_llm_model,
                 disable_thinking=True,
+                config_keys=("VOLCENGINE_LLM_BASE_URL", "VOLCENGINE_LLM_API_KEYS", "VOLCENGINE_LLM_MODEL"),
             )
         if provider_name not in {"openai", "openai-compatible"}:
             raise LLMConfigurationError(
@@ -191,6 +199,7 @@ class LLMProvider:
             model=settings.kimi_model,
             reasoning_effort=settings.kimi_reasoning_effort,
             supports_temperature=False,
+            config_keys=KIMI_CONFIG_KEYS,
         )
 
     async def __aenter__(self) -> "LLMProvider":
@@ -206,17 +215,13 @@ class LLMProvider:
     def validate_configuration(self) -> None:
         missing = [
             name
-            for name, value in (
-                ("LLM_BASE_URL", self.base_url),
-                ("LLM_API_KEY", self.api_key),
-                ("LLM_MODEL", self.model),
-            )
+            for name, value in zip(self.config_keys, (self.base_url, self.api_key, self.model))
             if not value
         ]
         if missing:
-            raise LLMConfigurationError(f"LLM 配置缺失：{', '.join(missing)}。请检查 .env。")
+            raise LLMConfigurationError(f"LLM 配置缺失：{', '.join(missing)}。请在 .env 或部署环境文件里补上。")
         if not self.base_url.startswith(("http://", "https://")):
-            raise LLMConfigurationError("LLM_BASE_URL 必须是 http:// 或 https:// 地址。")
+            raise LLMConfigurationError(f"{self.config_keys[0]} 必须是 http:// 或 https:// 地址。")
 
     async def segment_script(self, script: str) -> str:
         self.validate_configuration()

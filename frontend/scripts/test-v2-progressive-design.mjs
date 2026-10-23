@@ -340,7 +340,8 @@ test('SSR processing internal revision is version N, not number of user modifica
   const Processing = loader()('src/components/Processing.tsx').default;
   for (const revision of [0, 1, 2, 17]) {
     const html = renderToStaticMarkup(React.createElement(Processing, { task: { status: 'running', revision, mode: 'voiceover',
-      stages: [], progress: 42, current_stage: 9, plan: { idx: 1, steps: [{ op: 'edit' }, { op: 'render' }] } },
+      stages: [], progress: 42, current_stage: 9, plan: { state: 'running', steps: [{ kind: 'remix', stages: [8, 9, 10], state: 'succeeded' },
+        { kind: 'replace', row_id: 0, stages: [6, 9, 10], state: 'running' }] } },
       upload: null, uploading: false, now: 0, busy: false, title: '测试', onCancel: deny, onRetry: deny, onRefresh: deny }));
     assert.ok(html.includes(revision === 0 ? '>初版</span>' : `>版本 ${revision}</span>`));
     assert.doesNotMatch(html, /第 \d+ 次修改/); assert.match(html, /第 2\/2 步/); assert.match(html, /aria-valuenow="42"/);

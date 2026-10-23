@@ -436,6 +436,9 @@ async def synthesize_student_narration(
     source = task_dir / "own_voice.wav"
     duration = await probe_audio_duration(source, task_dir)
     async with create_asr_provider(settings) as provider:
+        # One billable request per explicit action: a failure is reported, never silently resent.
+        if hasattr(provider, "max_retries"):
+            provider.max_retries = 0
         provider.validate_configuration()
         transcript = await provider.transcribe(source)
     # Validate every sentence before writing timing/audio/result artifacts.

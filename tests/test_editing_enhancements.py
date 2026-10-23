@@ -28,7 +28,7 @@ from backend.pipeline import (  # pyright: ignore[reportPrivateUsage]
     _generated_media_intervals,
     _segment_render_options,
 )
-from backend.graphics import generate_news_graphics
+from backend.graphics import DISCLOSURE_MARGIN_V, generate_news_graphics
 from backend.providers.generative import (
     GenerativeFillError,
     GenerativeFillProvider,
@@ -368,11 +368,16 @@ class EnhancedRenderTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(read)
             self.assertIsNotNone(frame)
             assert frame is not None
-            disclosure_region = frame[20:100, 1450:1900]
-            bright_pixels = cv2.countNonZero(
-                cv2.inRange(disclosure_region, (180, 180, 180), (255, 255, 255))
-            )
-            self.assertGreater(bright_pixels, 100)
+
+            def bright(top: int, bottom: int, left: int = 1300, right: int = 1900) -> int:
+                region = frame[top:bottom, left:right]
+                return cv2.countNonZero(cv2.inRange(region, (180, 180, 180), (255, 255, 255)))
+
+            # At 0.5 s the opening label and the label of the generated shot are stacked on the right edge, below
+            # the margin that keeps them clear of the title and the topic band; the old top corner stays empty.
+            self.assertGreater(bright(DISCLOSURE_MARGIN_V, DISCLOSURE_MARGIN_V + 100), 100)
+            self.assertGreater(bright(DISCLOSURE_MARGIN_V + 100, DISCLOSURE_MARGIN_V + 200), 100)
+            self.assertEqual(bright(0, DISCLOSURE_MARGIN_V - 10, 1450, 1900), 0)
 
     async def test_motion_and_color_preserve_geometry_and_duration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

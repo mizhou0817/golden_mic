@@ -101,13 +101,18 @@ export interface TaskStatusResponse {
   /** Compatibility aliases; retain current_stage and all existing fields. */
   current?: number | null;
   queue?: number;
-  errorKind?: "network" | "transient" | "shortage" | "qc" | "quote_missing" | null;
+  /** "network" is never written by the server; kept for older clients and fixtures. */
+  errorKind?: "network" | "transient" | "shortage" | "qc" | "quote_missing" | "speech_prerequisite" | null;
   /** One-based sentence numbers supplied by the server. */
   badRows?: number[];
   lifecycle_v2?: boolean;
   expires_at?: string | null;
   retry_same_supported?: boolean;
-  plan?: { steps: { op: string; run: number[]; state?: string }[]; idx: number } | null;
+  /** Latest apply receipt (v2_operations), kept after it ends; not validated by parseTask. */
+  plan?: {
+    operation_id?: string; state?: string;
+    steps: { kind: string; stages: number[]; state?: string; row_id?: number }[];
+  } | null;
 }
 
 export interface ReportRow {

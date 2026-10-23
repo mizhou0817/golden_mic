@@ -159,7 +159,8 @@ class Replace(StrictRequest):
 
 class V2RestoreRequest(StrictRequest):
     rev: int = Field(ge=0)
-    expected_revision: int | None = Field(default=None, ge=0)
+    # Required like every other V2 write: restoring against an unseen revision must be a 409.
+    expected_revision: int = Field(ge=0)
 
 
 class ApplyRequest(StrictRequest):

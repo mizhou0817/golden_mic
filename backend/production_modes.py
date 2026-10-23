@@ -43,6 +43,10 @@ RULES_VERSION: int = MODE_RULES["rules_version"]
 PACING_CPM: dict[str, int] = dict(MODE_RULES["pacing_cpm"])
 MATCH_OK: float = LIMITS["match_ok"]
 MATCH_LOW: float = LIMITS["match_low"]
+SCRIPT_MAX_CHARS: int = LIMITS["script_max_chars"]
+TITLE_MAX_CHARS: int = LIMITS["title_max_chars"]
+# A headline is a label, not a sentence: drafts refuse one that ends like a sentence.
+TITLE_END_PUNCTUATION = "。！？.!?；;"
 # Admission/work limits are not matching thresholds. Exhaustion fails explicitly;
 # it never publishes a partial-search score or silently drops inexact matches.
 MAX_TRANSCRIPT_SECONDS = 3600.0
@@ -431,6 +435,14 @@ def parse_line(line: str) -> dict[str, str]:
     """Public, lossless prefix classification; not sentence splitting."""
     kind, content, hint = _line_kind(line.strip())
     return {"kind": kind, "content": content, "hint": hint}
+
+
+def has_sync_mark(line: str) -> bool:
+    """True when the line itself says it is original sound ("同期：…", "同期 姓名（身份）：…", "【同期】…").
+
+    parse_sentences ignores such marks in voiceover mode, where every line is narration.
+    """
+    return bool(_SYNC_PREFIX.match(line.strip()))
 
 
 def split_text(text: str, kind: Kind = "narration") -> list[str]:
@@ -1399,7 +1411,7 @@ def evaluate_mode_checks(
 __all__ = [
     "Mode", "Kind", "TerminalPunctuation", "PlanRecommendation", "SourceHint", "SentenceInput", "Word", "TranscriptSegment",
     "Speaker", "QuoteTake", "JumpCut", "MODE_RULES", "PACING_CPM", "MATCH_OK",
-    "MATCH_LOW", "STAGE_WEIGHTS", "parse_sentences", "normalize_text",
+    "MATCH_LOW", "SCRIPT_MAX_CHARS", "TITLE_MAX_CHARS", "TITLE_END_PUNCTUATION", "STAGE_WEIGHTS", "parse_sentences", "normalize_text",
     "align_quotes", "refine_cut", "calculate_jumpcuts", "validate_quote_trim",
     "evaluate_mode_checks", "quote_text_is_contiguous", "RULES_VERSION",
     "similarity", "score_status", "facts_of", "split_text", "parse_line",

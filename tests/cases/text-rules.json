@@ -84,6 +84,7 @@
     {"operations": ["edit", "delete", "speakers"], "mode": "mixed", "expected": {"rules_version": 2, "run": [7,8,9,10]}},
     {"operations": ["speakers"], "mode": "original", "expected": {"rules_version": 2, "run": [8,9,10]}},
     {"operations": ["replace_shot"], "mode": "mixed", "expected": {"rules_version": 2, "run": [6,9,10]}},
+    {"operations": ["to_narration", "edit"], "mode": "mixed", "expected": {"rules_version": 2, "run": [6,7,8,9,10]}},
     {"operations": ["render"], "mode": "original", "expected": {"rules_version": 2, "run": [9,10]}},
     {"operations": [], "mode": "original", "expected": {"rules_version": 2, "run": []}},
     {"operations": ["pacing"], "mode": "original", "error": true},

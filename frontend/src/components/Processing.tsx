@@ -12,11 +12,11 @@ const percent = (value: number) => Math.min(100, Math.max(0, value));
 const seconds = (value: number) => value < 60 ? `${value.toFixed(1)} 秒` : `${Math.floor(Math.round(value) / 60)} 分 ${Math.round(value) % 60} 秒`;
 const bytes = (value: number) => `${(value / 1048576).toFixed(1)} 兆字节`;
 export const RECOVERY_UNAVAILABLE = '暂不能把已提交作品恢复为可编辑的新草稿。原任务和当前草稿都没有改动；请保留原任务，使用原始稿件和素材新建作品。';
-const operations: Record<string, string> = {
-  initial: '初版', delete: '删句', edit: '改字', voice: '录音', pacing: '调整语速', trim: '剪短原声',
-  take: '换一段原声', to_narration: '改成旁白', speakers: '修改说话人', render: '合成视频', replace_shot: '换画面',
-};
-const operationLabel = (op: string) => Object.prototype.hasOwnProperty.call(operations, op) ? operations[op] : '应用修改';
+// Steps of an apply receipt: one remix for the text/voice edits (stages 9–10 only: recompose), one replace per row.
+// Fixed labels; server text is never shown.
+type PlanStep = { kind?: unknown; stages?: unknown; state?: unknown };
+const stepLabel = (step: PlanStep) => step.kind === 'replace' ? '换画面'
+  : step.kind === 'recompose' || step.kind === 'remix' && JSON.stringify(step.stages) === '[9,10]' ? '重新合成' : '应用修改';
 
 function Microphone({ active }: { active: boolean }) {
   return <span className={styles.microphone} aria-hidden="true" data-animated={active}>
@@ -59,9 +59,14 @@ export default function Processing({ task, upload, uploading, error, now, title,
   const currentDefinition = stages.find(stage => stage.n === currentNumber);
   // TaskManager.queue is one-based within the waiting queue, not a count ahead.
   const queue = queued && Number.isSafeInteger(task.queue) && (task.queue ?? 0) > 0 ? task.queue : undefined;
-  const plan = task?.plan;
-  const planIndex = plan && Number.isSafeInteger(plan.idx) && plan.idx >= 0 && plan.idx < plan.steps.length ? plan.idx : null;
-  const operation = planIndex !== null && plan ? operationLabel(plan.steps[planIndex].op) : '应用修改';
+  // `plan` is the latest apply receipt and stays after it ends; only a queued or running one describes this run.
+  const receipt = task?.plan;
+  const plan = receipt && (receipt.state === 'queued' || receipt.state === 'running') && Array.isArray(receipt.steps)
+    && receipt.steps.length <= 201 && receipt.steps.every(step => !!step && typeof step === 'object') ? receipt : null;
+  const runningStep = plan ? plan.steps.findIndex(step => step.state === 'running') : -1;
+  const nextStep = plan ? plan.steps.findIndex(step => step.state === 'pending') : -1;
+  const planIndex = runningStep >= 0 ? runningStep : nextStep >= 0 ? nextStep : null;
+  const operation = planIndex !== null && plan ? stepLabel(plan.steps[planIndex]) : '应用修改';
   const headline = connectionUncertain ? '状态需要确认' : uploading ? upload?.finishedAt != null ? '素材已传完，等待服务器确认' : '正在上传素材'
     : queued ? queue !== undefined ? `队列前面还有 ${queue - 1} 个作品` : '已提交，等待服务器处理'
       : cancelled ? '制作已取消' : failed ? kind === 'quote_missing' ? badRows.length ? `有 ${badRows.length} 句原话在素材里没找到` : '有原话在素材里没找到'
@@ -81,18 +86,20 @@ export default function Processing({ task, upload, uploading, error, now, title,
     : kind === 'shortage' ? '不同的画面不够，没法给每句话配上不重复的镜头。'
       : kind === 'qc' ? '这次的画面、声音或字幕没有通过质量检查。'
         : kind === 'network' ? '制作时连接中断了。' : kind === 'transient' ? '制作服务暂时没能完成这一步。'
+          : kind === 'speech_prerequisite' ? '服务器上分析原声用的本地组件没有准备好。'
           : task?.status === 'cancelled' ? '制作已取消。' : '制作没有完成，请先核对状态。';
   const advice = cancelled ? '已取消的作品暂不支持恢复为新草稿。可用原始稿件和素材新建作品；不会自动重试或重新提交。'
     : kind === 'quote_missing' ? `把那几句改成真说过的话，或者补传含这些原话的视频。${mode === 'mixed' ? '也可以明确改成旁白。' : '不会用配音补上没找到的原话。'}`
     : kind === 'shortage' ? '删减稿子，或者多传几个不同场景的视频。'
       : kind === 'qc' ? '新闻里不能用不相关的画面充数。把那句改成拍到的东西，或者删掉它。'
+        : kind === 'speech_prerequisite' ? `这不是稿子或素材的问题，再试一次也不会好，请联系维护人员。${mode !== 'voiceover' ? '也可以改用 AI 配音继续。' : ''}`
         : task?.lifecycle_v2 ? retryable ? '再试一次会先核验已完成的步骤，从未完成处继续；不重新上传，也不新增提交次数。' : '当前不能安全续作；不会自动重试或重新提交。'
           : retryable ? '重新制作会从第一步运行，可能再次产生费用；确认后才会提交。' : '不会自动重试或替你改稿。';
   // Say where it stopped and why, in plain words; the raw server text stays one click away.
   const failure = failed && !cancelled ? describeFailure(task) : { stage: '', detail: '' };
   const stoppedAt = failure.stage || (failed && !cancelled ? currentDefinition?.name ?? '' : '');
   const technical = failure.detail;
-  const cause = !failed || cancelled || kind === 'quote_missing' || kind === 'shortage' || kind === 'qc' ? ''
+  const cause = !failed || cancelled || kind === 'quote_missing' || kind === 'shortage' || kind === 'qc' || kind === 'speech_prerequisite' ? ''
     : kind === 'network' ? '这是网络连接中断造成的，不是稿子或素材的问题。'
       : '这是制作服务这一步出了错，多数不是稿子或素材的问题，往往再试一次就能解决；反复出现时请把下面的技术详情告诉维护人员。';
   // Not enough distinct shots: the user may accept repeated footage (same scene, different moments)
@@ -113,7 +120,7 @@ export default function Processing({ task, upload, uploading, error, now, title,
       <div className={styles.progressCopy}>
         <div className={styles.figure}><Microphone active={(running || uploading) && !error} /><strong className={styles.big} data-testid="processing-big">{queued ? '排队' : progress === undefined ? '—' : `${Math.round(progress)}%`}</strong></div>
         <div className={styles.copy} role="status"><h2>{headline}</h2><p>{doing}</p>
-          {!error && (running || queued) && plan && planIndex !== null && planIndex < plan.steps.length - 1 && <p className={styles.next} data-testid="processing-plan">接下来：{plan.steps.slice(planIndex + 1).map(step => operationLabel(step.op)).join(' → ')}</p>}
+          {!error && (running || queued) && plan && planIndex !== null && planIndex < plan.steps.length - 1 && <p className={styles.next} data-testid="processing-plan">接下来：{plan.steps.slice(planIndex + 1).map(stepLabel).join(' → ')}</p>}
           {import.meta.env.DEV && <p className={styles.technical} data-testid="processing-dev">阶段 {currentNumber ?? '—'}/10 · 服务器进度 {taskPercent ?? '—'} · 内部修订 {task?.revision ?? '—'}</p>}
         </div>
       </div>

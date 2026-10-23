@@ -465,11 +465,108 @@ async def run_capture_stderr_command(
     return stderr_text
 
 
+def descendants_in_kill_order(root: int, parents: dict[int, int], created: Callable[[int], int | None]) -> list[int]:
+    """Descendants of ``root`` from one process snapshot, each listed before its parent.
+
+    ``parents`` maps pid -> parent pid. Windows reuses PIDs, so a process only counts as a
+    child when it was created no earlier than its parent; a stale parent id must never make an
+    unrelated process look like ours.
+    """
+    order: list[int] = []
+    seen = {root}
+
+    def visit(parent: int) -> None:
+        born = created(parent)
+        for pid, parent_pid in parents.items():
+            if parent_pid != parent or pid in seen:
+                continue
+            child_born = created(pid)
+            if born is None or child_born is None or child_born < born:
+                continue
+            seen.add(pid)
+            visit(pid)
+            order.append(pid)
+
+    visit(root)
+    return order
+
+
+def kill_windows_descendants(pid: int | None) -> None:
+    """End every process started under ``pid`` (Windows only; best effort, never raises).
+
+    POSIX media commands run in their own session and are killed as a group. Windows has no
+    such group here, and a package-manager shim (scoop, chocolatey) runs the real ffmpeg.exe
+    as its child, so terminating only the direct child would leave the encoder running.
+    Callers pass ``getattr(process, "pid", None)``: a process object without a pid is skipped, and
+    its own kill must still happen.
+    """
+    if os.name != "nt" or not isinstance(pid, int):
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class ProcessEntry(ctypes.Structure):
+            _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                        ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+                        ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                        ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                        ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+        kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+        kernel32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(ProcessEntry)]
+        kernel32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(ProcessEntry)]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+        kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+        snapshot = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)  # TH32CS_SNAPPROCESS
+        if not snapshot or snapshot == wintypes.HANDLE(-1).value:
+            return
+        parents: dict[int, int] = {}
+        try:
+            entry = ProcessEntry()
+            entry.dwSize = ctypes.sizeof(ProcessEntry)
+            found = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
+            while found:
+                parents[int(entry.th32ProcessID)] = int(entry.th32ParentProcessID)
+                found = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
+        finally:
+            kernel32.CloseHandle(snapshot)
+
+        def created(process_id: int) -> int | None:
+            handle = kernel32.OpenProcess(0x1000, False, process_id)  # PROCESS_QUERY_LIMITED_INFORMATION
+            if not handle:
+                return None
+            try:
+                times = [wintypes.FILETIME() for _ in range(4)]
+                if not kernel32.GetProcessTimes(handle, *(ctypes.byref(t) for t in times)):
+                    return None
+                return (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+            finally:
+                kernel32.CloseHandle(handle)
+
+        for child in descendants_in_kill_order(pid, parents, created):
+            handle = kernel32.OpenProcess(0x0001, False, child)  # PROCESS_TERMINATE
+            if handle:
+                try:
+                    kernel32.TerminateProcess(handle, 1)
+                finally:
+                    kernel32.CloseHandle(handle)
+    except (AttributeError, OSError, ValueError):
+        return
+
+
 async def _terminate_process(process: asyncio.subprocess.Process) -> None:
     if process.returncode is not None:
         return
     try:
         if os.name == "nt":
+            kill_windows_descendants(getattr(process, "pid", None))
             process.terminate()
         else:
             os.killpg(process.pid, signal.SIGTERM)
@@ -482,6 +579,7 @@ async def _terminate_process(process: asyncio.subprocess.Process) -> None:
         pass
     try:
         if os.name == "nt":
+            kill_windows_descendants(getattr(process, "pid", None))
             process.kill()
         else:
             os.killpg(process.pid, signal.SIGKILL)

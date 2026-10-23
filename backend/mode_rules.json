@@ -21,7 +21,6 @@
     "cut_snap_seconds": 0.3,
     "quote_gap_seconds": 0.15,
     "jump_continuity_seconds": 0.5,
-    "original_hard_cuts_warn_above": 3,
     "alternative_takes": 5,
     "alternative_match_min": 0.5,
     "lower_third_seconds": 2.5,
@@ -117,7 +116,7 @@
     "initial": [1,2,3,4,5,6,7,8,9,10],
     "delete": [7,8,9,10], "edit": [7,8,9,10], "voice": [7,8,9,10],
     "pacing": [7,8,9,10], "trim": [7,8,9,10], "take": [7,8,9,10],
-    "to_narration": [7,8,9,10], "speakers": [8,9,10],
+    "to_narration": [6,7,8,9,10], "speakers": [8,9,10],
     "render": [9,10], "replace_shot": [6,9,10]
   },
   "notes": {
