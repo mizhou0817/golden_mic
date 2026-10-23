@@ -26,7 +26,7 @@
 | 逐句编辑/修订 | [workbench.py](../backend/workbench.py)、[revisions.py](../backend/revisions.py)、[QuoteEditor.tsx](../frontend/src/components/QuoteEditor.tsx)、[ResultWorkbench.tsx](../frontend/src/components/ResultWorkbench.tsx) | 先记下再批量应用；原声只连续缩短/换 take/删除，B 可显式转旁白；临时修订生成后提交，失败保留前一成功版本。 |
 | 字幕/图文 | [graphics.py](../backend/graphics.py) | ASR 原话字幕、真实词时或明确段级降级、54/72 字号、标题、人名条和强制生成内容披露，均有规范元数据绑定。 |
 | 发布/导出 | [publication.py](../backend/publication.py)、[studio.py](../backend/studio.py)、[studio_render.py](../backend/studio_render.py) | 服务端版本绑定确认、正式导出门禁、MP4/无 BGM MP3/前 6 秒 GIF；三模式 simple 固定计划独立时长预算 min(600, config)，128 MiB 与高码率拒绝保留；legacy Studio 120 秒不变。 |
-| 页面/旧存档 | [Workspace.tsx](../frontend/src/components/Workspace.tsx)、[submissionRecovery.ts](../frontend/src/lib/submissionRecovery.ts)、[CreateWizard.tsx](../frontend/src/components/CreateWizard.tsx)、[Processing.tsx](../frontend/src/components/Processing.tsx)、[StudioDemo.tsx](../frontend/src/components/StudioDemo.tsx) | 记者三步向导、真实状态、草稿/上传凭据恢复、task 绑定的同浏览器 30 天失败提交快照与 legacy 保留；专业剪辑入口只读。 |
+| 页面/旧存档 | [Workspace.tsx](../frontend/src/components/Workspace.tsx)、[submissionRecovery.ts](../frontend/src/lib/submissionRecovery.ts)、[CreateWizard.tsx](../frontend/src/components/CreateWizard.tsx)、[Processing.tsx](../frontend/src/components/Processing.tsx)、[StudioDemo.tsx](https://github.com/mizhou0817/golden_mic/blob/56579b68ab40e26abfc0c8c43b1172b89aff7037/frontend/src/components/StudioDemo.tsx)（2026-10-23 已删除） | 记者三步向导、真实状态、草稿/上传凭据恢复、task 绑定的同浏览器 30 天失败提交快照与 legacy 保留；专业剪辑入口只读。 |
 
 ## 3. 不能混淆的模式与来源语义
 

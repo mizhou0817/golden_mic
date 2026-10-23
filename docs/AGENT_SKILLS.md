@@ -219,6 +219,7 @@ $gh = "C:\Program Files\GitHub CLI\gh.exe"
     - 过时的断言：`test_mode_api` 的上传上限按每个访客每小时计（`OWNER_CREATIONS_PER_HOUR`），隔离子进程的超时从 180 秒放宽到 900 秒（本机空闲时约 70 秒，繁忙时约 300 秒）；`test_task_operations` 把数据目录补到 100 个字符，结果不再取决于用户名长短；`test_workspace_access` 按现行的请求体上限和启动额度改写。
     - 前端：`test-v2-sample-review.mjs` 在 PATH 上找不到 ffmpeg 时，按 `tests/validation_environment.media_tools` 的办法用 WinGet 安装的 FFmpeg；创建页的 AI 写作助手在 305 像素宽、20 像素大字时不再横向溢出（三个网格改用 `minmax(0,1fr)` 单列，和同一文件里的其他网格一致）。
     - 设计清单的 `view_keys` 311 对 357 不是失败：交接文档附录 C-3 的标题写 311，实际是 357。运行器只把差异记在 `design_count_mismatches` 里，不判失败；附录按规定不改，`docs/DESIGN-MAP.md` 已有说明。
+  - 清理（第 7 项）：删除没有任何代码引用的 `frontend/src/components/StudioDemo.tsx`（已下线的只读 Studio 入口），`docs/THREE_MODE_IMPLEMENTATION_20260928.md` 里指向它的链接改指删除前的版本。保留：随发布包分发的旧功能文档（`deploy/build_release.py` 的清单）、`Studio.tsx`（两个前端测试在读）、`vendor/`（部署要用）、`backend/assets/music/generate_beds.py`（配乐的生成脚本）。
 - 自建 skill 里的数字和行号都标了核对日期。改了 `mode_rules.json`、检查码、阈值、接口或界面术语后，要同步更新对应的 skill。
 
 ## 8. 试用和验证
