@@ -27,7 +27,7 @@
 
 | 用途 | 必需配置 | 容易混淆的地方 |
 |---|---|---|
-| 画面理解、文本处理、稿件分屏 | `KIMI_API_KEY`；保留对应 URL、`KIMI_MODEL=kimi-k3` | 分屏仍由 Kimi 配置创建；即使改了 `LLM_PROVIDER`，也不能据此删除 Kimi 配置 |
+| 画面理解、文本处理、稿件分屏 | `KIMI_API_KEY`；保留对应 URL、`KIMI_MODEL=kimi-k3` | V2 的阶段 5（文稿分句）不调用模型；但启动预检和旧流水线仍会创建并检查分屏用的 Kimi 配置，所以即使改了 `LLM_PROVIDER`，也不能据此删除 Kimi 配置。缺配置时，报错列出的就是要补的 `KIMI_*` 键名（改用火山方舟时是 `VOLCENGINE_*`）；生产环境（`APP_ENV=production`）缺 `KIMI_API_KEY` 时，启动校验直接报错 |
 | 检索向量 Embedding | `VOLCENGINE_VISION_API_KEYS` | 默认 Embedding **共用此字段**，不存在 `VOLCENGINE_EMBEDDING_API_KEYS`；Kimi 不能直接替代此向量接口 |
 | 语音识别 ASR | `VOLCENGINE_APP_ID` + `VOLCENGINE_ACCESS_TOKEN` | 默认开启原声处理；还需对应 ASR 资源授权，只有 Ark 密钥不够 |
 | 配音 TTS | `VOLCENGINE_TTS_API_KEYS`，或可用的 `VOLCENGINE_APP_ID` + `VOLCENGINE_ACCESS_TOKEN` 组合 | 后者是 TTS 支持的备用鉴权，不代表有 ASR 权限就自动有 TTS 权限 |
@@ -75,10 +75,10 @@
 | 旧链路 pending | `MAX_PENDING_TASKS=5`，旧接收检查计入 queued/running | 不要混同 V2 的 50 或仅改此值扩容 V2 |
 | 处理并发 | 模板 `MAX_CONCURRENT_TASKS=1`；部署使用一个 worker | 不要多开 worker 解决排队 |
 | V2 草稿 | **24 小时空闲**到期 | 浏览器缓存不是永久备份 |
-| V2 终态作品 | **72 小时**，包括失败；以服务端保留时间为准 | 不因查看、确认检查而无限续期 |
+| V2 终态作品 | **72 小时**，包括失败；以服务端保留时间为准。每次成功应用修改或恢复版本重新计时；磁盘不足时可能提前清理 | 不因查看、确认检查而无限续期 |
 | 暂存上传 | 自创建起最长 **72 小时** | 草稿续期不会让旧上传无限续期 |
 | 旧本地任务 | 开发模板 `TASK_TTL_HOURS=0`：关闭旧链路自动 TTL 清理 | **不能修改它来修复 V2 到期问题**；也不保证所有临时数据永久保留 |
-| 质量 | 开发模板 `warn`，生产模板 `block` | 当前 Settings 允许生产 `warn`，但发布/导出仍有独立硬门禁，不能靠它强行导出 |
+| 质量 | 代码默认、开发模板和生产模板都是 `warn`；改成 `block`（CI 用它）时阻断项直接让任务失败。生产环境只按服务端配置；非生产环境且服务端为 `warn` 时，草稿可以自带 `quality_gate_mode`；服务端为 `block` 时，草稿不能改用 `warn` | 当前 Settings 允许生产 `warn`，但发布检查仍然独立存在，不能靠它让检查通过。用户在导出时勾选“仍然导出”可以带着未通过的检查导出（导出作业会记录），这不是检查通过 |
 
 默认上传限制为单文件 500 MiB、总计 5120 MiB、20 个文件；视频单个 1800 秒、总计 3600 秒。V2 图片另有 50 MiB 限制。界面以服务端返回的实际限制为准。开发磁盘安全余量 5 GiB，生产至少 50 GiB；预留倍数默认 8，不等于只需容纳上传文件大小。
 
@@ -88,7 +88,7 @@
 
 - 开发模板 `ASR_SPARSE_RETRY_ENABLED=false`、`ENTITY_VERIFICATION_ENABLED=false`；代码默认及生产模板为 true。前者涉及稀疏识别额外重试，后者涉及实体核验，开启前先评估费用。
 - `VIDEO_EMBEDDING_ENABLED=true`，开发模板也会使用云服务；“本地运行”不等于“完全离线”。稿件、抽取音频、画面或向量检索输入可能发送给配置的提供方。
-- `GENERATIVE_FILL_ENABLED=false` 是默认值。生成补画面还需要已批准的密钥、资源与对应功能选择；不要为了排查缺素材随手开启付费生成。
-- `SYNC_SOUND_*`、语速、响度、检索和 Embedding 并发先保留模板值。不要通过关闭语音、放宽质量或提高并发假装解决缺凭证/缺模型问题。
+- `GENERATIVE_FILL_ENABLED=false` 是默认值。生成补画面还需要已批准的密钥、资源与对应功能选择；不要为了排查缺素材随手开启付费生成。密钥用 `SEEDANCE_2_0_API_KEY` 或 `VOLCENGINE_GEN_API_KEYS`（前者优先，只填前者也算已配置）；同一个密钥同时用于图片（Seedream，默认 `doubao-seedream-3-0-t2i-250415`）和视频（Seedance，默认 `doubao-seedance-2-5-260628`，键名里的 2_0 只是历史名称）；`GENERATIVE_FILL_MODE` 默认 `video`。
+- `SYNC_SOUND_*`、语速、响度、检索和 Embedding 并发先保留模板值。`TTS_TARGET_*`、`MUSIC_DUCK_RATIO`、`MOTION_ZOOM_RATIO` 对 V2 作品没有作用，只用于旧流水线、旧的 `/edit` 修改路径和没有 V2 媒体合同的旧三模式作品，`COLOR_CONSISTENCY_TARGET_LUFS` 没有代码读取：V2 的响度（−20 LUFS）、人声段落的背景音乐压低（18 dB）和推近比例都写在代码里，改这些键对 V2 没有作用。不要通过关闭语音、放宽质量或提高并发假装解决缺凭证/缺模型问题。
 
 下一步：[快速开始](QUICKSTART.md)负责安装与首次启动；[故障排查](TROUBLESHOOTING.md)按错误定位。生产审批、签名和回滚只按[部署说明](../deploy/README.md)执行。

@@ -2,7 +2,7 @@
 
 本页按当前源码说明部署流程，**不是当前在线版本或生产验收报告**。[2026-10-03 本地开发交付记录](../docs/V2_PRODUCT_DELIVERY_20261003.md)仅证明该日期、该源码与受限环境中的结果；其中 TEMP 未签名包不是可直接上线的生产制品，后写文档也不属于那个包。不得从历史测试数量、构建模块数或本机服务记录推断目标机状态。
 
-当前入口是 V2 A/B/C 创建、处理、结果工作台和作品历史；不新增 Studio UI，不恢复课堂、账号登录或独立云作业。开发防护基线见 [DEVELOPMENT.md](../docs/DEVELOPMENT.md)，配置与故障处理见 [CONFIGURATION.md](../docs/CONFIGURATION.md)、[TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)、[RUNBOOK.md](../docs/RUNBOOK.md)。新发布包按显式白名单包含当前全部 docs Markdown 和模型决策 JSON，包括索引、六篇入门/维护指南与最新交付页；不追补旧包。
+当前入口是 V2 A/B/C 创建、处理、结果工作台和作品历史；不新增 Studio UI，不恢复课堂、账号登录或独立云作业。开发防护基线见 [DEVELOPMENT.md](../docs/DEVELOPMENT.md)，配置与故障处理见 [CONFIGURATION.md](../docs/CONFIGURATION.md)、[TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)、[RUNBOOK.md](../docs/RUNBOOK.md)。新发布包按显式白名单包含 docs 下的 Markdown（`AGENT_SKILLS.md`、`UI_SIMPLIFICATION_20261014.md` 和 `docs/agents/`、`docs/reports/` 子目录除外）和模型决策 JSON，包括索引、六篇入门/维护指南与最新交付页；不追补旧包。
 
 **上线前仍须完成独立验证：** 环境包装器的调用协议见第 7 节：选项在环境文件之前，显式 `--` 后才是目标命令及其参数。修复后的回归和 Linux CI 必须重跑、单独报告，静态/参数回归不等于目标机发布验收。必需本地语音包和真实生产验收仍未完成。下面展示脚本的设计流程，不是可忽略阻塞直接复制运行的批准。
 
@@ -18,7 +18,7 @@ GitHub `blob/main` / `tree/main` 链接指向**完整公开源码**，不是最�
 - 私有 API 使用 `X-Task-Token`，媒体可使用 `token` 查询参数。[任务授权](../backend/main.py)允许单个且相同的 header/query 配对，拒绝同一通道重复或两通道冲突。**V2 任务及其文件 API 即使在本地回环也必须有有效任务令牌**；浏览器历史视图不能授予其他浏览器的草稿/上传权限。
 - legacy 的受信任本地访问是另一条兼容规则：非生产、直接 loopback 客户端与 Host、无转发头，写入另需精确 Origin；显式错误令牌不能回退。不得把这条规则推广到 V2 或公网。生产 `local_history:false`，全局 `GET /api/tasks?offset&limit` 即使从生产回环请求也返回 404；按匿名所有者作用域的历史也不是全局索引。
 - 单 worker 仍然必要：运行任务、锁和调度有进程内状态，生产数据盘另有排他实例锁。但**不是所有准入/额度都在内存**：[V2 admission](../backend/admission.py)使用独立 SQLite accepted-start 账本与 tombstone，不使用旧课堂数据库。accepted start 不因后续失败退款；RetrySame 复用已接受记录，不新增接受额度，不延长小时窗口。这不是 Provider 账单系统，重试仍可能有实际费用，必须显式授权。
-- 模板小时额度为会话 2、IP 5、全站 10；V2 持久计数与 legacy 兼容计数共同约束准入。重启不应成为绕过预算的手段，仍需 Provider/WAF 外部预算和告警。恢复持久任务记录不意味着自动续跑付费生成；中断处理按恢复规则失败关闭。
+- 生产模板的小时额度为会话 10、IP 30、全站 60（Settings 默认 2、5、10）；V2 持久计数与 legacy 兼容计数共同约束准入。重启不应成为绕过预算的手段，仍需 Provider/WAF 外部预算和告警。恢复持久任务记录不意味着自动续跑付费生成；中断处理按恢复规则失败关闭。
 
 ## 2. 上线前置条件与依赖
 
@@ -33,7 +33,7 @@ GitHub `blob/main` / `tree/main` 链接指向**完整公开源码**，不是最�
 
 ## 3. 先解除真实前置阻塞，不能伪造 ready
 
-[生产模板](golden-mic.env.production.example)为保守的 `QUALITY_GATE_MODE=block`；当前 [Settings](../backend/config.py)也接受 `warn`，**不能再声称 production 校验器必定拒绝 warn**。[发布门禁](../backend/publication.py)独立检查当前修订的报告、QC、确认和来源：真实错误不能被勾选豁免，缺失/损坏 QC 失败关闭。调整质量模式不等于获得发布权。
+[生产模板](golden-mic.env.production.example)设为 `QUALITY_GATE_MODE=warn`（CI 用 `block`），[Settings](../backend/config.py)两种都接受；production 只采用服务器配置的值，草稿里带来的质量模式不生效。[发布门禁](../backend/publication.py)独立检查当前修订的报告、QC、确认和来源：真实错误不能被勾选豁免，缺失/损坏 QC 失败关闭。调整质量模式不等于获得发布权。
 
 模板的 `LOCAL_SPEECH_REQUIRED=true` 是生产要求；Settings 默认仍为 false。模板同时保留 `LOCAL_SPEECH_LICENSE_REVIEWED=false` 和空清单，表示尚未完成前置条件，不是可直接启动的成品配置。必需生产模式检查：
 
@@ -95,7 +95,7 @@ cd "$GM_SOURCE"
 
 ### 包内边界
 
-[build_release.py](build_release.py)的 `INCLUDED_FILES` / `INCLUDED_DIRECTORIES` 是唯一打包范围权威，不能由本页扩大白名单。新包递归包含 backend、选定前端资产（映射为标准 dist）、vendor、deploy；另外显式包含根 README、冻结依赖/SBOM、**当前全部 docs/*.md** 和 [docs/v2-model-selection-20261002.json](../docs/v2-model-selection-20261002.json)。文档按文件名逐项列入，不是递归打包整个 docs 或在打包时通配吸收任意新文件。
+[build_release.py](build_release.py)的 `INCLUDED_FILES` / `INCLUDED_DIRECTORIES` 是唯一打包范围权威，不能由本页扩大白名单。新包递归包含 backend、选定前端资产（映射为标准 dist）、vendor、deploy；另外显式包含根 README、冻结依赖/SBOM、**docs/*.md 中除 `AGENT_SKILLS.md`（只给开发用的 AI 助手）和 `UI_SIMPLIFICATION_20261014.md` 以外的全部文件**和 [docs/v2-model-selection-20261002.json](../docs/v2-model-selection-20261002.json)；`docs/agents/`、`docs/reports/` 不打包。文档按文件名逐项列入，不是递归打包整个 docs 或在打包时通配吸收任意新文件。
 
 显式新增文档包含 [docs/README.md](../docs/README.md)、[docs/QUICKSTART.md](../docs/QUICKSTART.md)、[docs/USER_GUIDE.md](../docs/USER_GUIDE.md)、[docs/CONFIGURATION.md](../docs/CONFIGURATION.md)、[docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)、[docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md)及[最新交付页](../docs/V2_PRODUCT_DELIVERY_20261003.md)；[docs/RUNBOOK.md](../docs/RUNBOOK.md)继续包含。后续新增文件仍须同步审核白名单与归档验证，不以本页代替实际 tar 成员核验。
 
@@ -196,7 +196,7 @@ sudo bash "$GM_BOOTSTRAP_SOURCE/deploy/deploy_release.sh" \
 2. 检查系统环境文件占位符/权限和公钥属主/权限；拒绝已存在目标，创建新 release 目录；使用**调用脚本旁的可信归档验证器**检查 tar，之后才解压，检查必要文件。
 3. 以 `goldenmic` 身份在新 release 创建 venv，使用目标机 `python3` 与 `uv sync --frozen --no-dev --python ... --project ...` 安装。此阶段可能联网，不会安装缺失的外置语音模型栈。
 4. 以服务身份执行新 release 的 Python 环境验证、精确 EnvironmentFile 验证和带目标 `PYTHONPATH`、数据盘 TMPDIR 的完整 preflight；之后将 release 树收回 `root:root` 并去掉 group/other 写权限。**这些步骤在排空旧服务之前**，但会进行数据盘探针和所需模型读取，不是零 I/O。
-5. 记录旧 current 链接；仅当服务 active 时 POST drain，每 5 秒读取 `active_tasks`，直到归零或超时。活动数还含导出/任务操作/删除，不只是 pipeline running。
+5. 记录旧 current 链接；仅当服务 active 时 POST drain，每 5 秒读取 `active_tasks` 加 `upload_jobs`，直到归零或超时。`active_tasks` 还含导出/任务操作/删除，不只是 pipeline running；`upload_jobs` 是传完后还在做收费语音识别的素材，切换会取消它们。旧版本的服务没有 `upload_jobs`，按 0 算。
 6. 用 `ln -sfn` 更新 current，daemon-reload、restart；systemd 的 `ExecStartPre` 再验证环境与完整 preflight。最多 60 次、间隔 2 秒检查 readiness，成功后 reload Nginx，才提交发布成功。脚本未实现整个发布/数据的事务原子性，不能把链接切换描述为断电安全事务。
 7. 排空超时会尝试 DELETE drain 并中止，不主动强杀任务。失败/中断 trap 尝试恢复旧链接/服务、取消未切换旧服务的 drain，并清理本次新 release；首次发布无旧版本时停止服务并移除 current。自动恢复中的部分命令是 best-effort，**脚本报“restored”不证明旧服务已健康**，须再次验证。不会以删除真实任务数据解决失败。
 
@@ -204,21 +204,37 @@ sudo bash "$GM_BOOTSTRAP_SOURCE/deploy/deploy_release.sh" \
 
 ### 共用服务器上的 Docker 部署（宝塔 / 已有其他项目）
 
-当前线上（101.33.210.33，https://goldmic.misuntech.com）用这种方式，和其他项目完全隔离，全部放在 `/opt/goldmic/`：
+目前的线上实例（101.33.210.33，https://goldmic.misuntech.com）用这种方式部署；它没有做过第 8 节的分层验收，不能当作生产验收结论。它和同机的其他项目完全隔离，全部放在 `/opt/goldmic/`：
 
 | 路径 | 内容 |
 | --- | --- |
-| `build/` | 镜像构建上下文：`backend/`、`frontend/dist/`、`deploy/`、`vendor/`、锁文件、[Dockerfile](docker/Dockerfile) |
+| `build/` | 镜像构建上下文：`backend/`、`frontend/dist/`、`deploy/`（含 [Dockerfile](docker/Dockerfile) 和 [update.sh](docker/update.sh)）、`vendor/`、锁文件 |
 | `data/` | 作品、ASR 缓存、临时文件（同一文件系统；容器内 `/data`，uid 990） |
 | `samples/` | 已审核范例包（只读挂载到 `backend/assets/samples`） |
 | `goldmic.env` | 生产配置与密钥（root，0600；生产模式只读进程环境，不读 `.env`） |
-| `docker-compose.yml` | [模板](docker/docker-compose.yml)：容器 `goldmic`，`restart: always`，只监听 `127.0.0.1:18765` |
-| `nginx-proxy.conf` | 即 [golden-mic-proxy.conf](nginx/golden-mic-proxy.conf) |
+| `docker-compose.yml` | [模板](docker/docker-compose.yml)：容器 `goldmic`，`restart: always`，只监听 `127.0.0.1:18765`，`stop_grace_period: 7200s` |
+| `nginx-proxy.conf` | 即 [golden-mic-proxy.conf](nginx/golden-mic-proxy.conf)：把 `X-Forwarded-For` 覆盖为真实来源地址，生产模式按它计算每个 IP 的额度 |
 
 nginx：宝塔的 `/www/server/panel/vhost/nginx/goldmic.misuntech.com.conf`（来自 [goldmic.nginx.conf](docker/goldmic.nginx.conf)），证书由 certbot（webroot `/opt/goldmic/acme`）签发并自动续期。
 
-更新版本：本机 `npm --prefix frontend run build` 后，把上表的构建上下文同步到 `/opt/goldmic/build/`，然后在服务器
-`cd /opt/goldmic && docker build -t goldmic:latest build && docker compose up -d`。数据和配置不受影响。
+**更新版本**（不打断正在制作的作品）：本机 `npm --prefix frontend run build` 后，把上表的构建上下文同步到 `/opt/goldmic/build/`，然后在服务器运行：
+
+```bash
+sudo bash /opt/goldmic/build/deploy/docker/update.sh
+```
+
+[update.sh](docker/update.sh) 依次：
+
+1. 用 `build/deploy/docker/Dockerfile` 构建 `goldmic:next`，旧容器照常服务。
+2. 在容器内经回环调用 `/api/admin/drain` 排空：不再接受新任务、上传、匹配和 AI 写稿；每 5 秒读一次 `active_tasks`（制作、导出、任务操作、删除）和 `upload_jobs`（传完后还在做收费语音识别的素材，切换会取消它们），两项相加归零才切换。旧版本的容器没有 `upload_jobs`，按 0 算。超过 `GM_DRAIN_TIMEOUT`（默认 7200 秒）就取消排空、不切换、退出码 1，不强杀任务。排空请求和每次轮询都最多试 5 次；容器一直不回应（崩溃循环、卡住）时，脚本什么都不改就退出，见下面的 `--force`。
+3. 把正在运行的容器所用的镜像标为 `goldmic:previous`（它不一定是 `goldmic:latest` 指向的那个：手工 `docker build -t goldmic:latest` 之后两者会不同），新镜像标为 `goldmic:latest`，`docker compose up -d` 重建容器。
+4. 等容器 `healthy` 且 `/health/ready` 通过（`GM_HEALTH_TIMEOUT`，默认 300 秒）；不通过就自动换回原镜像（`docker compose up -d -t 60`）并退出码 1。排空开始之后脚本只要失败或被中断（Ctrl-C、SSH 断线），而容器还在运行，就会先取消排空，让容器继续接收新作品；容器还没被换掉就被中断，或 `docker compose up -d` 在换掉容器之前就失败时，`goldmic:latest` 和 `goldmic:previous` 也会标回原样。
+
+同一时间只能运行一个 update.sh（用 `flock` 锁 `$GM_ROOT/.update.lock`，需要 util-linux）。排空最长约 2 小时，请在 tmux 或 screen 里运行，免得 SSH 断线中断它。`GM_ROOT`（默认 `/opt/goldmic`）、`GM_DRAIN_TIMEOUT`、`GM_HEALTH_TIMEOUT` 用环境变量改，例如 `sudo env GM_DRAIN_TIMEOUT=3600 bash /opt/goldmic/build/deploy/docker/update.sh`。容器已经坏了（崩溃循环、卡住、不回应排空请求）而脚本因此退出时，先看 `docker logs goldmic`；确认里面没有值得保留的作品，再加 `--force` 重跑：跳过排空和等待，直接切换，旧容器里正在做的事会丢，compose 最多等 30 秒让它停下（不是 2 小时的停止宽限期）。脚本被 `kill -9` 这类无法处理的方式结束时，旧容器的排空会残留：它一直拒绝新作品，`/health/ready` 返回 503。手动取消：`sudo docker exec goldmic curl -fsS -X DELETE -H 'Host: localhost' http://127.0.0.1:8000/api/admin/drain`。
+
+回滚到上一版：`sudo bash /opt/goldmic/build/deploy/docker/update.sh --rollback`，同样先排空。回滚只换镜像，不恢复数据或 `goldmic.env`；新版本若已改写数据，先确认旧版本能读。2026-10-22 起完成的作品带新版 AI 标注（`graphics.ass` 里有 `; template: GM-GFX-DISCLOSURE-V2-20261022` 一行），回滚到这之前的版本后，这些作品的导出会返回 422（旧代码重新生成不出同样的标注）；改动前失败的任务的"再试一次"也会返回 409 `retry_inputs_changed`。
+
+直接 `docker compose up -d`、`docker restart` 或主机重启都**不会先排空**：容器收到 SIGTERM 后，应用最多等 `SHUTDOWN_GRACE_SECONDS`（模板 6900 秒）让进行中的任务结束，Uvicorn 的 `--timeout-graceful-shutdown` 为 7100 秒，`stop_grace_period: 7200s` 到时强制结束；到时仍在运行的任务会被中止，不会自动续跑。主机上旧的 `docker-compose.yml` 若还是 `stop_grace_period: 60s`，请照模板改为 `7200s`（update.sh 会提示）。数据和配置不受更新影响。
 生产模式要求 HTTPS（`__Host-` 安全 Cookie 与 https Origin），不能用纯 http + IP 访问。
 
 ### 范例成片（“先看一条范例成片”）
@@ -266,7 +282,7 @@ set -euo pipefail
 sudo bash "$GM_BOOTSTRAP_SOURCE/deploy/rollback_release.sh" "$GM_PREVIOUS_RELEASE_ID"
 ```
 
-[rollback_release.sh](rollback_release.sh)只接受一个位置参数，无 `--drain-timeout`；先检查旧 release 必需文件、Python 可执行性与依赖，再要求 current 有效（否则用部署流程恢复）。目标已 current 则退出成功。当前服务 active 且 live 时排空最多 1440 次、每次 5 秒；超时不切换，trap 尝试解除 drain。active 但 live 不通会进入紧急回滚，不等排空。切换后 restart、最多 60 次 readiness 探测，通过后 reload Nginx；失败 trap 尝试回到回滚前 current。紧急路径、超时与恢复健康必须在隔离目标环境演练，不能凭静态阅读声称通过。
+[rollback_release.sh](rollback_release.sh)只接受一个位置参数，无 `--drain-timeout`；先检查旧 release 必需文件、Python 可执行性与依赖，再要求 current 有效（否则用部署流程恢复）。目标已 current 则退出成功。当前服务 active 且 live 时排空最多 1440 次、每次 5 秒（读 `active_tasks` 加 `upload_jobs`，归零为止）；超时不切换，trap 尝试解除 drain。active 但 live 不通会进入紧急回滚，不等排空。切换后 restart、最多 60 次 readiness 探测，通过后 reload Nginx；失败 trap 尝试回到回滚前 current。紧急路径、超时与恢复健康必须在隔离目标环境演练，不能凭静态阅读声称通过。
 
 ## 8. 验收分层：基础设施不等于真实语音
 
@@ -304,8 +320,8 @@ sudo bash /opt/golden-mic/current/deploy/validate_target_host.sh
 | 并发 | 生产模板 1 个大上传、1 个处理任务；单 worker 不代表没有并发 I/O |
 | **V2 队列** | `v2_max_waiting_tasks` 为固定属性 **50 个 waiting/queued**，不含 running；不是新增可配置环境键，额度/磁盘限制可能更早拒绝 |
 | legacy 队列 | `MAX_PENDING_TASKS=5` 对应 queued + running；与 V2 waiting 50 是不同准入分支 |
-| 保留 | 生产模板任务 TTL 72 小时；V2 done/failed/cancelled 按 72 小时终态保留，删除/过期后的 capability-bound tombstone 保留 30 天；不是通过删除账本重置额度 |
-| 媒体与停止 | 单条媒体命令 6800 秒；应用 shutdown grace 6900 秒；Uvicorn graceful 7100 秒；systemd stop 7200 秒 |
+| 保留 | 生产模板任务 TTL 72 小时；V2 done/failed/cancelled 按 72 小时终态保留；到期清理后留下 capability-bound tombstone 30 天（持原令牌或原浏览器会话访问得到 410 `task_gone`），用户手动删除不留 tombstone（之后为 404）；不是通过删除账本重置额度 |
+| 媒体与停止 | 单条媒体命令 6800 秒；应用 shutdown grace 6900 秒；Uvicorn graceful 7100 秒；systemd stop 7200 秒（Docker：`--timeout-graceful-shutdown 7100`，`stop_grace_period: 7200s`） |
 | 发布等待 | 发布 drain 默认 7200 秒；回滚固定最多 1440 × 5 秒；readiness 最多 60 次、间隔 2 秒 |
 
 正常维护优先显式 drain，超过停止上限可能终止剩余进程，不能承诺无限等待或自动恢复未完成付费任务。调整限制必须同步审核应用、Nginx、数据盘、cgroup、Provider 配额与费用预算，不能用删真实数据、解除发布门禁或放宽模型许可来获得“可用”状态。

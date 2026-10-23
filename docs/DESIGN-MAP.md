@@ -85,7 +85,7 @@ The static **26 missing fields concern the development template**, not productio
 
 `QUOTE_NOT_FOUND`, `QUOTE_MATCH_LOW`, `QUOTE_TOO_LONG`, `QUOTE_AUDIO_NOISY`, `QUOTE_TEXT_DIFFERS`, `SPEAKER_UNNAMED`, `JUMP_CUT_UNCOVERED`, `MIXED_NO_NARRATION`, `MATCH_FALLBACK`, `EXPLICIT_ENTITY_NOT_COVERED`, `generated_media`, `LOW_MATCH_CONFIDENCE`, `FREEZE_PAD_EXCESSIVE`, `VISUAL_CLIP_TOO_LONG`, `NARRATION_SPEAKING_RATE`, `CONTEXTUAL_BROLL_OVERLAY`, `FACT_CHECK`.
 
-The canonical rules also contain separate safety checks; the 17-code design index is not the universe of backend errors. Level 2 is informational, level 1 requires confirmation, and an automatic level-0 blocker cannot be cleared by a checkbox. `generated_media` is explicitly acknowledgeable; that does not waive missing-disclosure or factual-truth blockers. **`QUALITY_GATE_MODE=warn` permits a reviewable render, not a passed publication/export gate.**
+The canonical rules also contain separate safety checks; the 17-code design index is not the universe of backend errors. Level 2 is informational, level 1 requires confirmation, and an automatic level-0 blocker cannot be cleared by a checkbox. `generated_media` is explicitly acknowledgeable; that does not waive missing-disclosure or factual-truth blockers. **`QUALITY_GATE_MODE=warn` permits a reviewable render, not a passed publication/export gate.** The export dialog can still export with open checks after the user ticks the explicit acknowledgement (`acknowledge_unresolved`); the job records the unresolved counts and the file carries no watermark. That is a user-accepted override, not a passed gate.
 
 ## Completion discipline
 

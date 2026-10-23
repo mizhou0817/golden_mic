@@ -783,6 +783,8 @@ render/export is refused. For any task with generated content, studio visual
 outputs conservatively burn `AI生成示意画面（本片含AI生成内容）` over the **entire
 derived timeline**, after crops, transforms, overlays, and subtitle suppression.
 This deliberately over-discloses rather than guessing exact remapped provenance.
+Its font size is 96/1080 of the frame's short side, so the Chinese characters stay at
+least 5% of that side tall (GB 45438-2025) with the bundled Noto Sans SC.
 The output manifest records `[0, result.duration]` (GIF is capped). Audio-only and standalone
 subtitle export are refused for such tasks because they strip the visual notice.
 Users cannot turn the notice off through project JSON.

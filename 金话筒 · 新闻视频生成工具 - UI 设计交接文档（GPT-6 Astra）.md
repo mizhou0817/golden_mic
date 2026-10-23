@@ -1,13 +1,14 @@
 # 金话筒 · 新闻视频生成工具 —— UI 设计交接文档
 > 供 GPT-6 Astra（或任何实现模型 / 工程师）分析、理解并据此实现真实产品。
 > 生成日期：2026-09-28 · 基线：`金话筒 · 新闻视频生成工具.dc.html`（可运行的高保真原型，235 KB）· 同包附 `金话筒 · 新闻视频生成工具（独立版）.html` 可离线打开体验。
+> 2026-10-22 修订：正文 §1–§12 里与当前代码不一致的说明，已按代码更正，括号里注明代码位置（行号会变，以函数名为准）。附录 A/B 是原型源码、附录 C 是自动索引，保持原样；原型与真实实现的差异集中写在 §12。
 
 ## 0 · 如何读这份文件
 
 - **§1–§13 是结构化说明**：产品定义、三种制作模式、设计系统、状态机、逐屏功能、数据模型、流水线、检查规则、待应用机制、限额、响应式、后端对照与差距、Tweaks。
 - **附录 A/B 是完整源码**：A = 模板（`<x-dc>` 内 HTML：内联样式 + `{{ }}` 绑定 + `<sc-if>`/`<sc-for>` 控制流），B = 逻辑（`class Component`：state → 动作方法 → 检查规则 → `renderVals()` 视图模型）。附录 C 是自动提取的索引。源码头部的 `/* 实现说明 */` 是给工程师的浓缩版，与本文一致。
 - **原型 ≠ 生产代码**：它是设计参考，展示意图中的外观与行为。实现时应在目标代码库中按其既有模式重建；所有后端行为在原型里是前端模拟（`SIM`、`setTimeout`），真实接口对照见 §12。
-- **标注约定**：`[需新增后端]` = 当前 API 不支持；`[纯前端可做]` = 现有 API 已支持、只需前端实现；`[演示态]` = 仅为演示原型存在（「填入示例」按钮、Tweaks），生产不保留。
+- **标注约定**（原型里的 dev 标签是按 2026-09-28 的后端标的，现状以 §12 为准）：`[需新增后端]` = 当前 API 不支持；`[纯前端可做]` = 现有 API 已支持、只需前端实现；`[演示态]` = 仅为演示原型存在（「填入示例」按钮、Tweaks），生产不保留。
 - **命名约定**：界面词 ↔ 代码词见 §2 与 §7 表；阶段对象 `STAGES[n]` 有 `devName`（开发名，只在 devNotes 下显示）与 `label`（界面名）两套名字；「句」= `row`，旁白句 `kind:"narration"`，原声句 `kind:"quote"`。
 - 模板语法速查：`{{ path }}` 只做点路径取值；`<sc-if value="{{ bool }}">` 条件渲染；`<sc-for list="{{ arr }}" as="x">` 循环；事件属性用 React 驼峰名（`onClick="{{ handler }}"`）；`style` 是内联样式；`data-r` 是响应式钩子（§11）；`data-screen-label`/`data-doc` 标出屏幕与其职责。
 
@@ -19,10 +20,10 @@
 
 设计原则：
 1. 不让记者学剪辑：一切以「句」为单位，不出现轨道、关键帧、时码输入。
-2. 新闻真实性优先：原话不改字、AI 示意画面必须标注、凑数画面阻断发布、字幕与声音一致。
+2. 新闻真实性优先：原话不改字、AI 示意画面必须标注、凑数画面列为阻断项、字幕与声音一致。阻断项处理完才算检查通过；导出时记者也可以勾选「仍然导出」，带着未通过的检查导出（见 §8）。
 3. 先记下、再一次性应用：结果页任何修改先进待应用列表，点「应用修改」才重做；每次重做产生一个新版本。
 4. 每一步都告诉记者「现在该做什么」：结果页顶部黑条 `nextAction` 是主线，所有新状态都接入它。
-5. 失败可恢复：稿子和素材永远保留；失败页给出 1–2 个明确动作；能预检的错误前置到向导里。
+5. 失败可恢复：失败后稿子和素材在保留期内继续保存，不是永久保留（草稿闲置 24 小时到期；作品完成或失败后保留 72 小时，每次成功修改或恢复重新计时；磁盘不足时可能提前清理，见 §10）；失败页给出 1–2 个明确动作；能预检的错误前置到向导里。
 6. 第一屏只做一个决定：首次进入有三步引导卡，模式默认折叠为最简单的「AI 配音」，高级项默认收起。
 7. 界面不出现校园/学段特指词，也不出现英文技术词（ASR/TTS/diarization → 转写/配音/分说话人）。
 
@@ -133,16 +134,27 @@
 | `create` | 新建作品 | 引导卡（首次）+ 三步向导（`S.step` 1/2/3）：写稿 → 传素材 → 选效果 → 开始制作 |
 | `processing` | 制作中 | 上传进度 → 排队 → 10 阶段（按模式改文案，始终 10 个）；失败卡 |
 | `result` | 结果 | 播放器 + 故事板 + 发布前检查 + 句面板 + 待应用浮条 + 导出弹窗 |
-| `gone` | 作品不存在 | 72 小时清理后的空态 |
+| `gone` | 作品不存在 | 到期清理后的空态（草稿闲置 24 小时、作品 72 小时到期，见 §10；接口返回 410 `task_gone`） |
 | 覆盖层 | — | 我的作品抽屉（≤900px）、导出/分享弹窗、确认弹窗（含输入/选项）、toast |
 
 ### 4.2 任务状态 `task.status`
-`uploading`（上传中 N%）→ `queued`（排队中）→ `running`（制作中 N/10）→ `done`（结果页；门禁 检查通过 / 待修改 N 处 / 待确认 N 项）或 `failed`（失败卡，`errorKind`: network / transient / shortage / qc / quote_missing）。删除 = 取消并永久删除。72 小时后 → `gone`。
+原型的状态：`uploading`（上传中 N%）→ `queued`（排队中）→ `running`（制作中 N/10）→ `done`（结果页；门禁 检查通过 / 待修改 N 处 / 待确认 N 项）或 `failed`（失败卡）。
+
+后端 `TaskState` 是 draft / queued / running / done / failed / cancelled（`backend/models.py`），原型的 `uploading` 对应 draft 加文件级的上传状态；开始回执带排队位置 `queue`。删除 = 取消并永久删除，之后返回 404。草稿闲置 24 小时、作品完成或失败后 72 小时到期（每次成功修改或恢复重新计时）→ `gone`（410 `task_gone`）。服务重启时，排队中和制作中的任务一律改为 failed，不会自动续跑。应用修改失败不会让作品变成 failed：状态保持 done，保留上一版；但修改进行中遇到服务重启，作品会和其他任务一样变成 failed。
+
+失败类型 `errorKind`（后端在任务失败时写入；前端 `Processing.tsx` 据此给出原因和动作）：
+- `transient`：没有明确分类的失败都归为这一类，包括 FFmpeg、画面理解、配音、合成和服务商调用出错，以及已接收但没能入队的开始。前端按可重试处理。
+- `shortage`：可用镜头不够。接口没有原型里的 `shortBy`，差多少镜头只写在 `error_message` 里；A、B 模式重试时可以允许镜头复用，C 模式不行。
+- `qc`：没有通过质量检查。除了 `QUALITY_GATE_MODE=block` 时的阻断项，声音与字幕的证据不一致、阶段回执校验失败也归为这一类。
+- `quote_missing`：有原话在素材里没找到（`badRows`，从 1 开始编号）。
+- `speech_prerequisite`：必需的本地语音能力（说话人识别或对齐的本地组件）不可用，是服务器配置问题。前端说明原因，不给重试；B、C 模式可以改用 AI 配音。
+- 空值：被服务重启打断的任务没有 `errorKind`，前端按可重试处理。
+- `network`：为兼容旧客户端保留在接口类型和前端文案里，后端从不写入。
 
 ### 4.3 向导门槛
-- 第 1 步 → 第 2 步：稿子非空且标题合法（首行 ≤ 40 字、无句末标点、非占位符「（写一个标题）」）；C 模式允许空稿进第 2 步，但开始制作前必须 ≥ 1 句且全部「对上了」。
-- 第 2 步 → 第 3 步：≥ 1 个可用文件、无坏文件、无过期文件；C 模式另要求没有「没找到」的原声句；充足度不够时二次确认弹窗。
-- 开始制作：每小时 2 次提交配额；点击后进入 `processing`。
+- 第 1 步 → 第 2 步：稿子非空且标题合法（首行 ≤ 40 字、无句末标点、非占位符「（写一个标题）」）；C 模式允许空稿进第 2 步。开始制作前，C 模式必须有 ≥ 1 句原话，不能有「没找到」的句子，也不能有未核实的增改或中间删词（原话必须是素材里连续说过的话）；「不太确定」（0.6–0.85）不挡开始制作，进结果页后成为待勾项 QUOTE_MATCH_LOW。前端由 `quoteGate`（`frontend/src/lib/productionModes.ts`）判断，后端开始时再校验一次，不通过返回 422 `quote_missing` / `quote_unverified`。
+- 第 2 步 → 第 3 步：≥ 1 个可用文件、无坏文件、无过期文件；B/C 模式要求没有「没找到」的原声句（B 可以改成旁白或删掉）；充足度不够时二次确认弹窗。
+- 开始制作：每个匿名会话、同一 IP、全站各有每小时上限，由服务器配置（默认 2 / 5 / 10 次，生产模板 10 / 30 / 60 次；`GET /api/config/limits` 返回实际值）；已接收的提交不退额度，超出返回 429 并带 Retry-After（`backend/admission.py`）；点击后进入 `processing`。
 
 ## 5 · 逐屏功能说明
 
@@ -151,7 +163,7 @@
 
 ### 5.1 页头与侧栏（全局）
 - 页头：Logo/产品名；「大字」（`toggleFont`）；「怎么用」；服务状态 pill（正常 / 维护中）；「✓ 已自动保存 HH:MM」`[纯前端可做]`。
-- 侧栏「我的作品」：按时间/状态排序；作品卡 = 标题（≤32 字）+ 状态标签（已清理 / 待修改 N 处 / 待确认 N 项 / 检查通过 / 没做成 / 上传中 N% / 排队中 / 制作中 N/10）+ 模式小字 + 「改了 N 次」+ 日期 + 「还剩 N 天」；点卡 `openTask`。历史只在本机 localStorage（≤100 条）`[需新增后端：服务端历史/账号]`。≤900px 变抽屉。
+- 侧栏「我的作品」：按时间/状态排序；作品卡 = 标题（单行，超长省略）+ 状态标签（已清理 / 待修改 N 处 / 待确认 N 项 / 检查通过 / 没做成 / 上传中 N% / 排队中 / 制作中 N/10）+ 模式小字 + 「改了 N 次」+ 日期 + 「还剩 N 天」；点卡 `openTask`。侧栏最多显示 100 条；访问凭据存在本机，作品列表由后端按匿名会话返回（`GET /api/tasks`），没有账号体系。≤900px 变抽屉。
 
 ### 5.2 第 1 步 · 写稿
 - 模式选择卡（默认 `voiceover`，默认折叠；`modeCards[].pick` / `toggleModeMore`）。
@@ -164,7 +176,7 @@
 
 ### 5.3 第 2 步 · 传素材
 - 拖放/选择上传（mp4/mov/avi/mkv/jpg/png/gif，图片定格 3 秒）；逐文件校验；浏览器读时长与首帧（`probe`）；容量条。文件行默认精简，「备注 / 只用片段 ▾」展开；删除可撤销。
-- 预转写（`asr: pending → done`）`[需新增后端 /pretranscribe]`；元信息「有人说话 · 转写 n 句 · 说话人 k 位 / 正在听… / 这段听不太清」，可展开转写列表。
+- 预转写（`asr: pending → done`）：素材上传完成后，服务端对可能有人声的素材自动转写（收费；判为没有人声的不转写；同一会话再次上传相同的音频时复用缓存，不再收费），开始制作时复用结果；转写失败可以重试（`POST …/pretranscribe`，会再次收费），见 §12；元信息「有人说话 · 转写 n 句 · 说话人 k 位 / 正在听… / 这段听不太清」，可展开转写列表。
 - 拍摄充足度卡（B 只按旁白句算并注明「原声 m 段 ≈ s 秒」；C 隐藏）+「每句话都拍到了吗？」。
 - **A**：含人声文件提示条「这个模式不用人声…想用原声？切到「旁白 + 原声」」。
 - **B/C**：匹配卡（`matchRows`）；说话人卡（`speakerNames`）。**C**：跳切预估行（`jumpLine`）；「从转写挑句子」入口。
@@ -186,21 +198,22 @@
 | 跳切怎么处理 `jump_cut_cover` | 隐藏 | 可选 | chip 组；无空镜时「自动插空镜」灰掉 |
 | 原声段的字幕 `quote_caption` | 隐藏 | 显示 | 同 B |
 | 给 AI 剪辑师的话 `custom_instructions` ≤500 字 | 显示 | 显示 | 显示 |
+- 表里的默认值是前端默认值（`frontend/src/lib/productionModes.ts`）。后端 `EditingPreferences` 的默认值和前端不同：省略时，背景音乐、动效、转场、新闻图形、调色、人声增强、生成补画面为关闭，人名条、原声字幕（`asr`）和跳切遮盖（`broll`）为开启，所以前端必须发送完整的偏好对象（§12）。C 模式由后端强制 `voice=ai`、`pacing=normal`、`generative_fill=false`。
 - 卡底部汇总行 `summaryLine`；「开始制作」52px；说明「稿子和素材会上传到 AI 服务（含第三方云）处理」；`devNotes` 开时显示 `preferences` JSON。
 
 ### 5.5 制作中
 - 标题 + 版本印章；大百分比卡（64px GOLD 圆话筒 + `gm-wave` 声波；上传 % / 排队位 / 进度 %）+ 粗进度条；排队/制作中时安抚「通常需要几分钟。可以先去做别的——做好后会出现在左边「我的作品」里。」（`pBusy`）；上传行；10 阶段列表（`stageDef(n,mode)`；C 第 7 阶段「整理原声」）；进度按 `STAGE_W` 加权。
-- 失败卡：原因 + 建议 + 动作（`pFailActions`）；`quote_missing`：「有 k 句原话在素材里没找到」。「取消并删除」（确认弹窗）。无 ETA、无队列位置 `[需新增后端]`。
+- 失败卡：原因 + 建议 + 动作（`pFailActions`）；`quote_missing`：「有 k 句原话在素材里没找到」。「取消并删除」（确认弹窗）。不显示 ETA（后端不提供）；排队位置由后端提供（开始回执里的 `queue`）。服务重启时，排队中和制作中的任务一律改为失败，不会自动续跑。
 
 ### 5.6 结果页
 - 标题行：标题 + 门禁标签 + 版本 chip（可回看/「恢复这个版本」）+ 模式小字；操作：重命名 / 复制一份（可「保持 / 改为 …」模式）/ 删除 / 导出分享。
-- 黑条 `nextAction`；播放器（未通过时样片水印「样片 · 还有 N 处要处理 / N 项要确认」；原声句人名条预览；字幕预览；空格播放/暂停）。
+- 黑条 `nextAction`；播放器（未通过时叠加样片水印「样片 · 还有 N 处要处理 / N 项要确认」，这只是前端预览叠加，后端不烧录水印；原声句人名条预览；字幕预览；空格播放/暂停）。
 - 故事板（`cells`）：点选、← →、Delete 标记删句、跳切金线、角标（待换/改字/录音/删/凑数/AI 画的/剪短/换段/转旁白）。≤1000px 选中后 `scrollPanelNarrow()`。
 - 发布前检查（§8）：阻断项不可勾只能处理；待勾项点方框勾选；提示项只读。
 - 句面板：旁白句 ① 改这句话（`pendEdit`）/ 我来读（`record` → `pendVoice`）② 换个画面（指令 + 候选镜头 → `pendReplace`；失败分级 none/used/abstract）③ 不要这句（含事实提醒）。原声句 ① 剪短（`trimWords` → `pendTrim`）② 换一段（`altTakes` → `pendTake`；改成旁白 → `pendToNarration` 仅 B）③ 不要这句；说话人 → `pendSpeakers`。
 - 待应用浮条：`pendingTitle`；「全部撤销」/「应用修改 → 第 N 次修改」（`applyPending`）。换画面与删句互斥。
 - 质量数据（`metrics`）：句数/画面数/不同镜头/不确定/凑数/语速目标（C 不显示语速）。
-- 导出弹窗：格式 mp4/mp3/gif · 画幅 · 清晰度 · 字幕；未通过门禁只能导出带水印样片（`gateMode=block` 时禁止）。
+- 导出弹窗：格式 mp4 / gif / mp3 / srt（字幕文件）/ png（当前画面做封面）· 画幅 16:9、9:16、1:1 · 清晰度 720p、1080p（后端另接受 360p）· 字幕；含 AI 示意画面的作品不能导出 mp3 和 srt（会丢掉标注）。检查通过才能直接导出；未通过时，勾选「我已看过以上未通过的检查，仍要导出」后也能导出（`acknowledge_unresolved`），导出的是**不带水印的成片**，导出记录会写明未通过的项数；任务状态、版本和 AI 画面标注照常检查（`backend/v2_editing.py`）。每个作品最多 20 个导出任务，全站同时最多 2 个。
 
 ### 5.7 作品不存在 / 弹窗 / toast
 - `gone`：「这条作品已清理」+「从历史移除」+「新作品」。确认弹窗统一走 `S.confirm={title,body,ok,okBg,input?,choices?,onOk}`。
@@ -232,7 +245,7 @@
 ```jsonc
 // Task（S.tasks[id]）
 {
-  "id": "t-xxx", "title": "首行标题 ≤ 32 字", "mode": "voiceover|mixed|original",
+  "id": "t-xxx", "title": "首行标题 ≤ 40 字", "mode": "voiceover|mixed|original",
   "createdAt": 0, "startedAt": 0, "doneAt": 0,
   "status": "uploading|queued|running|done|failed", "progress": 0, "current": 1, "queue": 0, "revision": 0,
   "stages": [{"n": 1, "status": "pending|running|done|failed", "msg": "", "elapsed": null}],
@@ -256,6 +269,8 @@
 }
 ```
 
+以上是原型的前端 state，不是接口格式。真实接口不同的地方：转写和对齐的字段叫 `start` / `end` / `speaker_id` / `alt_takes`，不是 `t0` / `t1` / `spk` / `alts`（`t0` / `t1` 只出现在应用修改的 `trims` 里）；标题上限 40 字（`backend/drafts.py`）；接口没有 `shortBy`；任务状态和 `errorKind` 的取值见 §4.2。
+
 本地持久化：`localStorage[SAVE_KEY]` 保存 tasks/history/checked/pend/draft/introDismissed（`persist()`/`restore()`）；刷新后草稿（含模式、句子类型、说话人）自动放回。
 
 ## 7 · 十阶段流水线与重做规则
@@ -276,12 +291,14 @@
 | 10 | 完成 | 质量检查 | 检查画面、原声和字幕对不对得上。 | 检查每段原声剪得干不干净。 |
 
 - 阶段权重 `STAGE_W`：A 全 1；B `[1,2,1,1,1,2,1,1,1.5,1]`；C `[1,3,1,0.5,1,2.5,1,1,2.5,1]`。进度 = 已完成权重 / 总权重（无 ETA）。
-- 重做规则（每个 step = 一次后端调用，`revision +1`，`versions[]` 存快照）：首版 1–10；删句/改字/自录/调语速/剪短/换段/改成旁白（remix）7–10；只改说话人 8–10；仅重新合成 9–10；换画面（replace-shot，每句一次）6、9、10。
-- 失败类型 `errorKind`：`network` · `transient` · `shortage`（`shortBy`）· `qc`（`badRows`）· `quote_missing`。
+- 重做规则（后端 `v2_editing.compile_plan` 计算）：首版 1–10；删句/改字/自录/调语速/剪短/换段 7–10；本次修改里有「改成旁白」时 6–10；只改说话人 8–10；没有任何修改的重新合成 9–10；换画面每句 6、9、10。一次「应用修改」= 一次后端调用（`POST /api/tasks/{id}/apply`），所有步骤合成一个计划执行，只生成一个新版本快照；`revision` 一次增加「步数」，中间跳过的号没有对应快照。制作中页面读状态里的 `plan`（最近一次应用的回执，`steps[]` 每步带 `kind`、`stages`、`state`），只在回执还在排队或执行时显示「第 n/m 步 · 应用修改 / 重新合成 / 换画面」和「接下来：…」；只重跑 9–10 的那一步显示「重新合成」。
+- 失败类型 `errorKind`：见 §4.2。后端实际写入 `transient`、`shortage`、`qc`、`quote_missing`（带 `badRows`）、`speech_prerequisite`；`network` 后端从不写入。
 
 ## 8 · 发布前检查规则（`checksFor(t,rows)`，与后端 quality 规则同源）
 
-级别：0 阻断（必须处理，不能勾）· 1 待勾 · 2 提示。门禁：级别 0 全部处理且级别 1 全部勾选 → 「检查通过」才能正常导出；未通过时播放器叠样片水印。`gateMode=block`（Tweak）时后端把阻断项直接判为制作失败——这是现有后端行为，本设计**提议**改为 warn 让记者在结果页自己处理 `[需后端调整]`。
+级别：0 阻断（必须处理，不能勾；`generated_media` 例外，可以知情勾选）· 1 待勾 · 2 提示。门禁：级别 0 全部处理且级别 1 全部勾选 → 「检查通过」，可以直接导出；未通过时播放器叠加「样片」字样（只是前端预览，见 §5.6）。导出时勾选「我已看过以上未通过的检查，仍要导出」，也可以带着未通过的检查导出成片（`acknowledge_unresolved`），这不算检查通过。
+
+后端门禁模式由配置 `QUALITY_GATE_MODE` 决定：`warn`（代码默认，开发模板和生产模板也都是 `warn`）时阻断项进入结果页，由记者处理；`block`（CI 用它）时阻断项直接判为制作失败。草稿可以带 `quality_gate_mode`，服务端为 `block` 时只能填 `block`，否则返回 422（`backend/drafts.py`）；但它只在非生产环境、服务端为 `warn` 时生效，生产环境（`APP_ENV=production`）一律按服务端配置（`backend/mode_pipeline.py::_gate`）。原型 Tweak 里的 `gateMode` 用来模拟这两种模式。
 
 | 代码 | 级别 | 模式 | 触发 | 界面文案 | 按钮 |
 |---|---|---|---|---|---|
@@ -309,21 +326,23 @@
 
 | 待应用键 | 来源操作 | 翻译成 | 重跑阶段 | 浮条文案 |
 |---|---|---|---|---|
-| `deleted[]` | 不要这句 | remix `keep_sentence_ids`（至少留一句） | 7–10 | 删 n 句 |
-| `pendEdit{}` | 改这句话（旁白） | remix 文本替换 | 7–10 | 改 n 句字 |
-| `pendVoice{}` | 我来读 | remix 自录音轨 | 7–10 | 录 n 句音 |
-| `pendPacing` | 快一点/慢一点 | remix pacing | 7–10 | 调语速 |
-| `pendReplace{}` | 换个画面 | replace-shot（每句一次；排除已占用镜头；失败分级写入 `replaceFails`） | 6, 9, 10 | 换 n 句画面 |
-| `pendTrim{}` | 剪短这句（原声） | remix 缩小 `[t0,t1]`，`spoken` 同步裁切 | 7–10 | 剪短 n 句 |
-| `pendTake{}` | 换一段（原声） | remix 换 take | 7–10 | 换 n 段原声 |
-| `pendToNarration[]` | 改成旁白（仅 B） | remix quote → narration | 7–10 | 转旁白 n 句 |
-| `pendSpeakers{}` | 改说话人名字/身份 | remix speakers | 8–10 | 改说话人名字 |
+| `deleted[]` | 不要这句 | apply `deleted`（至少留一句） | 7–10 | 删 n 句 |
+| `pendEdit{}` | 改这句话（旁白） | apply `edits{句: 新文本}` | 7–10 | 改 n 句字 |
+| `pendVoice{}` | 我来读 | 先 `POST …/recordings` 上传录音，再 apply `voices{句: 录音 id}` | 7–10 | 录 n 句音 |
+| `pendPacing` | 快一点/慢一点 | apply `pacing` | 7–10 | 调语速 |
+| `pendReplace{}` | 换个画面 | apply `replaces{句: {instruction}}`（每句一次；排除已占用镜头；失败分级写入 `replaceFails`） | 6, 9, 10 | 换 n 句画面 |
+| `pendTrim{}` | 剪短这句（原声） | apply `trims{句: {t0, t1}}`（只能缩短，至少 1 秒，不能切进词里），`spoken` 同步裁切 | 7–10 | 剪短 n 句 |
+| `pendTake{}` | 换一段（原声） | apply `takes`（只能选当前 `alt_takes` 里的） | 7–10 | 换 n 段原声 |
+| `pendToNarration[]` | 改成旁白（仅 B） | apply `to_narration` | 6–10 | 转旁白 n 句 |
+| `pendSpeakers{}` | 改说话人名字/身份 | apply `speakers{id: {name ≤ 8 字, role ≤ 12 字}}` | 8–10 | 改说话人名字 |
 
-规则：先记下再一次性提交，不自动应用；换画面与删句互斥；每次应用 `revision +1` 并压入 `versions[]`，可回看/恢复（恢复 = 再一次重新合成）。
+规则：先记下再一次性提交（一次 `POST /api/tasks/{id}/apply`，带 `expected_revision`），不自动应用；换画面与删句互斥；每次应用只生成一个新版本快照（`revision` 增加步数，见 §7），可回看/恢复。恢复是把旧版本的快照复制成一个新版本，不重新合成（`backend/workbench.py`）。
 
 ## 10 · 限额与常量（与 `GET /api/config/limits` 一致）
 
-单文件 ≤ 500 MB · 总量 ≤ 5 GB · ≤ 20 个文件 · 单文件 ≤ 30 分钟 · 总时长 ≤ 60 分钟 · 镜头上限 120 · 单句画面 ≤ 6.5 秒 · 原声句最短 1.0 s，> 20 s 警告，> 30 s 阻断 · 语速目标 slow 230 / normal 265 / fast 290 字/分，窗口 ±8% · 稿子软上限 3000 字（硬 8000）· 标题 ≤ 40 字 · 每小时 2 次提交 · 样片保留 72 小时 · 支持格式 mp4/mov/avi/mkv/jpg/png/gif（图片定格 3 秒）。
+单文件 ≤ 500 MiB · 总量 ≤ 5 GiB（5120 MiB）· ≤ 20 个文件 · 单文件 ≤ 30 分钟 · 总时长 ≤ 60 分钟 · 镜头上限 120 · 单句画面 ≤ 6.5 秒 · 原声句最短 1.0 s，> 20 s 待勾，> 30 s 阻断 · 语速目标 slow 230 / normal 265 / fast 290 字/分，窗口 ±8% · 稿子软上限 3000 字（硬 8000）· 标题 ≤ 40 字 · 开始制作每小时：每个匿名会话、每个 IP、全站的开始次数由服务器配置（默认 2 / 5 / 10，生产模板 10 / 30 / 60） · 草稿闲置 24 小时到期 · 作品完成或失败后保留 72 小时（每次成功修改或恢复重新计时；磁盘不足时可能提前清理；到期后 30 天内，凭原访问凭据或同一会话访问返回 410，否则返回 404）· 支持格式 mp4/mov/avi/mkv/jpg/jpeg/png/gif（图片定格 3 秒；单张图片 ≤ 50 MiB、≤ 2000 万像素）。
+
+后端另有：≤ 200 句、单句 ≤ 2000 字、每人最多 20 个草稿、V2 等待队列最多 50 个。`GET /api/config/limits` 的每个字段都取自后端执行处（`mode_rules.json`、服务器配置或模块常量），运营改配置后界面跟着变（`backend/main.py::public_limits`）。
 
 原声剪切：切点吸附到最近词边界与静音（≤ 300 ms）；头留 120 ms、尾留 200 ms；相邻原声句之间 150 ms 间隙；同一段连续讲话拆成多句时合并为连续剪辑；同一句话多次出现取相似度最高、其次信噪比最高。音量：旁白与原声归一 −20 LUFS；音乐在人声段落压低 18 dB。
 
@@ -343,21 +362,21 @@
 
 | 原型方法 | 真实接口 | 说明 |
 |---|---|---|
-| `start()` | `POST /api/tasks`（multipart: script, files[], preferences JSON, mode）→ task_id | 上传进度用 XHR progress；`preferences` 必须发送完整对象（§5.4 全部键 + `target_cpm`） |
-| `addFiles()` 预转写 | `POST /api/tasks/{id}/pretranscribe` `[需新增后端]` | ASR + 分说话人 + 词级时间戳，≤ 素材时长 × 0.3 内返回；正式制作复用 |
-| `matchQuote()` | `POST /api/tasks/{id}/align` `[需新增后端]` | 稿句 ↔ 转写强制对齐，返回 score/t0/t1/spk/alts |
+| `start()` | 建草稿 `POST /api/tasks`（JSON，不带 `script` 和 `upload_ids`）→ 编辑 `PATCH /api/tasks/{id}/draft` → 分块上传 `POST …/files`、`PUT …/files/{fid}/chunks/{i}`（每块 8 MiB）、`POST …/files/{fid}/complete` → 开始 `POST /api/tasks/{id}/start`（202，回执带 `queue`） | 上传进度按分块计算；`preferences` 必须发送完整对象（§5.4 全部键）；`target_cpm` 由服务端按 `pacing` 推导，客户端可以不发，发了必须与推导值一致，否则 422（`backend/drafts.py`）。multipart 一次提交的 `POST /api/tasks` 是旧接口 |
+| `addFiles()` 预转写 | 上传完成后服务端自动转写；失败后重试：`POST /api/tasks/{id}/files/{fid}/pretranscribe`（`{"retry": true}`）或 `POST /api/tasks/{id}/pretranscribe`（`{file_id, retry: true}`） | ASR + 分说话人 + 词级时间戳（不可靠时降为句段精度）。超时 = max(5 秒, min(`MEDIA_COMMAND_TIMEOUT_SECONDS`, 0.5 × 素材时长))，这是超时上限，不是性能保证（`backend/uploads.py`）。开始制作时写入 `pretranscripts.json`，阶段 2 复用。转写收费；判为没有人声的素材不转写；同一会话再次上传相同音频时复用缓存（内存缓存，服务重启后失效）；重试会再次收费 |
+| `matchQuote()` | `POST /api/tasks/{id}/align` | 只预览，不提交编辑；返回 `{matches, match_ok, match_low, local_speech, rules_version}`，每行有 `score`、`start`、`end`、`speaker_id`、`alt_takes`（最多 5 条，同一说话人、相似度 ≥ 0.5）等（`backend/drafts.py`、`backend/production_modes.py`） |
 | `uploadOnly()/tick()/runTask()` | 轮询 `GET /api/tasks/{id}` | 原型用 `SIM` 时长伪造推进 |
-| `complete()` | `GET /api/tasks/{id}/report` → rows/quality | block 模式失败 `qcFail` |
-| `applyPending()` | `POST /api/tasks/{id}/remix`；`POST /api/tasks/{id}/replace-shot`（每句一次） | 剪短/换段/转旁白/说话人 `[需新增后端]`；批量修改一次提交 `[需新增后端]` |
-| `restoreVersion()` | `GET /workbench/versions`, `POST /workbench/restore` `[需新增后端]` | 版本历史与回滚 |
-| `record()` | `POST /workbench/recordings` `[需新增后端]` | MediaRecorder 3 秒/句，需服务端对齐 |
+| `complete()` | `GET /api/tasks/{id}/report` → rows/quality | `QUALITY_GATE_MODE=block` 时阻断项让任务失败（原型的 `qcFail`） |
+| `applyPending()` | `POST /api/tasks/{id}/apply`（一次提交全部待应用修改，字段见 §9） | 剪短、换段、转旁白、改说话人、换画面都已支持；202 回执带 `operation_id`，进度查 `GET /api/tasks/{id}/operations/{op}`；最多 100 个版本 |
+| `restoreVersion()` | `GET /api/tasks/{id}/versions`、`/versions/{rev}`；`POST /api/tasks/{id}/restore`（`{rev, expected_revision}`） | 恢复是把旧快照复制成新版本，不重新合成；`expected_revision` 必填，缺少返回 422，和当前版本不一致返回 409 `stale_revision`（`backend/v2_editing.py::V2RestoreRequest`） |
+| `record()` | `POST /api/tasks/{id}/recordings`（multipart：`row_id`、`expected_revision`、`audio`） | 前端录音在 min(119, 句长 × 2 + 3) 秒时自动停止，最大 20 MiB（`frontend/src/lib/workbenchApi.ts::recordingLimit`）；后端接受 webm/ogg/wav/mp3/m4a、≤ 20 MiB、≤ 120 秒的单音轨录音，上传后转写（收费），应用修改时对齐；原声句不接受录音 |
 | 播放器/缩略图 | `GET /api/tasks/{id}/video`, `/poster`, `/thumbs/{shot_id}.jpg` | 原型用 `assets/shots/shot_N.jpg` |
-| `deleteTask()` | `DELETE /api/tasks/{id}` | 取消并永久删除 → 404 |
-| `LIMITS` | `GET /api/config/limits` | 保持一致 |
+| `deleteTask()` | `DELETE /api/tasks/{id}` | 取消并永久删除（204），之后访问返回 404；手动删除不写墓碑 |
+| `LIMITS` | `GET /api/config/limits` | 每个字段都取自后端执行处，见 §10 |
 
-HTTP 错误映射：400 detail · 401 认证 · 403 CSRF 重试一次 · 404 → gone · 409 刷新状态 · 413 超限 · 422 校验 · 429 Retry-After（配额）· 503 维护/队列满 · 507 磁盘。无幂等键：超时不要自动重试。
+HTTP 错误映射（前端 `frontend/src/lib/appApi.ts`）：400 内容非法 · 401 不使用（凭据或权限失败一律 404）· 403 来源或会话不可信：带 `X-Anonymous-Session: required` 时前端清掉会话后报错，不重放请求 · 404 不存在或无权访问 · 408 读请求体超时 · 409 先读状态再决定（如 `stale_revision`）· 410 已到期（草稿和作品都是 `task_gone`，前端显示「作品已到期或已清理」）· 411 缺少 Content-Length · 413 超限 · 415 格式不支持 · 422 校验失败 · 429 频率或额度：部分带 Retry-After（`start_budget` 至少 60 秒），前端提示手动重试，不自动重试 · 503 维护（排空时 `Retry-After: 60`）、队列满或服务未就绪 · 507 磁盘不足（部分响应带 `Retry-After: 300`；建草稿、加素材、导出时的 507 不带）。无幂等键：超时后先读状态，不要自动重试；唯一自动重试的写请求是分块上传的 PUT。
 
-其他 `[需新增后端]`：逐句 AI 生成来源 `media_origin` · 队列位置/ETA · 到期倒计时 · 服务端历史/账号 · 人名条烧录 · 跳切遮盖 · 样片水印烧录 · 五要素/镜头数预估。`[纯前端可做]`：music_mood 控件 · 质量数据面板 · 服务状态横幅 · 逐文件错误与容量进度 · 可访问确认框 · 上传字节进度 · 阶段时间戳 · 草稿自动保存 · 引导卡/撤销/折叠等上手优化。
+其他：逐句 AI 生成来源 `media_origin`（已有，`GET /report` 返回）· 队列位置（已有，`queue`）· ETA（不提供）· 到期时间（后端给出 `expires_at`，倒计时由前端计算，修改会重置）· 服务端历史（按匿名会话列出，没有账号）· 人名条烧录（已有）· 跳切遮盖（已有）· 样片水印烧录（**没有**：只有前端预览叠加，导出文件不带水印）· 五要素/镜头数预估（没有接口；后端只有尚未接入的 `production_modes.facts_of`、`sentence_needs`）。`[纯前端可做]`：music_mood 控件 · 质量数据面板 · 服务状态横幅 · 逐文件错误与容量进度 · 可访问确认框 · 上传字节进度 · 阶段时间戳 · 草稿自动保存 · 引导卡/撤销/折叠等上手优化。
 
 ## 13 · Tweaks（`data-props`，均为演示/开发用途）
 

@@ -22,7 +22,7 @@
 | Linux 冻结依赖、签名包、TLS/服务、排空回滚及阻塞项 | [部署指南](../deploy/README.md) |
 | 了解本地声纹/CTC 模型选择与供应链约束 | [模型决策（2026-10-02）](V2_MODEL_SELECTION_20261002.md)，实际后续状态以[交付记录](V2_PRODUCT_DELIVERY_20261003.md)为准 |
 
-安装指南针对**完整源码副本**。新最小发布包按显式白名单包含当前全部 docs Markdown 和 [v2-model-selection-20261002.json](v2-model-selection-20261002.json)，包括本索引、六篇入门/维护指南与最新交付页；不是递归收集任意新文件，也不追补旧包。它包含后端和已构建前端，没有完整测试/前端开发配置。不要在包内执行源码构建步骤；不要把未签名 TEMP 包当可发布制品。
+安装指南针对**完整源码副本**。新最小发布包按显式白名单包含 `docs/` 顶层的 Markdown（`AGENT_SKILLS.md`、`UI_SIMPLIFICATION_20261014.md` 除外）和 [v2-model-selection-20261002.json](v2-model-selection-20261002.json)，包括本索引、六篇入门/维护指南与最新交付页；子目录 `docs/agents/`、`docs/reports/` 不在包内；不是递归收集任意新文件，也不追补旧包。它包含后端和已构建前端，没有完整测试/前端开发配置。不要在包内执行源码构建步骤；不要把未签名 TEMP 包当可发布制品。
 
 本页 GitHub `blob/main` / `tree/main` 链接指向完整公开源码，不是包内文件或已部署版本证明；`main` 会变化。同包 README/docs/deploy/backend/vendor 等仍使用相对链接。
 
@@ -58,7 +58,7 @@
 ### 最近一次本地交付记录
 
 - [V2_PRODUCT_DELIVERY_20261003.md](V2_PRODUCT_DELIVERY_20261003.md)：合成回归/浏览器、独立声纹技术验证、未签名发布包和外部阻塞。
-- **本地证据，未公开/不随包发布（非下载链接）**：脱敏机器摘要位于 canary_test/artifacts/v2-product-delivery-20261003/summary.json；核验回执位于 canary_test/artifacts/v2-product-delivery-20261003/verification-receipt.json。仅原证据持有者可核验，不因本次文档修改而重新签署。
+- **本地证据，未公开/不随包发布（非下载链接）**：脱敏机器摘要位于 canary_test/artifacts/v2-product-delivery-20261003/summary.json；核验回执位于 canary_test/artifacts/v2-product-delivery-20261003/verification-receipt.json。这两份文件已于 2026-10-21 按维护者要求删除，现在无法核验；不因本次文档修改而重新签署。
 
 这次记录不等于当前机器已配置服务、不等于真实语音质量或生产上线。CTC、授权范例、真实语音评估和 Linux/TLS/负载/回滚仍需各自完成。包装器调用协议和跨平台受保护回归见部署/开发指南；本轮修复后的验证需重跑、单独报告，不沿用日期记录宣称当前 CI 通过。
 
