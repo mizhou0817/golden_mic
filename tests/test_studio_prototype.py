@@ -360,7 +360,7 @@ class StudioSubtitleContractTests(unittest.TestCase):
         text = "A{\\p1}B\n世界"
         project = caption_project(text=text, text_animation="typewriter", fade_in=0.2, fade_out=0.2)
         before = project.model_dump()
-        ass = subtitle_document(project, ExportOptions(format="ass"), disclosure=True)
+        ass = subtitle_document(project, ExportOptions(format="ass"))
         rows = dialogue_rows(ass)
         self.assertGreater(len(rows), 1)
         self.assertLessEqual(len(rows), 64)
@@ -372,11 +372,7 @@ class StudioSubtitleContractTests(unittest.TestCase):
         self.assertNotIn(r"{\p1}", ass)
         self.assertNotIn(r"\fad(", "\n".join(row[9] for row in rows))  # Fades do not restart per stage.
         self.assertIn(r"\t(", ass)
-        disclosure = dialogue_rows(ass, 100)
-        self.assertEqual(len(disclosure), 1)
-        self.assertIn("AI生成示意画面", disclosure[0][9])
-        self.assertNotIn(r"\t(", disclosure[0][9])
-        self.assertEqual((centiseconds(disclosure[0][1]), centiseconds(disclosure[0][2])), (0, 120))
+        self.assertEqual(dialogue_rows(ass, 100), [])  # no AI label line since 2026-10-23
         self.assertEqual(project.model_dump(), before)
         srt = subtitle_document(project, ExportOptions(format="srt"))
         self.assertEqual(srt.count(" --> "), 1)
@@ -429,8 +425,6 @@ class StudioSubtitleContractTests(unittest.TestCase):
         for fields in ({"start": 0, "duration": 0.001}, {"start": 0, "duration": 0.01, "text_animation": "typewriter"}):
             with self.assertRaises(RenderError):
                 subtitle_document(caption_project(**fields), options)
-        with self.assertRaisesRegex(RenderError, "disclosure duration"):
-            subtitle_document(existing.base_project(duration=0.001), options, disclosure=True)
 
     def test_cubic_easing_and_fixed_filter_allowlists(self):
         points = [KeyPoint(time=0, value=0, easing="ease_in_out"), KeyPoint(time=1, value=1)]
@@ -913,17 +907,17 @@ class StudioPrototypePixelTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(sum(a != b for a, b in zip(frame, baseline)), 100)
             self.assertEqual(project.model_dump(), original)
 
-    async def test_disclosure_survives_animation_and_oversized_subtitle_creates_no_file(self):
-        project = caption_project(text=r"{\p1} cannot hide disclosure", subtitle=False, opacity=0,
+    async def test_generated_media_add_nothing_and_oversized_subtitle_creates_no_file(self):
+        project = caption_project(text=r"{\p1} stays literal text", subtitle=False, opacity=0,
                                   text_animation="typewriter", text_template="note")
         plain = await self.image(project, 0.1, "nodisclosure")
         disclosed = await self.image(project, 0.1, "disclosure", disclosure=True)
-        self.assertGreater(sum(a != b for a, b in zip(plain[:640 * 100 * 3], disclosed[:640 * 100 * 3])), 100)
+        self.assertEqual(plain, disclosed)  # nothing is burned for generated media since 2026-10-23
         document = (self.root / "disclosure/studio.ass").read_bytes()
         self.assertLessEqual(len(document), MAX_SUBTITLE_BYTES)
         self.assertNotIn(b"\r\n", document)
         self.assertEqual(document, subtitle_document(
-            project, ExportOptions(format="png", resolution=360, frame_time=0.1), disclosure=True,
+            project, ExportOptions(format="png", resolution=360, frame_time=0.1),
         ).encode("utf-8"))
         many = Project(tracks=[Track(id="t", type="text", clips=[
             Clip(id=f"c{i}", duration=1, text="字" * 500, text_animation="typewriter") for i in range(64)

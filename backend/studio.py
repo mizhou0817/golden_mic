@@ -287,7 +287,7 @@ def capabilities() -> dict[str, Any]:
                 "duration": "full visible/solo-resolved child duration, >0 and <=120s; no clipping/resizing; update every affected ancestor descriptor in the same save, never auto-reset stale durations",
                 "validation": "all timelines, hidden/solo-excluded references included; IDs unique across sequences/tracks/clips/markers/groups; max 2 reference edges from any timeline",
                 "render_limits": "per selected expansion: 8 nonempty tracks, 64 leaf clip occurrences, 16 source/decoder occurrences; repeated references count each time; empty/hidden/solo-excluded lanes do not add render cost; stored bounds remain independent",
-                "composition": "per-timeline visibility/solo, then insert child layers at parent track position; no overlapping same-track nest spans; empty sections retain time; one final mix/disclosure burn, no intermediate media",
+                "composition": "per-timeline visibility/solo, then insert child layers at parent track position; no overlapping same-track nest spans; empty sections retain time; one final mix, no intermediate media",
                 "limitations": "not isolated groups: transparent gaps expose parent layers, child adjustments affect the accumulated lower composite, and all text is above all media; no nested trim/speed/FX/transitions",
                 "locks": "all timeline track content/order/container protected; locked nests also protect referenced track content/order transitively; explicit track action to unlock; undo/redo restore complete validated snapshots",
                 "deletion": "remove all nested references in a separate save before deleting a referenced sequence; never silently drop references",
@@ -1529,7 +1529,7 @@ def create_studio_router(settings: Any, task_manager: Any, authorize: Any) -> AP
                     result["sha256"] = output_digest.sha256
                     write_json_atomic(work / "manifest.json", {"job": job_id, "kind": "proxy", "revision": expected,
                         "cache_key": key, "proxy": binding.model_dump(), "output_fingerprint": output_digest.fingerprint,
-                        "disclosure_intervals": [[0, duration]] if disclosure else [], "qc": job["qc"], **result})
+                        "disclosure_intervals": [], "qc": job["qc"], **result})  # nothing is burned since 2026-10-23
                     job.update(state="succeeded", output_id=job_id, result=result)
                 except asyncio.CancelledError:
                     job.update(state="cancelled", error="cancelled; proxy output is unavailable")
@@ -1617,9 +1617,9 @@ def create_studio_router(settings: Any, task_manager: Any, authorize: Any) -> AP
             raise HTTPException(507, "insufficient free disk for studio render")
         check_qc(root)
         require_publication(record)
+        # Whether the work has generated media, recorded on the job. Since 2026-10-23 no export burns an AI label,
+        # so none is refused for losing one (MP3/WAV/SRT/ASS included).
         disclosure = requires_disclosure(root)
-        if disclosure and payload.options.format in {"mp3", "wav", "srt", "ass"}:
-            raise HTTPException(422, "export mode would strip AI disclosure")
         asset_index = studio_assets.load_index(root)
         sources = catalog(record, asset_index)
         luts = studio_assets.lut_paths(root, asset_index)
@@ -1769,7 +1769,7 @@ def create_studio_router(settings: Any, task_manager: Any, authorize: Any) -> AP
                         raise RenderError("studio storage quota exceeded during job; result discarded")
                     if mode_inputs:
                         result["sha256"] = mode_export_hashes({"output": work / result["file"]})["output"]
-                    write_json_atomic(work / "manifest.json", {"job": job_id, "revision": job["revision"], "disclosure_intervals": [[0, result["duration"]]] if disclosure else [], "qc": job["qc"], "export_semantics": job.get("export_semantics"), **result})
+                    write_json_atomic(work / "manifest.json", {"job": job_id, "revision": job["revision"], "disclosure_intervals": [], "qc": job["qc"], "export_semantics": job.get("export_semantics"), **result})
                     job.update(state="succeeded", output_id=job_id, result=result)
                 except asyncio.CancelledError:
                     job.update(state="cancelled", error="cancelled; output is unavailable")
@@ -1986,8 +1986,8 @@ def prepare_mode_export(root: Path, work: Path, options: ExportOptions) -> ModeE
         if (generated != original["events"] or preferences.caption_style != original["caption_style"]
             or quote_policy != original["quote_caption"]):
             raise ValueError("subtitle source metadata changed")
-        # A work keeps the AI label generation it was made with: the stored bytes decide which generation is
-        # regenerated, then must match exactly.
+        # A work keeps the AI label generation it was made with (generation 4, the current one, draws no label):
+        # the stored bytes decide which generation is regenerated, then must match exactly.
         stored_graphics = contained(root, root / "graphics.ass", exists=False)
         generation = read_disclosure_generation(stored_graphics.read_bytes()) if stored_graphics.is_file() else DISCLOSURE_GENERATION
         graphics, receipts = generate_mode_graphics(

@@ -1143,39 +1143,6 @@ def headline_lines(title: str) -> list[str]:
     return chunks
 
 
-# Noto Sans SC in font units: libass maps the 1448-unit Windows line box (ascent 1160, descent 288) to the font
-# size, and Han ink stays inside the ideographic em box (880 above the baseline, 120 below).
-_FONT_LINE_BOX_UNITS = 1448
-_FONT_ASCENT_UNITS = 1160
-_IDEOGRAPHIC_TOP_UNITS = 880
-_IDEOGRAPHIC_BOTTOM_UNITS = 120
-
-
-def headline_ink_boxes(title: str | None, frame_width: int = DEFAULT_FRAME_WIDTH,
-                       frame_height: int = DEFAULT_FRAME_HEIGHT) -> list[tuple[float, float, float, float]]:
-    """(left, top, right, bottom) of each line of the centred headline in frame pixels, outline and shadow included.
-
-    For overlays that must not cover it (graphics.generate_news_graphics). The width is an upper bound: every
-    character counts as one em, the advance of a Han character, plus the letter spacing.
-    """
-    if not title or not title.strip():
-        return []
-    layout = SubtitleLayout.for_resolution(frame_width, frame_height)
-    size = _title_font_size(layout)
-    unit = size / _FONT_LINE_BOX_UNITS
-    lines = headline_lines(title)
-    top = _title_center_y(layout) - len(lines) * size / 2  # \an5 centres the block of line boxes
-    boxes = []
-    for index, line in enumerate(lines):
-        baseline = top + index * size + _FONT_ASCENT_UNITS * unit
-        half_width = len(line) * (1000 * unit + layout.letter_spacing) / 2
-        boxes.append((layout.horizontal_center - half_width - layout.outline_size,
-                      baseline - _IDEOGRAPHIC_TOP_UNITS * unit - layout.outline_size,
-                      layout.horizontal_center + half_width + layout.outline_size + layout.shadow_size,
-                      baseline + _IDEOGRAPHIC_BOTTOM_UNITS * unit + layout.outline_size + layout.shadow_size))
-    return boxes
-
-
 def _stable_subtitle_rows(text: str) -> list[str]:
     rows = split_subtitle_text(text, max_chars=MAX_STABLE_SUBTITLE_CHARS)
     if len(rows) <= MAX_STABLE_SUBTITLE_LINES:

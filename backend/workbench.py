@@ -913,7 +913,7 @@ async def _edit_workspace(work: Any, original: Any, payload: EditRequest, settin
         video_only_path=root / "video_only.mp4", final_path=root / "final.mp4",
         target_loudness_lufs=settings.tts_target_lufs, target_loudness_range=settings.tts_target_lra,
         maximum_true_peak_dbfs=settings.tts_true_peak_dbfs,
-        finish_options=await _build_finish_options(work, settings, timings, edl=edl),
+        finish_options=await _build_finish_options(work, settings, timings),
     )
     quality = await _run_blocking_until_complete(partial(
         generate_quality_report, root, shots, plan, timings,

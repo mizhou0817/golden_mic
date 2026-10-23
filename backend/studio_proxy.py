@@ -31,7 +31,9 @@ WIDTH, HEIGHT, FPS = 640, 360, 30
 HASH_CHUNK_BYTES = 1024 * 1024
 HASH_SECONDS = 60
 POLL_SECONDS = 0.25
-DISCLOSURE_VERSION = "studio-full-frame-disclosure-v1"
+# v1 burned a full-length AI label into the proxy of a work with generated media. Nothing is burned since
+# 2026-10-23; the new version also keeps those labelled proxies from being served from the cache again.
+DISCLOSURE_VERSION = "studio-no-ai-label-v2"
 VIDEO_CONTAINERS = frozenset({".mp4", ".mov", ".mkv", ".avi"})
 METADATA = ("report.json", "quality_report.json", "generated_media_disclosure.json",
             "edl.json", "shots_annotated.json", "timings.json", "script_structure.json", "subtitle_manifest.json")

@@ -1,11 +1,11 @@
 ---
 name: golden-mic-media
-description: 金话筒媒体处理约定（FFmpeg / ffprobe）。涵盖依赖与预检；先用 ffprobe 探测再处理；响度统一到 −20 LUFS；人声段音乐压低 18 dB；原声切点吸附到词边界和不超过 300 ms 的静音，片头留 120 ms、片尾留 200 ms，相邻原声间隔 150 ms；跳切遮盖 broll/zoom/hard；图片定格 3 秒；字幕、人名条和 AI 标注烧录；导出规格；子进程超时和取消；Windows 与 Linux 的路径转义差异。修改或排查 rendering.py、graphics.py、tts_pipeline.py、audio_filters.py、music.py、media.py、media_input.py、studio_render.py、production_modes.py 的切点和跳切代码，或用户说"渲染""响度""切点""跳切""字幕样式""人名条""配乐""导出参数""FFmpeg 命令""子进程超时"时使用。不要用于安装或升级 FFmpeg，也不要用真实素材制作成片。关键词：渲染 FFmpeg、ffprobe、响度 loudnorm LUFS、闪避 ducking、切点 cut、跳切 jump cut、字幕 ASS、人名条、导出 export。
+description: 金话筒媒体处理约定（FFmpeg / ffprobe）。涵盖依赖与预检；先用 ffprobe 探测再处理；响度统一到 −20 LUFS；人声段音乐压低 18 dB；原声切点吸附到词边界和不超过 300 ms 的静音，片头留 120 ms、片尾留 200 ms，相邻原声间隔 150 ms；跳切遮盖 broll/zoom/hard；图片定格 3 秒；字幕、人名条烧录（AI 标识只在旧版本里）；导出规格；子进程超时和取消；Windows 与 Linux 的路径转义差异。修改或排查 rendering.py、graphics.py、tts_pipeline.py、audio_filters.py、music.py、media.py、media_input.py、studio_render.py、production_modes.py 的切点和跳切代码，或用户说"渲染""响度""切点""跳切""字幕样式""人名条""配乐""导出参数""FFmpeg 命令""子进程超时"时使用。不要用于安装或升级 FFmpeg，也不要用真实素材制作成片。关键词：渲染 FFmpeg、ffprobe、响度 loudnorm LUFS、闪避 ducking、切点 cut、跳切 jump cut、字幕 ASS、人名条、导出 export。
 ---
 
 # 金话筒媒体处理约定
 
-修改渲染、音频、切点和导出代码时，守住现有约定：参数、新闻真实性、AI 标注、子进程安全，并且只用合成素材验证。下面写的是**代码现状**，和文档或旧报告冲突时以代码为准。
+修改渲染、音频、切点和导出代码时，守住现有约定：参数、新闻真实性、旧版本 `graphics.ass` 的逐字节重建、子进程安全，并且只用合成素材验证。下面写的是**代码现状**，和文档或旧报告冲突时以代码为准。
 
 ## 何时使用 / 不要使用
 
@@ -30,7 +30,7 @@ description: 金话筒媒体处理约定（FFmpeg / ffprobe）。涵盖依赖与
   - 成片的字幕和图文：`rendering._escape_filter_path`；
   - concat 列表：`rendering._escape_concat_path`；
   - 导出：`studio_render.filter_path`。
-- **AI 标注**（片头 3 秒"本片含AI生成内容"，每个 AI 镜头"AI生成示意画面"，字号 96，见 gm-ai-labeling）单独写在 `graphics.ass` 里烧录，不受字幕开关影响，导出时也总会烧录。任何改动都不能让标注被关掉、裁掉或丢失；会丢失标注的格式（MP3、SRT）必须拒绝导出。
+- **AI 标识**：2026-10-23 起不再给观众加（维护者决定，见 [.github/copilot-instructions.md](../../copilot-instructions.md)）。新作品的 `graphics.ass` 是第四代（文件头 `; template: GM-GFX-NO-AI-LABEL-V4-20261023`），只有话题条、片尾卡（V2 之前）和人名条；Studio 导出和原始素材预览也不加整段小字；MP3、SRT 照常导出。旧版本导出时 `studio.prepare_mode_export` 按存档字节重建当时那一代（第一到三代带标识），所以改 `graphics.ass` 的任何输出（不只是标识）都要另起一代，给已有作品留出路；`tests/test_v2_code_doc_agreement.py` 的 `OverlayGenerationTests` 钉住了每一代的散列。不要自行把标识加回来。
 - **原声不改字。** 只能按真实的词边界剪短；segment 精度的原声不能做词级裁剪（`production_modes.py:782-783`）。
 - **不能删掉能力预检，也不能用假工具绕过。** 预检检查的能力是：编码器 libx264、aac，滤镜 ass、loudnorm、ebur128、silencedetect、perspective（`readiness._check_media_capabilities`）。代码还用到 afftdn、sidechaincompress、`volume` 的 eval、lut3d，这几个预检没有覆盖：新增依赖它们的功能时，要考虑是否加进预检（改预检会影响启动，先问用户）。
 - **只用合成素材和受保护测试验证**，见 golden-mic-verify。
@@ -40,17 +40,17 @@ description: 金话筒媒体处理约定（FFmpeg / ffprobe）。涵盖依赖与
 | 项目 | 现行做法 | 出处 |
 |---|---|---|
 | 响度 | 旁白、原声、录音的每个音频单元都做两遍 `loudnorm`：I=−20、LRA=5、TP=−3.5；太短或太轻、无法测量时保持原音量。V2 的旁白单元在配音阶段已经逐个归一，拼接（`concatenate_narration(..., pre_normalized=True)`）只做连接和编码，不再整体归一。有配乐时，混音后再做一次 −20（`rendering.py`）。A 模式的环境声先压到 −24 / 5 / −6，合轨后整体 −20。质检目标是 −20，真峰值上限 −3.0。V2 的这些值是 `mode_pipeline.py` 的 `V2_TARGET_LUFS`、`V2_TARGET_LRA`、`V2_TRUE_PEAK_TARGET_DBFS`（−3.5）、`V2_TRUE_PEAK_MAX_DBFS`（−3.0） | `tts_pipeline.py::normalize_mode_unit`、`mode_pipeline.py`（`concatenate_narration`、`generate_quality_report`、环境声混音）、`rendering.py:1311-1312` |
-| 人声段压低音乐 | **仅 V2**：`audio_filters.speech_duck_filter`，在所有语音单元的时间区间内把音乐压低 18 dB，前后各有 0.3 秒线性过渡。配乐本身 −32 LUFS（LRA 6、TP −6），开头 2 秒淡入、结尾 3 秒淡出。旧流程用 `sidechaincompress`（ratio = `MUSIC_DUCK_RATIO` 8），不是固定的 18 dB | `audio_filters.py:34-56`、`mode_pipeline.py:1594-1595`、`music.py:103-108`、`rendering.py:1296` |
+| 人声段压低音乐 | **仅 V2**：`audio_filters.speech_duck_filter`，在所有语音单元的时间区间内把音乐压低 18 dB，前后各有 0.3 秒线性过渡。配乐本身 −32 LUFS（LRA 6、TP −6），开头 2 秒淡入、结尾 3 秒淡出。旧流程用 `sidechaincompress`（ratio = `MUSIC_DUCK_RATIO` 8），不是固定的 18 dB | `audio_filters.py:34-56`、`mode_pipeline.py:1593-1594`、`music.py:103-108`、`rendering.py:1296` |
 | 切点吸附 | `production_modes.refine_cut`：先扩展到所有相交的词；头尾留白不越过相邻的词；再吸附到调用方给出的、不和词重叠的静音，距离不超过 `cut_snap_seconds` 0.3 秒。只对词级精度的候选生效。静音区间来自上传时的波形分析 | `production_modes.py:760-805`、`production_modes.py:974-988`、`uploads.py:683`、`uploads.py:1097` |
 | 头尾留白 | 片头 `cut_head_seconds` 0.12 秒，片尾 `cut_tail_seconds` 0.2 秒；碰到相邻的词或素材边界时缩短 | `mode_rules.json` 的 `limits`、`production_modes.py:791-792` |
 | 相邻原声间隔 | `quote_gap_seconds` 0.15 秒；同一个连续组内部为 0。V2 中原声转旁白也是 0.15 秒；旁白之间句末 0.4 秒、分句 0.25 秒 | `mode_pipeline.py:1366-1370`、`tts_pipeline.py:1102-1112` |
 | 跳切判定 | `production_modes.calculate_jumpcuts` 只比较**相邻的两条原声**，中间隔着旁白就不算相邻。同一个上传文件、间隔在 0–0.5 秒（`jump_continuity_seconds`）内算连续；其余情况各算一处跳切：不同文件、间隔超过 0.5 秒、重叠或倒退 | `production_modes.py:1288-1316` |
 | 跳切遮盖 | `jump_cut_cover` 默认 `broll`。`broll` 需要后一行明确给出 `cover_shot`，否则降级为 `zoom` 并标记 downgraded。渲染时（`mode_pipeline.build_mode_edl`）：<br>• `broll`：取一个没用过的源空镜，时长 min(2.0 秒, 0.4 × 句长)（V2）；旧流程按 1.5 秒选空镜，实际取 min(3.0 秒, 空镜时长, 句长 − 1 帧)；<br>• `zoom`：6 帧推近到 1.06（V2），旧流程 1.08；<br>• 句子短于 6 帧时降级为 `hard`。<br>遮盖方式不是 `broll` 时发 `JUMP_CUT_UNCOVERED` | `production_modes.py:1314-1315`、`production_modes.py:1401-1405`、`mode_pipeline.py:1425-1567`、`models.py:183` |
 | 图片定格 | 照片转成 3 秒的静态片段（`PHOTO_DURATION` 3.0） | `uploads.py:77`、`uploads.py:904-912`、`media_input.py:41` |
-| 字幕 | ASS，画布 1920×1080，字体 Noto Sans SC（随包放在 `backend/assets/fonts/`，启动时校验散列和 OFL 许可）。V2 字号：标准 42、大字 54；每行不超过 18 字（大字不超过 14 字）。原声字幕用实际的 ASR 文本。用 `ass=filename=…:fontsdir=…` 烧录；缺 Noto Sans SC 直接报错 | `graphics.py:365-486`、`rendering.py:1627-1695`、`subtitles.py:26` |
-| 人名条 | `graphics.generate_mode_graphics` 写入 `graphics.ass`：同一人首次出现显示 2.5 秒，间隔 60 秒以上再次显示；没有名字时显示"受访者" | `graphics.py:526-592`、`rendering.py:1395-1398`、`mode_rules.json` 的 `lower_third_*` |
-| AI 标注 | 片头 3 秒"本片含AI生成内容"，加上每个 AI 镜头期间的"AI生成示意画面"，靠右边缘，第一槽上边距 130（`graphics.DISCLOSURE_MARGIN_V`），在 V2 标题和话题条的下面：用 libass 量过，上边距 40 时片头标识在 1:1 导出里盖住 54% 的标题像素，9:16 里 94%。第三代（2026-10-23，文件头 `; template: GM-GFX-DISCLOSURE-V3-20261023`）：字号 96，"AI"放大到 115% 并和汉字留出约 1/8 em，每个字符字高都不低于最短边的 5%；每条一行 `Comment`（原文）、一个底框事件（样式 GfxDisclosure，BorderStyle 4，"AI"只横向放大，所以框高仍是一行）和一个文字事件（GfxDisclosureText，上移 `_LATIN_LIFT` 让基线对齐）；位置由 `_label_tops` 算（`\pos`），同时出现的两条相隔 100，旧流水线居中的长标题在 `keep_clear` 里，标识遇到它就让到下面。导出时 `studio.prepare_mode_export` 按存档字节重新生成作品当时那一代（`graphics.read_disclosure_generation`：第二代 `…V2-20261022` 由 libass 叠放，第一代字号 30、`\pos(1870,40)`、没有片头标识），所以改这里的文字或样式要另起一代，给旧作品留出路。没有 AI 镜头的作品不烧录任何标注，包括片头。Studio 导出路径（`studio_render.subtitle_document`；V2 导出最后一步也经过它，作品有生成画面时才加）还有另一套：整段时长、左上角 `\an7\pos(20,20)`、文字“AI生成示意画面（本片含AI生成内容）”，字号取画面高度的 3.5%（`height*0.035`，没改过）：量过，竖屏下这行占约 70% 宽度、字高约 5% 最短边，16:9 和方形约 3%；放大到 5% 字高（约 93 号）这行会宽过竖屏和方形画面，所以不改。5% 字高的是 graphics.ass 里的两种标识 | `graphics.py::_disclosure_events`、`graphics.py::_label_tops`、`subtitles.py::headline_ink_boxes`、`studio_render.py::subtitle_document` |
-| 样片水印 | **后端没有实现**。只有前端用 CSS 叠加（`ResultWorkbench.tsx:898`）；"仍然导出"导出的是不带水印的成片 | 交接文档已按此更正；要不要实现由维护者决定 |
+| 字幕 | ASS，画布 1920×1080，字体 Noto Sans SC（随包放在 `backend/assets/fonts/`，启动时校验散列和 OFL 许可）。V2 字号：标准 42、大字 54；每行不超过 18 字（大字不超过 14 字）。原声字幕用实际的 ASR 文本。用 `ass=filename=…:fontsdir=…` 烧录；缺 Noto Sans SC 直接报错 | `graphics.py:333-454`、`rendering.py:1627-1695`、`subtitles.py:26` |
+| 人名条 | `graphics.generate_mode_graphics` 写入 `graphics.ass`：同一人首次出现显示 2.5 秒，间隔 60 秒以上再次显示；没有名字时显示"受访者" | `graphics.py:494-563`、`rendering.py:1395-1398`、`mode_rules.json` 的 `lower_third_*` |
+| AI 标识（只在旧版本里） | 2026-10-23 起新作品不画（第四代）。旧版本导出时按存档字节重建：第三代（2026-10-23，`; template: GM-GFX-DISCLOSURE-V3-20261023`）片头 3 秒"本片含AI生成内容"加上每个 AI 镜头期间的"AI生成示意画面"，靠右边缘，第一槽上边距 130（`graphics.DISCLOSURE_MARGIN_V`，在 V2 标题和话题条下面），字号 96，"AI"放大到 115%；每条一行 `Comment`（原文）、一个底框事件（GfxDisclosure，BorderStyle 4）和一个文字事件（GfxDisclosureText，上移 `_LATIN_LIFT`），位置由 `_label_tops` 算，同时出现的两条相隔 100。第二代（`…V2-20261022`）由 libass 叠放；第一代字号 30、`\pos(1870,40)`、没有片头标识。2026-10-23 以前的 Studio 导出另有一条整段时长的左上角小字"AI生成示意画面（本片含AI生成内容）"，现已去掉 | `graphics.py::_disclosure_events`、`graphics.py::_label_tops`、`graphics.py::read_disclosure_generation` |
+| 样片水印 | **后端没有实现**。只有前端用 CSS 叠加（`ResultWorkbench.tsx:891`）；"仍然导出"导出的是不带水印的成片 | 交接文档已按此更正；要不要实现由维护者决定 |
 
 更多约定（人声增强、推近、颜色统一、淡入淡出、成片编码、导出格式、子进程取消）见 [references/render-details.md](references/render-details.md)。
 
@@ -58,7 +58,7 @@ description: 金话筒媒体处理约定（FFmpeg / ffprobe）。涵盖依赖与
 
 - **两个转义函数规则不同，不能混用：**
   - `rendering._escape_filter_path`：先 resolve，再 `as_posix()`，然后对 `\ : ' , [ ] ;` 加反斜杠（`rendering.py:1698-1702`）。
-  - `studio_render.filter_path`：把 `\` 换成 `/`，`:` 转成 `\:`，`'` 转成 `\'\''`，对应两级解析（`studio_render.py:955-959`）。
+  - `studio_render.filter_path`：把 `\` 换成 `/`，`:` 转成 `\:`，`'` 转成 `\'\''`，对应两级解析（`studio_render.py:950-954`）。
 - **Windows 盘符的冒号必须转义**，例如 `C\:/…`。也可以把子进程的工作目录设为作业目录，用相对文件名，避开转义。
 - **长路径**：Windows 用 `\\?\` 前缀（`revisions.py:50-61`）。
 - **取消子进程**：Linux 和 macOS 用独立会话加 `killpg`，先 SIGTERM，10 秒后 SIGKILL；**Windows 先结束整棵子进程树**（`kill_windows_descendants`，因为 scoop、chocolatey 的 ffmpeg 外壳会再启动真正的 ffmpeg.exe），再 terminate，10 秒后 kill（`media.py:396`、`media.py:494`、`media.py:564-588`）。
@@ -71,7 +71,7 @@ description: 金话筒媒体处理约定（FFmpeg / ffprobe）。涵盖依赖与
 2. 改动时保持这些不变：
    - 参数列表调用、超时、白名单；
    - 路径转义；
-   - AI 标注的烧录；
+   - 旧版本 `graphics.ass` 的逐字节重建（第一到三代的标识）；
    - 原声不改字。
 3. 动了数值，就同步 `mode_rules.json`。前端也读这个文件，改完要重新构建前端。
 4. 用合成素材跑受保护测试（golden-mic-verify 的命令 B）。命令 B 只运行 `tests/test_v2_*.py`，带 `--legacy` 时再加 8 个旧模块（含 `test_production_modes`）；渲染相关的是 `test_v2_media`、`test_v2_exports`。`test_m5_rendering`、`test_motion_rendering`、`test_mode_pipeline` 不在受保护入口里，只能按 golden-mic-verify 里“单独跑某个测试模块”的做法运行（要先征得用户同意），结论仍以命令 B 为准。
@@ -86,7 +86,7 @@ description: 金话筒媒体处理约定（FFmpeg / ffprobe）。涵盖依赖与
 
 ## 验证
 
-- 汇报改了哪些滤镜或编码参数（改前 → 改后），以及对响度、时长、分辨率、帧率、AI 标注显示的影响。
+- 汇报改了哪些滤镜或编码参数（改前 → 改后），以及对响度、时长、分辨率、帧率的影响，旧版本的 `graphics.ass` 是否仍能逐字节重建。
 - 跑了哪些测试、结果如何；没跑的写"未运行"和原因。
 
 ## 仍未消除的不一致（只记录，这里不修）
@@ -94,7 +94,7 @@ description: 金话筒媒体处理约定（FFmpeg / ffprobe）。涵盖依赖与
 2026-10-22 已处理：交接文档写明后端不烧录样片水印、"仍然导出"导出的是不带水印的成片；`docs/CONFIGURATION.md` 写明 `TTS_TARGET_*`、`MUSIC_DUCK_RATIO`、`MOTION_ZOOM_RATIO`、`COLOR_CONSISTENCY_TARGET_LUFS` 对 V2 不生效。随后改了代码：`mode_rules.json` 删掉了没被使用的 `original_hard_cuts_warn_above`；Windows 下停止媒体命令时连子进程一起结束（`media.kill_windows_descendants`，比如 scoop、chocolatey 的 ffmpeg 外壳）；AI 标注加了片头标识并放大到最短边的 5% 以上；V2 的响度值在 `mode_pipeline.py` 里改成命名常量（`tts_pipeline.normalize_mode_unit` 和 `rendering.py` 的配乐混音仍写着同样的数值，改值要一起改）。剩下的只是说明：
 
 1. **真峰值的三个值各有用处。** −3.5 dBTP 是 V2 处理时的限幅目标（`V2_TRUE_PEAK_TARGET_DBFS`，`normalize_mode_unit` 用同样的值），−3.0 是质检上限（`V2_TRUE_PEAK_MAX_DBFS`，`narration_profile.json` 记的也是它），中间 0.5 dB 留给 AAC 编码；−2.0 只属于旧流水线（`NARRATION_TRUE_PEAK_DBFS`）。
-2. **AI 标注的合规结论**还要对照 GB 45438-2025 官方全文确认；合成人声要不要标识也没定。见 gm-ai-labeling。
+2. **AI 标识**：2026-10-23 起成片不加，和标识办法第四条、GB 45438-2025 的要求不一致，这是维护者的决定（见 gm-ai-labeling）。合成人声一直没有标识。
 
 ## 参考
 

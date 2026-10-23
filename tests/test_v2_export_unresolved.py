@@ -110,15 +110,24 @@ class UnresolvedExportTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.post(acknowledge_unresolved="true")).status_code, 422)
         self.assertEqual((await self.post(acknowledge_unresolved=1)).status_code, 422)
 
-    async def test_acknowledgement_does_not_waive_stale_revision_or_required_ai_disclosure(self):
+    async def test_acknowledgement_does_not_waive_a_stale_revision_or_a_broken_generated_media_record(self):
         stale = await self.client.post(self.prefix + "/exports", headers=self.headers,
                                        json={"fmt": "srt", "expected_revision": 7, "acknowledge_unresolved": True})
         self.assertEqual(stale.status_code, 409, stale.text)
-        with patch.object(studio, "requires_disclosure", return_value=True):
-            response = await self.post(acknowledge_unresolved=True)
+        (self.folder / "generated_media_disclosure.json").write_text("{}", encoding="utf-8")
+        response = await self.post(acknowledge_unresolved=True)
         self.assertEqual(response.status_code, 422, response.text)
-        self.assertIn("AI disclosure", response.text)
+        self.assertIn("generated-media disclosure manifest", response.text)
         self.assertFalse((self.folder / "v2_exports").exists())
+
+    async def test_a_work_with_generated_media_exports_srt_too(self):
+        # Since 2026-10-23 no export burns an AI label, so none is refused for losing one.
+        manifest = {"schema_version": 1, "policy": "generated_visuals_are_disclosed_and_not_evidence", "items": [
+            {"sentence_id": 0, "beat_id": 0, "shot_id": 0, "mode": "video", "prompt_sha256": "a" * 64, "disclosure_text": "AI生成示意画面"}]}
+        (self.folder / "generated_media_disclosure.json").write_text(json.dumps(manifest), encoding="utf-8")
+        self.assertTrue(studio.requires_disclosure(self.folder))
+        job = await self.finish(await self.post(acknowledge_unresolved=True))
+        self.assertEqual(job["state"], "succeeded", job)
 
 
 if __name__ == "__main__":

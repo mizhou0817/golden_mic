@@ -17,7 +17,7 @@
 | 422 | 字段非法或请求无法执行 | FastAPI 校验失败；strict 模型出现多余字段；空操作；`quote_missing`、`quote_unverified`（`drafts.py:1144-1153`）；无法安全对齐（`drafts.py:1031-1032`）；pretranscribe 的请求体不是 `{"retry": true}`（`drafts.py:825-827`）；原声句上传替代录音（`workbench.py:1417-1422`） | — |
 | 429 | 频率或容量受限，不自动重试 | `start_budget`：Retry-After 动态计算，至少 60 秒（`admission.py:116-124`）；旧接口的创建和重试：3600 秒（`main.py:1160`、`main.py:1196`）；原话预检：1 秒（`main.py:714`）；AI 写作：600 秒或 5 秒（`main.py:746`、`main.py:781`）。**不带 Retry-After 的**：草稿数上限（`drafts.py:509`）、workbench 待处理已满（`workbench.py:1229`）、导出容量（`v2_editing.py:579-582`）、上传配额（`uploads.py:613-617`）、恢复配额（`drafts.py:1280`、`drafts.py:1290`） | 见左 |
 | 503 | 暂不可用 | 排空期间的写请求，`Retry-After: 60`（`main.py:232-237`）；服务或 workbench 未就绪（`drafts.py:449-461`、`workbench.py:1068-1070`）；V2 等待队列已满（`task_manager.py:668-679`）；必需的本地语音不可用（`drafts.py:1049`、`drafts.py:1082`）；存储身份变化（`admission.py:79`）。`/health/ready` 未就绪时返回 503；`/api/config/availability` 总是返回 200，状态写在正文里 | 排空时 60 |
-| 507 | 磁盘保护 | `InsufficientDiskSpaceError` 由中间件转换，`Retry-After: 300`（`main.py:286-291`）；草稿创建和添加文件（`drafts.py:512`、`drafts.py:775`）；V2 导出（`v2_editing.py:593`）。后三处直接抛 `HTTPException(507)`，不带 Retry-After | 300（只对中间件转换的那一种） |
+| 507 | 磁盘保护 | `InsufficientDiskSpaceError` 由中间件转换，`Retry-After: 300`（`main.py:286-291`）；草稿创建和添加文件（`drafts.py:512`、`drafts.py:775`）；V2 导出（`v2_editing.py:594`）。后三处直接抛 `HTTPException(507)`，不带 Retry-After | 300（只对中间件转换的那一种） |
 
 ## 前端怎样处理
 

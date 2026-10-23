@@ -65,9 +65,9 @@
    - 在 `render_v2_export` 里加 FFmpeg 命令和输出探测校验。
 2. `backend/v2_editing.py`：
    - `POST /exports` 处理新格式。
-   - **会丢失烧录 AI 披露的格式（纯音频、纯字幕等）必须加进"需要披露时拒绝"的列表**（现在拒绝的是 mp3、srt）。
+   - 2026-10-23 起成片不加 AI 标识，新格式不用为 AI 画面另做限制；`studio.requires_disclosure` 仍会在来源记录无效时返回 422。
    - 下载映射里加上 MIME 类型。
-3. 旧路由：`main.py` 的旧 `/export` 走 Studio 的 `ExportOptions`，披露拒绝逻辑在 `studio.py`。
-4. 前端：`frontend/src/lib/workbenchApi.ts` 的格式类型和请求；`ResultWorkbench.tsx` 的导出选项和说明文字。含 AI 画面的作品，界面目前仍显示 MP3/SRT，由服务端用 422 拒绝。
+3. 旧路由：`main.py` 的旧 `/export` 走 Studio 的 `ExportOptions`（`studio.py`）。
+4. 前端：`frontend/src/lib/workbenchApi.ts` 的格式类型和请求；`ResultWorkbench.tsx` 的导出选项和说明文字（含 AI 画面的作品也给出全部格式）。
 5. 测试：test_v2_exports、test_mode_exports、test_v2_export_download_auth、test_v2_export_unresolved；前端 `scripts/test-v2-result.mjs`。
 6. 文档：`docs/USER_GUIDE.md` 的导出章节；接口变化写进 `docs/README.md` 或不带日期的 `*_API.md`。`docs/THREE_MODE_API_20260928.md` 带日期，是当时的快照，不要改写（`docs/README.md` 第 5 行）。

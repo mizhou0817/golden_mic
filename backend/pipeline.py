@@ -92,7 +92,7 @@ from .shot_replacement import (
     write_shot_replacement_state,
 )
 from .storage import write_json_atomic, write_text_log
-from .subtitles import TITLE_DURATION_SECONDS, generate_ass_subtitles, headline_ink_boxes
+from .subtitles import generate_ass_subtitles
 from .tts_pipeline import rebuild_narration_from_existing, synthesize_narration
 from .vision_pipeline import annotate_shots
 
@@ -272,7 +272,6 @@ async def run_remix_pipeline(
                     record,
                     settings,
                     timings,
-                    edl=remixed_edl,
                     graphics_output_path=record.task_dir / "graphics.remix.ass",
                 ),
             )
@@ -494,7 +493,6 @@ async def run_shot_replacement_pipeline(
                     record,
                     settings,
                     context.timings,
-                    edl=updated_edl,
                     graphics_output_path=record.task_dir / "graphics.replacement.ass",
                 ),
             )
@@ -1139,7 +1137,7 @@ async def _run_video_rendering(
             target_loudness_range=settings.tts_target_lra,
             maximum_true_peak_dbfs=settings.tts_true_peak_dbfs,
             segment_options=_segment_render_options(record, settings),
-            finish_options=await _build_finish_options(record, settings, timings, edl=edl),
+            finish_options=await _build_finish_options(record, settings, timings),
         )
     except BaseException:
         _log_stage_abort(record, stage_number, started)
@@ -1211,13 +1209,12 @@ async def _run_completion(
             "quality_report.json",
         ]
         missing = [file_name for file_name in required_files if not (record.task_dir / file_name).is_file()]
-        if _match_plan_uses_generated_media(shots, match_plan):
-            for generated_artifact in (
-                "generated_media_disclosure.json",
-                "graphics.ass",
-            ):
-                if not (record.task_dir / generated_artifact).is_file():
-                    missing.append(generated_artifact)
+        # Generated media need their provenance record; since 2026-10-23 no overlay labels them.
+        if (
+            _match_plan_uses_generated_media(shots, match_plan)
+            and not (record.task_dir / "generated_media_disclosure.json").is_file()
+        ):
+            missing.append("generated_media_disclosure.json")
         if missing:
             raise RuntimeError(f"任务完成校验发现缺失产物：{', '.join(missing)}")
         reporter.update_stage(record, stage_number, 1.0, "全部任务产物校验完成")
@@ -1244,7 +1241,6 @@ async def _build_finish_options(
     settings: Settings,
     timings: list[SentenceTiming],
     *,
-    edl: list[EDLItem] | None = None,
     graphics_output_path: Path | None = None,
 ) -> FinishOptions:
     preferences = _preferences(record)
@@ -1275,25 +1271,19 @@ async def _build_finish_options(
                 duck_ratio=settings.music_duck_ratio,
             )
 
-    disclosure_intervals = _generated_media_intervals(edl or [])
     graphics_path: Path | None = None
-    if preferences.news_graphics or disclosure_intervals:
+    if preferences.news_graphics:
         document = parse_script(record.script)
         headline = document.title or document.sentences[0].text
         topic = headline[:12]
         total_duration = max((timing.end + timing.gap_after for timing in timings), default=0.0)
         graphics_path = generate_news_graphics(
             record.task_dir,
-            topic=topic if preferences.news_graphics else "",
-            headline=headline if preferences.news_graphics else "",
+            topic=topic,
+            headline=headline,
             total_duration=total_duration,
             accent=preferences.tone,
             output_path=graphics_output_path,
-            disclosure_intervals=disclosure_intervals,
-            # subs.ass centres the headline over the first seconds, on the same 1920x1080 canvas as graphics.ass:
-            # AI labels shown meanwhile go around it instead of covering it.
-            keep_clear=headline_ink_boxes(document.title, VIDEO_WIDTH, VIDEO_HEIGHT),
-            keep_clear_until=TITLE_DURATION_SECONDS,
         )
     elif graphics_output_path is None:
         (record.task_dir / "graphics.ass").unlink(missing_ok=True)

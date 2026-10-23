@@ -11,8 +11,8 @@ from publication. Malformed/present QC always fails closed. Existing
 QC sidecars cannot weaken the report. No frontend-computed quality is accepted.
 
 Only generated_media notices DERIVED HERE from current media provenance may be
-confirmed at level 0. Missing disclosure, fallback and other real errors remain
-unconfirmable. Acknowledging generated imagery never establishes news truth.
+confirmed at level 0. A missing generated-media record, fallback and other real
+errors remain unconfirmable. Acknowledging generated imagery never establishes news truth.
 """
 from __future__ import annotations
 
@@ -273,7 +273,7 @@ def _canonical(record: Any, revision: int) -> tuple[list[dict[str, Any]], set[st
             actual_ids = generated_by_row.get(sentence_id) or selected[sentence_id]
             if not actual_ids or not actual_ids.issubset(disclosed.get(sentence_id, set())):
                 add(_notice("GENERATED_MEDIA_DISCLOSURE_MISSING", 0,
-                            "AI 示意画面缺少当前版本的披露记录，知情勾选不能替代成片标注。", sentence_id, "去看"))
+                            "AI 示意画面缺少当前版本的生成记录，知情勾选不能代替这份记录。", sentence_id, "去看"))
             add(_notice("generated_media", 0, "这句使用 AI 生成的示意画面；我知道它不是现场，不能作为事实证据。",
                         sentence_id, "去看"), confirmable=True)
         existing_facts = {item["sentence_id"] for item, _ in issues if item["code"] == "FACT_CHECK" and item["level"] in (0, 1)}

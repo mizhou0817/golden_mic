@@ -399,9 +399,9 @@ class StudioSequenceEvaluationTests(unittest.TestCase):
         self.assertIn("00:00:00,750 --> 00:00:01,750", srt)
         self.assertIn("Actual nested caption", srt)
         self.assertNotIn("main_mark", srt)
-        ass = subtitle_document(project, ExportOptions(format="ass"), disclosure=True)
-        self.assertEqual(ass.count("AI生成示意画面"), 1)
-        self.assertIn("Dialogue: 100,0:00:00.00,0:00:01.75", ass)
+        ass = subtitle_document(project, ExportOptions(format="ass"))
+        self.assertIn("Actual nested caption", ass)
+        self.assertNotIn("AI生成", ass)
         summary = sequence_summary(project, evaluate_project(project))
         assert summary is not None
         self.assertEqual(summary["mode"], "full_length_identity_flatten")
@@ -775,15 +775,13 @@ class StudioSequenceRouteTests(_SequenceAPIHarness):
             render.assert_not_awaited()
         self.assertEqual(self.state_bytes(), before)
 
-    async def test_qc_and_task_wide_disclosure_gate_even_if_generated_sequence_is_inactive(self) -> None:
+    async def test_qc_gate_holds_for_generated_media_even_if_the_generated_sequence_is_inactive(self) -> None:
         self.assertEqual((await self.save(nested_data())).status_code, 200)
         (self.root / "generated_media_disclosure.json").write_text(json.dumps(generated_manifest()), encoding="utf-8")
         confirm_synthetic_publication(self, self.record, generated=True)
         before = self.state_bytes()
+        # Since 2026-10-23 no format is refused for generated media (nothing is burned for them); QC still gates.
         with patch("backend.studio.render_project", new=AsyncMock()) as render:
-            for format_ in ("wav", "mp3", "srt", "ass"):
-                response = await self.client.post(self.prefix + "/render", json={"expected_revision": 1, "options": {"format": format_}})
-                self.assertEqual(response.status_code, 422, response.text)
             try:
                 (self.root / "quality_report.json").write_bytes(synthetic_publication_files(blocked=True)["quality_report.json"])
                 response = await self.client.post(self.prefix + "/render", json={"expected_revision": 1})
@@ -1323,7 +1321,8 @@ class StudioSequenceMediaTests(_SequenceAPIHarness):
         with self.assertRaisesRegex(RenderError, "no audible"):
             await self.produce(muted, format="wav")
 
-    async def test_nested_disclosure_burned_once_on_final_canvas_and_full_timeline(self) -> None:
+    async def test_nested_generated_media_are_recorded_without_a_label_and_every_format_is_accepted(self) -> None:
+        # Since 2026-10-23 nothing is burned for generated media and no format is refused for them.
         data = nested_data(depth=2)
         data["tracks"][0]["clips"][0]["start"] = 0.5
         self.assertEqual((await self.save(data)).status_code, 200)
@@ -1331,22 +1330,18 @@ class StudioSequenceMediaTests(_SequenceAPIHarness):
         (self.root / "generated_media_disclosure.json").write_text(json.dumps(generated_manifest()), encoding="utf-8")
         confirm_synthetic_publication(self, self.record, generated=True)
         marked, marked_path = await self.rendered_job(1, resolution=360)
-        document = (marked_path.parent / "studio.ass").read_text(encoding="utf-8")
-        self.assertEqual(document.count("AI生成示意画面"), 1)
-        self.assertIn("Dialogue: 100,0:00:00.00,0:00:01.50", document)
         manifest = json.loads((marked_path.parent / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["disclosure_intervals"], [[0, 1.5]])
+        self.assertEqual(manifest["disclosure_intervals"], [])
         self.assertTrue(marked["result"]["disclosure"])
         self.assertFalse(plain["result"]["disclosure"])
         for at in (0.1, 0.8, 1.4):
             a, b = self.frame(plain_path, at), self.frame(marked_path, at)
-            # The initial black gap is covered too, after ALL nesting/layers.
+            # Where the label used to cover the top of the frame, nothing changes.
             changed_top = sum(abs(a[(y * 320 + x) * 3 + channel] - b[(y * 320 + x) * 3 + channel]) > 25
                               for y in range(5, 35) for x in range(5, 300) for channel in range(3))
-            self.assertGreater(changed_top, 80, at)
-        for format_ in ("wav", "mp3", "srt", "ass"):
-            response = await self.client.post(self.prefix + "/render", json={"expected_revision": 1, "options": {"format": format_}})
-            self.assertEqual(response.status_code, 422)
+            self.assertEqual(changed_top, 0, at)
+        for format_ in ("wav", "mp3"):  # refused (422) while a label had to be kept
+            await self.finish(await self.client.post(self.prefix + "/render", json={"expected_revision": 1, "options": {"format": format_}}))
 
     async def test_real_pre_sequence_proxy_survives_upgrade_and_is_reused_without_encoding(self) -> None:
         self.assertEqual((await self.save(nested_data(active="seq_a"))).status_code, 200)

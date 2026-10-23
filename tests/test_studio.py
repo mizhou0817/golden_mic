@@ -233,14 +233,21 @@ class StudioRenderTests(unittest.IsolatedAsyncioTestCase):
             _, output = await self.render(project, format=fmt)
             self.assertIn("caption", output.read_text())
 
-    async def test_generated_disclosure_burn_and_rejected_stripping(self):
+    async def test_generated_media_are_recorded_but_neither_labelled_nor_refused(self):
+        # Since 2026-10-23 nothing is burned for generated media and no format is refused for them.
         work = self.root / "disclosed"
         result = await render_project(base_project(), ExportOptions(resolution=360, subtitles="none"), {"final": self.source}, work, disclosure=True)
         self.assertTrue(result["disclosure"])
-        self.assertIn("AI生成示意画面", (work / "studio.ass").read_text(encoding="utf-8"))
-        for fmt in ("mp3", "wav", "ass", "srt"):
-            with self.assertRaisesRegex(RenderError, "strips"):
-                await render_project(base_project(), ExportOptions(format=fmt), {"final": self.source}, self.root / fmt, disclosure=True)
+        self.assertFalse((work / "studio.ass").exists())
+        for fmt in ("mp3", "wav"):
+            result = await render_project(base_project(), ExportOptions(format=fmt), {"final": self.source}, self.root / fmt, disclosure=True)
+            self.assertTrue((self.root / fmt / result["file"]).is_file())
+        captions = Project(tracks=[Track(id="text", type="text", clips=[Clip(id="t", start=0.1, duration=0.4, text="caption")])])
+        for fmt in ("srt", "ass"):
+            result = await render_project(captions, ExportOptions(format=fmt), {"final": self.source}, self.root / fmt, disclosure=True)
+            document = (self.root / fmt / result["file"]).read_text(encoding="utf-8")
+            self.assertIn("caption", document)
+            self.assertNotIn("AI生成", document)
 
     async def test_source_range_and_budget_rejected(self):
         with self.assertRaisesRegex(RenderError, "source duration"):
@@ -304,7 +311,7 @@ class StudioRenderTests(unittest.IsolatedAsyncioTestCase):
             with patch("backend.studio_render.MAX_REVERSE_BYTES", 1):
                 await self.render(base_project(reverse=True), resolution=360)
 
-    async def test_gif_cap_and_postcrop_disclosure_pixels(self):
+    async def test_gif_cap_and_no_label_pixels(self):
         long = self.root / "long.mp4"
         ffmpeg("-y", "-f", "lavfi", "-i", "color=red:s=160x90:r=30:d=7", "-c:v", "libx264", "-threads", "1", str(long))
         work = self.root / "gifcap"
@@ -317,7 +324,7 @@ class StudioRenderTests(unittest.IsolatedAsyncioTestCase):
             await render_project(base_project(fit="cover"), ExportOptions(format="png", resolution=360, aspect="9:16"),
                                  {"final": long}, work, disclosure=disclosure)
             outputs.append(ffmpeg("-i", str(work / "output.png"), "-vf", "crop=360:80:0:0", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"))
-        self.assertGreater(sum(x != y for x, y in zip(*outputs)), 500)
+        self.assertEqual(outputs[0], outputs[1])  # nothing is burned for generated media since 2026-10-23
 
     async def test_audio_eq_reverb_normalization_are_real_stereo(self):
         import array
@@ -757,18 +764,20 @@ class StudioAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("changed", job["error"])
         self.assertFalse(list((self.root / "studio/outputs").rglob("output.mp4")))
 
-    async def test_generated_manifest_audio_rejected_and_video_disclosed(self):
+    async def test_generated_manifest_allows_audio_and_burns_no_label(self):
         await self.save()
         manifest = {"schema_version": 1, "policy": "generated_visuals_are_disclosed_and_not_evidence", "items": [
             {"sentence_id": 0, "beat_id": 0, "shot_id": 0, "mode": "video", "prompt_sha256": "a" * 64, "disclosure_text": "AI生成示意画面"}]}
         (self.root / "generated_media_disclosure.json").write_text(json.dumps(manifest))
         confirm_synthetic_publication(self, self.record, generated=True)
-        response = await self.client.post(self.prefix + "/render", json={"expected_revision": 1, "options": {"format": "mp3"}})
-        self.assertEqual(response.status_code, 422)
+        audio = await self.finish(await self.client.post(self.prefix + "/render", json={"expected_revision": 1, "options": {"format": "mp3"}}))
+        self.assertEqual(audio["state"], "succeeded", audio)
         job = await self.finish(await self.client.post(self.prefix + "/render", json={"expected_revision": 1, "options": {"resolution": 360}}))
         self.assertEqual(job["state"], "succeeded", job)
+        self.assertTrue(job["disclosure"])  # the record that the work has generated media
         output_manifest = self.root / "studio/outputs/r1" / job["id"] / "manifest.json"
-        self.assertEqual(json.loads(output_manifest.read_text(encoding="utf-8"))["disclosure_intervals"], [[0, 0.5]])
+        self.assertEqual(json.loads(output_manifest.read_text(encoding="utf-8"))["disclosure_intervals"], [])
+        self.assertFalse((output_manifest.parent / "studio.ass").exists())
 
     async def test_global_capacity_and_job_quota(self):
         await self.save()

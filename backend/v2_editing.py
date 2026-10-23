@@ -530,7 +530,7 @@ def create_v2_export_router(settings: Any, manager: Any, authorize: Any, *, lega
             raise HTTPException(422, "v2 export requires a production-mode task")
         if acknowledged:
             # The user explicitly accepted the unresolved checks for this export. Every other gate
-            # (task state, revision, busy, generated-media disclosure, source/output binding) still applies.
+            # (task state, revision, busy, the generated-media record, source/output binding) still applies.
             return
         studio.check_qc(record.task_dir)
         require_publication(record)
@@ -586,8 +586,9 @@ def create_v2_export_router(settings: Any, manager: Any, authorize: Any, *, lega
             budget = v2_export_budget(duration, payload, settings)
         except (ValueError, IndexError, KeyError) as exc:
             raise HTTPException(422, "Invalid export timeline or current frame") from exc
-        if studio.requires_disclosure(root) and payload.fmt in {"mp3", "srt"}:
-            raise HTTPException(422, "This format would remove required AI disclosure")
+        # Refuses (422) a work whose generated media lack a valid provenance record. Since 2026-10-23 no export burns
+        # an AI label, so MP3 and SRT are no longer refused for losing one.
+        studio.requires_disclosure(root)
         reserve = int(getattr(settings, "minimum_free_disk_bytes", 0))
         if shutil.disk_usage(root).free < reserve + sum(studio._DISK_RESERVATIONS.values()) + budget.reservation_bytes:
             raise HTTPException(507, "Insufficient reserved export disk")

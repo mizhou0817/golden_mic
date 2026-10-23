@@ -745,15 +745,13 @@ class StudioTransitionRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(studio_task_busy(self.root))
         self.assertFalse((self.root / "studio/outputs").exists())
 
-    async def test_mandatory_generated_disclosure_and_qc_are_not_bypassed(self):
+    async def test_qc_is_not_bypassed_for_generated_media(self):
         self.assertEqual((await self.save(pair_data())).status_code, 200)
         (self.root / "generated_media_disclosure.json").write_text(json.dumps(generated_manifest()), encoding="utf-8")
         confirm_synthetic_publication(self, self.record, generated=True)
         before = self.state_bytes()
+        # Since 2026-10-23 no format is refused for generated media (nothing is burned for them); QC still gates.
         with patch("backend.studio.render_project", new=AsyncMock()) as render:
-            for fmt in ("wav", "mp3", "srt", "ass"):
-                response = await self.client.post(self.prefix + "/render", json={"expected_revision": 1, "options": {"format": fmt}})
-                self.assertEqual(response.status_code, 422, response.text)
             try:
                 (self.root / "quality_report.json").write_bytes(synthetic_publication_files(blocked=True)["quality_report.json"])
                 response = await self.client.post(self.prefix + "/render", json={"expected_revision": 1})
@@ -944,21 +942,13 @@ class StudioTransitionMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(self.amplitude(samples, 0, 440, 1.15) / full_left, 0.5, delta=0.08)
         self.assertAlmostEqual(self.amplitude(samples, 1, 880, 1.15) / full_right, 0.5, delta=0.08)
 
-    async def test_generated_disclosure_is_burned_after_transitions_not_faded_away(self):
+    async def test_generated_media_add_nothing_after_transitions(self):
+        # Since 2026-10-23 nothing is burned for generated media.
         project = self.project(kind="wipe_up")
         plain = await self.image(project, 1.2, "plain")
         disclosed = await self.image(project, 1.2, "disclosed", disclosure=True)
-        self.assertGreater(sum(a != b for a, b in zip(plain[:640 * 90 * 3], disclosed[:640 * 90 * 3])), 100)
-        self.assertEqual(self.pixel(plain), self.pixel(disclosed))
-        ass = (self.root / "disclosed/studio.ass").read_text(encoding="utf-8")
-        disclosure = [line for line in ass.splitlines() if line.startswith("Dialogue: 100,")]
-        self.assertEqual(len(disclosure), 1)
-        self.assertIn("AI生成示意画面", disclosure[0])
-        self.assertIn("0:00:00.00,0:00:02.40", disclosure[0])
-        self.assertNotIn("\\fad", disclosure[0])
-        for fmt in ("wav", "mp3", "srt", "ass"):
-            with self.assertRaisesRegex(RenderError, "strips"):
-                await self.render(project, "stripped_" + fmt, format=fmt, disclosure=True)
+        self.assertEqual(plain, disclosed)
+        self.assertFalse((self.root / "disclosed/studio.ass").exists())
 
     async def test_omitted_and_null_default_outputs_are_byte_identical(self):
         data = pair_data(left_source="red", right_source="blue")
@@ -989,7 +979,7 @@ class StudioTransitionMediaRouteTests(unittest.IsolatedAsyncioTestCase):
     save = existing.StudioAPITests.save
     finish = existing.StudioAPITests.finish
 
-    async def test_real_authenticated_output_range_snapshot_and_mandatory_manifest(self):
+    async def test_real_authenticated_output_range_snapshot_and_generated_media_record(self):
         project = pair(kind="wipe_left", audio=False)
         self.assertEqual((await self.save(project)).status_code, 200)
         (self.root / "generated_media_disclosure.json").write_text(json.dumps(generated_manifest()), encoding="utf-8")
@@ -1014,8 +1004,8 @@ class StudioTransitionMediaRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot["project"], project.model_dump())
         manifest = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["transition_semantics"], job["result"]["transition_semantics"])
-        self.assertAlmostEqual(manifest["disclosure_intervals"][0][1], project.duration)
-        self.assertIn("AI生成示意画面", (work / "studio.ass").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["disclosure_intervals"], [])
+        self.assertFalse((work / "studio.ass").exists())
         self.assertEqual((self.root / "report.json").read_bytes(), self.publication_originals["report.json"])
 
     async def test_real_eof_failure_has_no_download_or_partial_output(self):

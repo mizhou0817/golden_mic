@@ -178,7 +178,8 @@ cleanup_pending?, cleanup_error?}`.
   a valid current film binding; ordinary historical downloads are not reapproved
   against a newer film revision.
 - `qc` identifies an **unreviewed derivative** or **RAW source preview**, never
-  pipeline approval. `disclosure` is a boolean, not an authorization flag.
+  pipeline approval. `disclosure` is a boolean record that the task has generated media (nothing is
+  burned for it since 2026-10-23), not an authorization flag.
 - Successful media `result`: `{file,bytes,duration,probe,applied,disclosure,
   png_semantics,frame_time,gif_duration_limit,gif_fps_semantics,transition_semantics?,sequence_semantics?}`.
   `probe` exposes allowlisted stream properties and format duration/size/bitrate,
@@ -290,7 +291,7 @@ Track color: `gold`, `cyan`, `red`, `purple`, `gray`; name length ≤80.
   legacy/no-transition clips retain array order. **A track with any declared
   transition uses stable start-time order for all its clips**; removing its last
   transition restores array order. Other tracks keep their own ordering.
-- Text renders after all media/adjustment tracks; mandatory disclosure is last.
+- Text renders after all media/adjustment tracks.
 - Adjustment clips apply the typed color chain, including RGB curves/LUT, to
   already-composited lower media during `[start,start+duration)`, not later text.
 - Gaps are black/silent. Adjacent clips hard-cut; ordinary overlaps use normal
@@ -382,8 +383,8 @@ simple pipeline `/export` remains independent of Studio selection and geometry.
   internal transitions survive; only ancestor start offsets and mute propagate.
   **This is not an isolated group:** gaps/alpha expose lower parent layers,
   child adjustments affect the accumulated lower composite, and text from all
-  timelines renders above all media. There is one final audio mix/disclosure
-  burn and **no intermediate media or proxy substitution**.
+  timelines renders above all media. There is one final audio mix
+  and **no intermediate media or proxy substitution**.
 - Active expansion is limited to **8 nonempty layers, 64 leaf clip occurrences
   and 16 decoder/source occurrences**, plus the existing frame/memory/graph/time
   bounds. Repeated references count each time; empty/hidden/solo-excluded lanes
@@ -500,7 +501,7 @@ position `(W*(0.5+x/2), H*(0.5+y/2))`. Non-subtitle text defaults to that center
 even when x=y=0. This differs from visual-track position. Font size is
 `font_size*H/1080`, with a further 1.5 multiplier for subtitle clips when export
 `subtitles:"large"`. `subtitles:"none"` hides only text clips with `subtitle:true`;
-ordinary text, images, overlays, intrinsic source alpha and required disclosure
+ordinary text, images, overlays and intrinsic source alpha
 remain. It does not erase anything already burned into a source.
 
 | `text_template` | Rendered color / bold / outline / shadow / background |
@@ -525,7 +526,7 @@ at least two centiseconds for typewriter. The original clip's opacity/fade
 envelope is evaluated across prefixes rather than restarted for each prefix.
 These are authored animations, **not ASR word timing**. SRT remains one plain
 subtitle cue per clip. Generated ASS/SRT is capped at 256 KiB UTF-8, including
-all typewriter events; required disclosure is a separate final, static layer.
+all typewriter events.
 
 ### Explicit incoming transitions
 
@@ -779,20 +780,16 @@ no filename pattern expansion or network protocol.
 
 Generated-media metadata is checked against the existing strict disclosure schema.
 If generated footage is indicated but its manifest is absent/empty/malformed,
-render/export is refused. For any task with generated content, studio visual
-outputs conservatively burn `AI生成示意画面（本片含AI生成内容）` over the **entire
-derived timeline**, after crops, transforms, overlays, and subtitle suppression.
-This deliberately over-discloses rather than guessing exact remapped provenance.
-Its font size is 96/1080 of the frame's short side, so the Chinese characters stay at
-least 5% of that side tall (GB 45438-2025) with the bundled Noto Sans SC.
-The output manifest records `[0, result.duration]` (GIF is capped). Audio-only and standalone
-subtitle export are refused for such tasks because they strip the visual notice.
-Users cannot turn the notice off through project JSON.
+render/export is refused. Since 2026-10-23 (the maintainer's decision) nothing is
+burned for generated content and no format is refused for it: the job and result
+record `disclosure: true` and the output manifest records `disclosure_intervals: []`.
+Outputs made before then carry a full-length `AI生成示意画面（本片含AI生成内容）`
+line and record `[0, result.duration]`.
 
 Existing QC blockers in either quality report or report summary reject jobs even
 if the old pipeline ran in warning mode, **for render/export**. Private RAW proxy
 previews deliberately do not call `check_qc()`; there is no account export gate.
-They still require the current finished source, valid disclosure and private
+They still require the current finished source, a valid generated-media manifest and private
 authorization. Studio does not rerun semantic QC or declare edits approved;
 original QC/report bytes remain unchanged.
 
@@ -912,7 +909,8 @@ accept mixed templates, or turn an edited/nested project into a RAW proxy.
 ### Strong verification, not a trusted saved hash
 
 - Source SHA-256 + **pipeline revision** + complete fixed profile (including
-  project defaults and disclosure implementation version) + disclosure boolean
+  project defaults and disclosure implementation version, `studio-no-ai-label-v2` since
+  2026-10-23 so that labelled v1 proxies are not reused) + disclosure boolean
   produce the SHA-256 cache key. Matching also requires this task's `source_id`.
   Studio project revision is checked for submission but **is not** a RAW cache
   key; later timeline edits cannot change an already captured RAW snapshot.
@@ -996,8 +994,8 @@ in **all three modes**. `news` yields the unchanged original. `big` multiplies
 the two body styles (`NewsDialogue2024`, `NewsSentence2024`) by **1.5**, preserving
 timing and reflowing oversized lines within the safe region; if the text still
 cannot fit safely it fails, rather than silently clipping glyphs/shrinking type.
-`none` omits only those body dialogue events. Title, separate graphics and
-required generated-media disclosure remain; a source-burned overlay is not erased.
+`none` omits only those body dialogue events. Title and separate graphics
+remain; a source-burned overlay is not erased.
 
 Big/none use a unique temporary ASS linked by the canonical SHA-256, not a new
 canonical template or QC baseline. Original ASS/manifest, word cues and ASR

@@ -1,12 +1,12 @@
 ---
 name: gm-news-integrity
-description: 金话筒新闻真实性与发布门禁的背景知识（news integrity / publish checks / 发布前检查）。内容包括三种模式的声音规则、稿件与原声的红线、AI 示意画面披露、20 个检查码（级别、能否确认、产生位置）、与红线冲突的现状，以及禁止的捷径。修改稿件处理、原声剪辑、匹配、质量检查、发布检查、导出、AI 画面相关代码，或讨论"能不能导出""检查码""原话""同期""AI 画面""豁免"时自动参考。
+description: 金话筒新闻真实性与发布门禁的背景知识（news integrity / publish checks / 发布前检查）。内容包括三种模式的声音规则、稿件与原声的红线、AI 示意画面的标识与来源记录、20 个检查码（级别、能否确认、产生位置）、与红线冲突的现状，以及禁止的捷径。修改稿件处理、原声剪辑、匹配、质量检查、发布检查、导出、AI 画面相关代码，或讨论"能不能导出""检查码""原话""同期""AI 画面""豁免"时自动参考。
 user-invocable: false
 ---
 
 # 金话筒新闻真实性与发布门禁
 
-本文档描述 2026-10-22 的代码现状，并标出与维护者红线冲突的地方。常驻规则见 [.github/copilot-instructions.md](../../copilot-instructions.md)；本文只写细节和流程。
+本文档描述 2026-10-22 的代码现状（AI 标识部分按 2026-10-23 的决定更新），并标出与维护者红线冲突的地方。常驻规则见 [.github/copilot-instructions.md](../../copilot-instructions.md)；本文只写细节和流程。
 
 ## 何时使用 / 不要使用
 - 使用：改稿件处理、原声剪辑、匹配、质量检查、发布检查、导出或 AI 画面相关代码；回答“这个检查能不能确认”“为什么不能导出”；评审可能放宽红线的改动。
@@ -42,18 +42,18 @@ B 模式稿件里原话的写法：`同期 姓名（身份）：原话`（[USER_
 
 ### 3. AI 示意画面
 - 默认关闭。要同时满足三个条件才会生成：全局 `GENERATIVE_FILL_ENABLED`、配置了 Key、本任务勾选。默认生成的是**视频**（Seedance）。C 模式不可用；涉及实体、日期、机构的事实句子会跳过。
-- 画面上烧录 AI 标注，放在 `graphics.ass` 里，和字幕开关无关；导出时总会烧录 graphics：片头 3 秒"本片含AI生成内容"，每个 AI 镜头期间"AI生成示意画面"，每个字符（包括"AI"）字高都不低于最短边的 5%，不遮挡标题（见 gm-ai-labeling）。
-- 含 AI 披露的作品，服务端用 422 拒绝导出 MP3/SRT（`v2_editing.py`）；含 AI 画面的作品，界面上也不再给这两个选项（`ResultWorkbench.tsx`）。
+- 2026-10-23 起不再给观众加 AI 标识（维护者决定，法律风险见 [.github/copilot-instructions.md](../../copilot-instructions.md)）：新作品和"应用修改"后的新版本，`graphics.ass` 是第四代，没有任何标识；Studio 导出和原始素材预览也不加整段小字。
+- 含 AI 画面的作品可以导出全部格式，MP3、SRT 也不再被拒；服务端只在 AI 画面缺少有效的来源记录（`generated_media_disclosure.json`）时返回 422（`studio.requires_disclosure`）。结果页仍给 AI 镜头标"AI 生成示意画面"。
 - AI 句子会同时触发 `generated_media`（可确认）和不可确认的 MATCH_FALLBACK。
-- 标识是否符合国家标准，见 gm-ai-labeling。
-- 作品保留制作时那一代 graphics.ass，导出时按存档字节重新生成（`graphics.read_disclosure_generation`）：2026-10-22 之前是第一代（只有 AI 镜头期间的小标识），2026-10-22 起第二代加了片头标识，2026-10-23 起第三代放大了"AI"、不遮挡旧流水线的长标题。
+- 标识的法规要求和现状差距，见 gm-ai-labeling。
+- 作品保留制作时那一代 graphics.ass，导出时按存档字节重新生成（`graphics.read_disclosure_generation`）：2026-10-22 之前是第一代（只有 AI 镜头期间的小标识），2026-10-22 起第二代加了片头标识，2026-10-23 起第三代放大了"AI"、不遮挡旧流水线的长标题；同一天起第四代不再画标识。旧版本导出时仍带当时的标识。
 
 ### 4. 发布前检查与导出
 - 级别 0 是错误，不能确认，唯一例外是 `generated_media`（`acknowledgeable: true`）。级别 1 是警告，逐项确认；确认键绑定"版本号 + 报告哈希"，版本一变就失效，过期的版本号返回 409。级别 2 只做提示，不计入待确认。
 - 常规导出要同时过 `check_qc` 和 `require_publication`。
-- **维护者决定保留的行为**（2026-10-22 确认；不要扩大范围，也不要新增其他绕过路径）：V2 的"仍然导出（带未通过的检查）"（`acknowledge_unresolved: true`，在 `v2_editing.py` 的 `ready()` 里）会跳过 `check_qc` 和 `require_publication`，**连级别 0 的错误也跳过**。任务状态、版本、忙碌状态、AI 披露、源和输出绑定这些检查仍然有效。
+- **维护者决定保留的行为**（2026-10-22 确认；不要扩大范围，也不要新增其他绕过路径）：V2 的"仍然导出（带未通过的检查）"（`acknowledge_unresolved: true`，在 `v2_editing.py` 的 `ready()` 里）会跳过 `check_qc` 和 `require_publication`，**连级别 0 的错误也跳过**。任务状态、版本、忙碌状态、AI 画面的来源记录、源和输出绑定这些检查仍然有效。
   - 这条路径来自 2026-10-08 的提交 6310015。2026-10-22 起，README、`docs/USER_GUIDE.md`、`docs/CONFIGURATION.md`、`docs/RUNBOOK.md`、`docs/TROUBLESHOOTING.md`、`docs/DESIGN-MAP.md` 和交接文档都已写明这条路径。
-  - 不要新增或扩大任何绕过路径；不能让披露检查被跳过；改动这条路径要先问用户。
+  - 不要新增或扩大任何绕过路径；不能让来源记录的检查被跳过；改动这条路径要先问用户。
 
 ## 检查码（`mode_rules.json`：`checks` 17 个，`safety_checks` 3 个）
 
@@ -89,14 +89,14 @@ B 模式稿件里原话的写法：`同期 姓名（身份）：原话`（[USER_
 - 在前端隐藏或折叠错误项，或在文档、前端另造阈值（阈值以 `mode_rules.json` 为准）。
 - 删除或弱化测试断言，伪造 ASR 证据、时间戳、匹配分数或报告哈希。
 - 修改原话文字、拼接不连续的词，或在事实性句子里生成 AI 画面。
-- 让 AI 披露可被关闭、裁掉，或通过会丢失披露的格式导出。
+- 删掉或绕过 AI 画面的来源记录（`generated_media_disclosure.json`）、结果页的"AI 生成示意画面"徽标，或发布前检查的 `generated_media` 知情勾选。
 - 填假 Key 伪造就绪，或改额度、删账本绕过限制。
 
 ## 步骤（改相关代码时）
 1. 先对照“红线和现状”和“禁止的捷径”，确认改动没有放宽任何一条；要放宽就先问用户。
 2. 改检查码时，按 [golden-mic-backend-map 的改动清单](../golden-mic-backend-map/references/change-checklists.md) 第 1 节同步 `mode_rules.json`、产生位置、前端和测试。
 3. 涉及稿件原文或原声时，改完确认原话文字、时间戳和匹配分数没有被改动。
-4. 涉及 AI 画面时，确认披露仍随成片烧录、MP3/SRT 仍被拒绝（见 gm-ai-labeling）。
+4. 涉及 AI 画面时，确认来源记录、结果页徽标和 `generated_media` 知情勾选都还在；新作品不加标识，旧版本导出仍按存档带标识（见 gm-ai-labeling）。
 
 ## 示例：有人要把 QUOTE_MATCH_LOW 的门槛从 85% 放宽到 70%（假设）
 - 先不改：门槛在 `mode_rules.json` 的 `limits.match_ok`，放宽等于降低对原话的要求，属于“禁止的捷径”里的放宽阈值，先问用户。

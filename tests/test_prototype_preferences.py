@@ -343,7 +343,7 @@ class CaptionRenderContractTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _fixture(root)
-            graphics = generate_news_graphics(root, topic="城市新闻", headline="公共服务", total_duration=2.12, disclosure_intervals=[(0, 1)])
+            graphics = generate_news_graphics(root, topic="城市新闻", headline="公共服务", total_duration=2.12)
             assert graphics is not None
             before = {name: (root / name).read_bytes() for name in ("subs.ass", "subtitle_manifest.json", "graphics.ass")}
             burned: list[tuple[Path, str]] = []
@@ -381,24 +381,6 @@ class CaptionRenderContractTests(unittest.IsolatedAsyncioTestCase):
                         subtitle_manifest_path=root / "subtitle_manifest.json", finish_options=rendering.FinishOptions(caption_style="none"),
                     )
                 run.assert_not_awaited()
-
-    async def test_finish_builder_retains_mandatory_disclosure_in_every_caption_mode(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            timing = _timing()
-            edl = [EDLItem(sentence_id=0, timeline_start=0, timeline_end=1, clips=[EDLClip(
-                shot_id=9, src="generated/9.mp4", in_time=0, out_time=1, media_origin="generated",
-            )])]
-            for style in ("news", "big", "none"):
-                for suffix in ("", ".remix", ".replacement"):
-                    record = _record(root, caption_style=style, enhance_speech=True)
-                    options = await pipeline._build_finish_options(record, _settings(), [timing], edl=edl, graphics_output_path=root / f"graphics{suffix}.ass")
-                    self.assertEqual(options.caption_style, style)
-                    assert options.graphics_path is not None
-                    content = options.graphics_path.read_text(encoding="utf-8")
-                    self.assertIn("AI生成示意画面", content)
-                    self.assertIn("0:00:00.00,0:00:01.00,GfxDisclosure", content)
-                    self.assertNotIn("GfxTopic,,", content)
 
     async def test_existing_segment_render_validates_canonical_not_derivative(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1064,7 +1046,7 @@ class PrototypePreferenceLocalMediaTests(unittest.IsolatedAsyncioTestCase):
                 self.assertGreaterEqual(int(ys.min()), 108)
                 self.assertLess(int(ys.max()), 972)
 
-    async def test_real_caption_pixels_big_none_title_disclosure_and_source_overlay(self) -> None:
+    async def test_real_caption_pixels_big_none_title_no_label_and_source_overlay(self) -> None:
         import cv2
         import numpy as np
 
@@ -1078,7 +1060,7 @@ class PrototypePreferenceLocalMediaTests(unittest.IsolatedAsyncioTestCase):
             ])
             _write_pcm(narration, channels=1, sample=lambda i: 0.1 * math.sin(2 * math.pi * 440 * i / NARRATION_SAMPLE_RATE))
             generate_ass_subtitles(root, [_timing()], title="城市新闻")
-            graphics = generate_news_graphics(root, topic="地方新闻", headline="", total_duration=1, disclosure_intervals=[(0, 1)])
+            graphics = generate_news_graphics(root, topic="地方新闻", headline="", total_duration=1)
             assert graphics is not None
             originals = {name: (root / name).read_bytes() for name in ("subs.ass", "subtitle_manifest.json", "graphics.ass", "video_only.mp4", "narration.wav")}
             boxes: dict[str, tuple[int, int, int]] = {}
@@ -1107,14 +1089,9 @@ class PrototypePreferenceLocalMediaTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLess(int(frame[956, 250, 2]), 90)
                 title = frame[180:360, 250:1670]
                 self.assertGreater(int(np.count_nonzero((title[:, :, 2] > 170) & (title[:, :, 1] > 140) & (title[:, :, 0] < 120))), 100)
-                # The opening label and the label of the generated shot are stacked on the right edge, below the
-                # title and the topic band; the old top corner stays empty.
-                for slot in range(2):
-                    top = DISCLOSURE_MARGIN_V + 100 * slot
-                    label = frame[top:top + 100, 1300:1900]
-                    self.assertGreater(int(np.count_nonzero(np.all(label > 180, axis=2))), 100)
-                corner = frame[0:DISCLOSURE_MARGIN_V - 10, 1450:1900]
-                self.assertEqual(int(np.count_nonzero(np.all(corner > 180, axis=2))), 0)
+                # No AI label (2026-10-23): the right edge, where the labels were, stays empty.
+                right = frame[0:DISCLOSURE_MARGIN_V + 200, 1300:1900]
+                self.assertEqual(int(np.count_nonzero(np.all(right > 180, axis=2))), 0)
                 topic = frame[50:120, 90:700]
                 self.assertGreater(int(np.count_nonzero(np.all(topic > 180, axis=2))), 100)
             self.assertGreater(boxes["news"][0], 100)

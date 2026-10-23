@@ -22,18 +22,16 @@ test('normal UI has collapsed quality details, not DEV-only, and preserves serve
   assert.equal(h.probe().canExport, true, 'quality counts cannot invent a check gate');
   assert.match(text(details), /仅旁白/); h.stop();
 });
-test('a work with AI pictures offers no MP3/SRT export (the server refuses them) and says why', async () => {
+test('a work with AI pictures offers every export format, MP3 and SRT included (no AI label since 2026-10-23)', async () => {
   const formats = async ctx => {
     const h = harness(ctx); h.render(); await h.settle();
-    const nodes = flat(h.tree()), labels = nodes.filter(n => n.type === 'button').map(text);
-    const note = nodes.some(n => n.props?.['data-testid'] === 'export-no-audio-formats'); h.stop();
-    return { labels, note };
+    const labels = flat(h.tree()).filter(n => n.type === 'button').map(text); h.stop();
+    return labels;
   };
-  const generated = await formats(reportFixture('voiceover'));
-  assert.ok(generated.labels.includes('视频 MP4')); assert.ok(generated.note);
-  assert.ok(!generated.labels.includes('音频 MP3') && !generated.labels.includes('字幕 SRT'));
-  const plain = await formats(fixture('voiceover'));
-  assert.ok(plain.labels.includes('音频 MP3') && plain.labels.includes('字幕 SRT')); assert.ok(!plain.note);
+  for (const ctx of [reportFixture('voiceover'), fixture('voiceover')]) {
+    const labels = await formats(ctx);
+    for (const label of ['视频 MP4', '动图 GIF', '音频 MP3', '字幕 SRT', '封面图']) assert.ok(labels.includes(label), label);
+  }
 });
 for (const mode of ['voiceover', 'mixed', 'original']) test(`mode ${mode}: stats scope, distinct IDs include generated, no real-shot/quality claim`, () => {
   const ctx = reportFixture(mode), before = JSON.stringify(ctx), s = summary(ctx.report, ctx, false);

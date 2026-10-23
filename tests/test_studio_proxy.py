@@ -959,7 +959,7 @@ class ProxyAPITests(ProxyAPIHarness):
         self.assertNotEqual(disclosed["cache_key"], job["cache_key"])
         self.assertTrue(self.encoder.call_args.kwargs["disclosure"])
         manifest = json.loads((self.work(disclosed) / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["disclosure_intervals"], [[0, 1]])
+        self.assertEqual(manifest["disclosure_intervals"], [])  # recorded, but nothing is burned since 2026-10-23
 
 
 def ffmpeg(*args: str) -> bytes:
@@ -1016,7 +1016,7 @@ class ProxyRealMediaTests(ProxyAPIHarness):
         self.assertEqual(hashlib.sha256((self.root / "final.mp4").read_bytes()).hexdigest(),
                          hashlib.sha256(self.originals["final.mp4"]).hexdigest())
 
-    async def test_real_silent_video_and_mandatory_whole_proxy_disclosure(self):
+    async def test_real_silent_video_proxy_records_generated_media_and_burns_no_label(self):
         source = self.root / "norm/norm_silent.mp4"
         source.parent.mkdir()
         ffmpeg("-y", "-i", str(self.root / "final.mp4"), "-an", "-c:v", "copy", str(source))
@@ -1032,12 +1032,10 @@ class ProxyRealMediaTests(ProxyAPIHarness):
         self.assertTrue(snapshot["project"]["tracks"][0]["clips"][0]["mute"])
         self.assertEqual(snapshot["project"]["tracks"][0]["clips"][0]["trim"], 0)
         self.assertTrue(job["disclosure"])
-        ass = (self.work(job) / "studio.ass").read_text(encoding="utf-8")
-        self.assertIn("AI生成示意画面", ass)
-        self.assertIn("Dialogue: 100,0:00:00.00,0:00:02.00", ass)
+        self.assertFalse((self.work(job) / "studio.ass").exists())
         pixels = ffmpeg("-ss", "0.5", "-i", str(self.work(job) / "output.mp4"), "-frames:v", "1", "-vf", "crop=200:65:0:0",
                         "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1")
-        self.assertGreater(sum(value > 180 for value in pixels), 100, "burned disclosure must change normally black padding")
+        self.assertLess(max(pixels), 32, "nothing is burned into the black padding since 2026-10-23")
         self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), before)
 
     async def test_real_audio_only_mp4_and_renamed_playlist_rejected_without_renderer(self):

@@ -136,7 +136,7 @@ Docker 路径的风险：直接 `docker compose up -d`、`docker restart` 或主
 - **风险：**
   - 新版本往环境文件里加了键时，旧版本的精确 schema 校验会因"未知键"失败，服务起不来（推断，未演练）。
   - `task_state.json` 只有 version 1，没有迁移脚本，降级是否兼容没有验证。
-  - `graphics.ass` 带标注的代际标记：2026-10-22 起完成的作品是 `; template: GM-GFX-DISCLOSURE-V2-20261022`，2026-10-23 起是 `…V3-20261023`。回滚到某一代出现之前的版本后，旧代码重新生成不出这一代标注，这些作品的导出会因为 `graphics binding changed` 返回 422。回滚前要有取舍：重新制作这些作品，或者先不回滚。
+  - `graphics.ass` 的代际标记：2026-10-22 起完成的作品是 `; template: GM-GFX-DISCLOSURE-V2-20261022`，2026-10-23 起是 `…V3-20261023`，再往后不带 AI 标识的是 `GM-GFX-NO-AI-LABEL-V4-20261023`。回滚到某一代出现之前的版本后，旧代码重新生成不出这一代的 `graphics.ass`，这些作品的导出会因为 `graphics binding changed` 返回 422。回滚前要有取舍：重新制作这些作品，或者先不回滚。
   - 部署或回滚改动了 `mode_pipeline.py`、`production_modes.py`、`mode_rules.json`、`media.py`、`graphics.py` 等文件时（完整名单见 `drafts._retry_binding`），改动前失败的任务的"再试一次"会返回 409 `retry_inputs_changed`，只能重新提交。
   - 仓库里没有备份工具；备份方法见 [docs/RUNBOOK.md](../../../docs/RUNBOOK.md) 第 4 节。
 

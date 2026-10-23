@@ -13,7 +13,7 @@ only the ancestor start offsets and mute flags. This is deliberately NOT an
 isolated group: gaps/alpha expose lower parent layers, adjustments affect the
 accumulated lower composite, text is above all media, and audio is mixed once.
 There is no nested transform, partial range, intermediate codec/file, private
-asset path substitution, extra disclosure burn or additional disk reservation.
+asset path substitution or additional disk reservation.
 """
 from __future__ import annotations
 
@@ -208,7 +208,7 @@ def sequence_summary(project: Project, timeline: TimelineEvaluation) -> dict[str
                        "start": item.start, "duration": item.duration, "mute": item.mute} for item in timeline.instances],
         "source_ids": sorted({clip.source_id for track in timeline.tracks for clip in track.clips if clip.source_id}),
         "lut_ids": sorted({clip.lut_id for track in timeline.tracks for clip in track.clips if clip.lut_id}),
-        "composition": "child layers inserted at parent track position; local visibility/solo, envelopes and transitions preserved; one final audio mix and disclosure burn; no intermediate media",
+        "composition": "child layers inserted at parent track position; local visibility/solo, envelopes and transitions preserved; one final audio mix; no intermediate media",
         "warnings": ["Identity composition, not an isolated group: gaps/alpha expose lower parent layers and child adjustments affect the accumulated lower composite.",
                      "Text from every expanded timeline is above all media; no isolated text clipping or nested transforms."],
     }

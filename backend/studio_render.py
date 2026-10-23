@@ -880,7 +880,7 @@ def _bounded_subtitle(text: str) -> str:
     return text
 
 
-def subtitle_document(project: Project | TimelineEvaluation, options: ExportOptions, *, disclosure: bool = False) -> str:
+def subtitle_document(project: Project | TimelineEvaluation, options: ExportOptions) -> str:
     """ASS animations use normalized effect time, never inferred speech timestamps.
 
     Named templates replace only rendered color/bold/outline/shadow/background;
@@ -944,11 +944,6 @@ def subtitle_document(project: Project | TimelineEvaluation, options: ExportOpti
                 attack = max(1, round(min(0.3, c.duration * 0.2) * 1000))
                 tags += f"\\fscx70\\fscy70\\t(0,{attack},\\fscx100\\fscy100)"
             append(f"Dialogue: 0,{ass_time(c.start)},{ass_time(c.start+c.duration)},{style},,0,0,0,,{{{tags}}}{plain_ass(c.text)}")
-    if disclosure:
-        if round(project.duration * 100) <= 0:
-            raise RenderError("disclosure duration collapses at ASS centisecond precision")
-        append(f"Dialogue: 100,{ass_time(0)},{ass_time(project.duration)},Studio,,0,0,0,,"
-               f"{{\\an7\\pos(20,20)\\fs{max(16, height*0.035):.2f}\\bord3}}AI生成示意画面（本片含AI生成内容）")
     return "".join(lines)
 
 
@@ -1033,7 +1028,11 @@ async def render_project(project: Project | SimpleModeProject, options: ExportOp
                          *, disclosure: bool = False, timeout: float = 300,
                          luts: dict[str, Path] | None = None,
                          mode_export: ModeExport | None = None) -> dict[str, Any]:
-    """Render one immutable snapshot; caller owns job directory and cancellation cleanup."""
+    """Render one immutable snapshot; caller owns job directory and cancellation cleanup.
+
+    `disclosure` (the work has generated media) is only recorded in the result: since 2026-10-23 nothing is burned
+    for it and no format is refused.
+    """
     mode_plan = project if type(project) is SimpleModeProject else None
     simple_mode = mode_plan is not None
     project = mode_plan.template() if mode_plan is not None else Project.model_validate(project.model_dump())
@@ -1075,8 +1074,6 @@ async def render_project(project: Project | SimpleModeProject, options: ExportOp
         raise RenderError("frame_time must be inside the active timeline")
     if options.format == "gif":
         duration = min(duration, 6.0)
-    if disclosure and options.format in {"mp3", "wav", "srt", "ass"}:
-        raise RenderError("this mode strips burned AI disclosure; export a disclosed video instead")
     work.mkdir(parents=True, exist_ok=True)
     output = work / f"output.{options.format}"
     if options.format in {"srt", "ass"}:
@@ -1328,10 +1325,10 @@ async def render_project(project: Project | SimpleModeProject, options: ExportOp
                 start = max(0, mode_export.source_duration - mode_export.fade_out)
                 graph.append(f"{last}fade=t=out:st={start}:d={mode_export.fade_out}[modefadeout]")
                 last = "[modefadeout]"
-        if disclosure or any(t.type == "text" and t.clips for t in timeline.active_tracks()):
+        if any(t.type == "text" and t.clips for t in timeline.active_tracks()):
             subtitles = work / "studio.ass"
-            # Burned captions/disclosure use the same bounded, canonical LF bytes.
-            subtitles.write_text(subtitle_document(timeline, options, disclosure=disclosure), encoding="utf-8", newline="\n")
+            # Burned captions use the same bounded, canonical LF bytes.
+            subtitles.write_text(subtitle_document(timeline, options), encoding="utf-8", newline="\n")
             fonts = Path(__file__).parent / "assets" / "fonts"
             font_files = list(fonts.glob("*.otf")) + list(fonts.glob("*.ttf"))
             if not font_files:

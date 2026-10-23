@@ -2,6 +2,8 @@
 
 起草日期 2026-10-23。**这是草案，没有经过法务审核，不能直接作为对外生效的协议。** 引用的法规见 [regulations.md](regulations.md)，来源级别也以那里为准。
 
+**同一天维护者决定成片不再加 AI 标识**（见 [.github/copilot-instructions.md](../../../copilot-instructions.md)）：第 X.2、X.4 款写的标识和导出限制已经不存在，启用前要按届时的产品重写。按办法第九条提供不带显式标识的内容，要在协议里写明用户的标识义务和使用责任，并留存提供对象等日志不少于六个月。
+
 ## 一、使用说明（给维护者，不写进协议）
 
 1. **用途**：
@@ -101,9 +103,9 @@
 | 款 | 依据（来源级别见 regulations.md） | 金话筒现状 |
 |---|---|---|
 | X.1 | 办法第八条（提示阅读）；深度合成规定第十六、十七条；暂行办法第九条第二款、第十二条；GB 45438-2025 | 无 |
-| X.2 | 办法第四条（四）、第八条；GB 45438-2025 5.4 a)–g)（多源转载） | `backend/graphics.py`：`OPENING_DISCLOSURE_TEXT`、`OPENING_DISCLOSURE_SECONDS`、`DISCLOSURE_FONT_SIZE`、`_LATIN_SCALE`、`_disclosure_events`、`_label_tops`；不遮挡旧流水线标题靠 `backend/subtitles.py::headline_ink_boxes`；Studio 的全程小字在 `backend/studio_render.py` |
+| X.2 | 办法第四条（四）、第八条；GB 45438-2025 5.4 a)–g)（多源转载） | 2026-10-23 起**无**（维护者决定）。之前做好的版本导出时仍带第一到三代标识：`backend/graphics.py` 的 `OPENING_DISCLOSURE_TEXT`、`OPENING_DISCLOSURE_SECONDS`、`DISCLOSURE_FONT_SIZE`、`_LATIN_SCALE`、`_disclosure_events`、`_label_tops` |
 | X.3 | 办法第五条；深度合成规定第十六条 | **未实现**：`backend/provenance.py` 不写 AIGC 元数据 |
-| X.4 | 办法第四条最后一款、第九条 | `backend/v2_editing.py` 对 MP3/SRT 返回 422；`backend/studio.py` 对 mp3/wav/srt/ass 返回 422；"仍然导出"只跳过未通过的检查，不影响标识 |
+| X.4 | 办法第四条最后一款、第九条 | 2026-10-23 起**无**：MP3、SRT 等格式不再因为 AI 画面被拒；"仍然导出"只跳过未通过的检查 |
 | X.5 | 办法第十条第二款；深度合成规定第十八条 | 无 |
 | X.6 | 办法第十条第一款、第六条（四）；答记者问第八问 | 无 |
 | X.7 | 互联网新闻信息服务管理规定第五条、第十五条；参考即梦AI 用户服务协议 4.3 | 无 |

@@ -1578,7 +1578,6 @@ async def _finish_options(record: Any, timings: Sequence[SentenceTiming], plan: 
     graphics, lower_thirds = generate_mode_graphics(
         record.task_dir, timings, plan, [Speaker.model_validate(value) for value in manifest["speakers"]],
         preferences, title=_title(record.script) or "",
-        disclosure_intervals=[tuple(pair) for pair in manifest.get("generated_intervals", [])],
         v2=_v2(manifest),
     )
     manifest["lower_thirds"] = lower_thirds

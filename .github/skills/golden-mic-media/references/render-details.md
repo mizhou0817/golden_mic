@@ -15,13 +15,13 @@
 ## 导出格式
 
 - **MP4**：
-  - 先用 `scale=…:force_original_aspect_ratio=increase,crop` 填满目标画幅，再烧录字幕和 graphics（含 AI 标注），`fps=30`；
+  - 先用 `scale=…:force_original_aspect_ratio=increase,crop` 填满目标画幅，再烧录字幕和 graphics（旧版本的 AI 标识也在里面），`fps=30`；
   - 视频用 libx264 veryfast，码率 4000k（maxrate 4000k、bufsize 8000k）；音频 AAC 192k。
 - **分辨率**：720p、1080p，后端另外接受 360p。**画幅**：16:9、9:16、1:1。
 - **GIF**：宽 480，12 fps，只取前 6 秒，无声。
 - **MP3**：libmp3lame 192k，只含人声。
 - **其他**：SRT 字幕、PNG 封面。
-- **含 AI 标注的作品拒绝导出 MP3 和 SRT**，因为这两种格式会丢失标注。
+- 含 AI 画面的作品也可以导出 MP3 和 SRT（2026-10-23 起；之前因为会丢失标识而拒绝）。
 - **并发限制**：每个任务最多 20 个导出作业，全站同时最多 2 个（`v2_editing.py:578-582`）。
 
 ## 能力预检

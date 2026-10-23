@@ -28,11 +28,9 @@ from backend.pipeline import (  # pyright: ignore[reportPrivateUsage]
     _generated_media_intervals,
     _segment_render_options,
 )
-from backend.graphics import (  # pyright: ignore[reportPrivateUsage]
-    DISCLOSURE_FONT_SIZE,
+from backend.graphics import (
     DISCLOSURE_MARGIN_V,
-    OPENING_DISCLOSURE_TEXT,
-    _label_width,
+    generate_mode_graphics,
     generate_news_graphics,
 )
 from backend.providers.generative import (
@@ -52,7 +50,7 @@ from backend.rendering import (  # pyright: ignore[reportPrivateUsage]
     build_edl,
     render_final_video,
 )
-from backend.subtitles import TITLE_DURATION_SECONDS, generate_ass_subtitles, headline_ink_boxes
+from backend.subtitles import generate_ass_subtitles
 from backend.tts_pipeline import probe_audio_duration
 
 
@@ -176,9 +174,12 @@ class EditingPreferencesTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue((task_dir / "music_selection.json").is_file())
             self.assertTrue((task_dir / "graphics.ass").is_file())
 
-    async def test_generated_disclosure_is_mandatory_without_news_graphics(self) -> None:
+    async def test_no_overlay_and_no_stale_one_without_news_graphics(self) -> None:
+        # Since 2026-10-23 generated media are not labelled, so without news graphics nothing needs an overlay, and an
+        # overlay left by an earlier render (one that labelled them) is removed.
         with tempfile.TemporaryDirectory() as directory:
             task_dir = Path(directory)
+            (task_dir / "graphics.ass").write_text("[Script Info]\n", encoding="utf-8")
             record = SimpleNamespace(
                 task_dir=task_dir,
                 script="城市要闻\n公共服务持续改善。",
@@ -192,34 +193,11 @@ class EditingPreferencesTest(unittest.IsolatedAsyncioTestCase):
                 start=0.0,
                 end=2.0,
             )
-            edl = [
-                EDLItem(
-                    sentence_id=0,
-                    clips=[
-                        EDLClip(
-                            shot_id=5,
-                            src="generated/fill_shot_5.mp4",
-                            **{"in": 0.0, "out": 2.0},
-                            media_origin="generated",
-                        )
-                    ],
-                    timeline_start=0.0,
-                    timeline_end=2.0,
-                )
-            ]
 
-            options = await _build_finish_options(
-                record,
-                Settings(),
-                [timing],
-                edl=edl,
-            )
+            options = await _build_finish_options(record, Settings(), [timing])
 
-            self.assertIsNotNone(options.graphics_path)
-            content = Path(options.graphics_path).read_text(encoding="utf-8")
-            self.assertIn("AI生成示意画面", content)
-            self.assertNotIn("GfxTopic,,", content)
-            self.assertIn("0:00:00.00,0:00:02.00,GfxDisclosure", content)
+            self.assertIsNone(options.graphics_path)
+            self.assertFalse((task_dir / "graphics.ass").exists())
 
 
 class MusicLibraryTest(unittest.TestCase):
@@ -298,7 +276,7 @@ def _build_render_fixture(task_dir: Path, narration_seconds: float) -> list:
 
 @unittest.skipUnless(_ffmpeg_available(), "FFmpeg/ffprobe required")
 class EnhancedRenderTest(unittest.IsolatedAsyncioTestCase):
-    async def test_generated_media_disclosure_is_burned_into_final_video(self) -> None:
+    async def test_generated_media_are_not_labelled_in_the_final_video(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             task_dir = Path(directory)
             norm_dir = task_dir / "generated"
@@ -320,7 +298,7 @@ class EnhancedRenderTest(unittest.IsolatedAsyncioTestCase):
             )
             timing = SentenceTiming(
                 sentence_id=0,
-                text="用于验证披露烧录。",
+                text="用于验证成片不加标识。",
                 audio_path="tts/sent_0.mp3",
                 duration=2.0,
                 start=0.0,
@@ -352,19 +330,16 @@ class EnhancedRenderTest(unittest.IsolatedAsyncioTestCase):
             )
             generate_ass_subtitles(task_dir, [timing])
             edl = build_edl(task_dir, [timing], [plan], [shot])
-            graphics_path = generate_news_graphics(
-                task_dir,
-                topic="",
-                headline="",
-                total_duration=2.0,
-                disclosure_intervals=_generated_media_intervals(edl),
-            )
+            self.assertEqual(_generated_media_intervals(edl), [(0.0, 2.0)])
+            record = SimpleNamespace(task_dir=task_dir, script="城市要闻\n" + timing.text, preferences=EditingPreferences())
+            finish_options = await _build_finish_options(record, Settings(), [timing])
+            self.assertIsNone(finish_options.graphics_path)
 
             final_path = await render_final_video(
                 task_dir,
                 edl,
                 lambda fraction, message: None,
-                finish_options=FinishOptions(graphics_path=graphics_path),
+                finish_options=finish_options,
             )
 
             capture = cv2.VideoCapture(str(final_path))
@@ -381,46 +356,34 @@ class EnhancedRenderTest(unittest.IsolatedAsyncioTestCase):
                 region = frame[top:bottom, left:right]
                 return cv2.countNonZero(cv2.inRange(region, (180, 180, 180), (255, 255, 255)))
 
-            # At 0.5 s the opening label and the label of the generated shot are stacked on the right edge, below
-            # the margin that keeps them clear of the title and the topic band; the old top corner stays empty.
+            # 2026-10-23: no label over the generated shot, neither on the right edge where the labels were nor in
+            # the top corner.
+            self.assertEqual(bright(0, DISCLOSURE_MARGIN_V + 200), 0)
+
+    async def test_a_third_generation_overlay_still_renders_its_labels(self) -> None:
+        # A version made before 2026-10-23 exports with the overlay it was made with (studio.prepare_mode_export).
+        with tempfile.TemporaryDirectory() as directory:
+            task_dir = Path(directory)
+            timing = SentenceTiming(sentence_id=0, text="旁白", audio_path="a.wav", duration=2.0, start=0.0, end=2.0)
+            graphics_path, _ = generate_mode_graphics(task_dir, [timing], [], [], EditingPreferences(lower_third=False),
+                                                      disclosure_intervals=[(0.0, 2.0)], disclosure_generation=3)
+            assert graphics_path is not None
+            fonts = _prepare_ass_font_directory(task_dir, Path(__file__).resolve().parent.parent / "backend" / "assets" / "fonts")
+            image = task_dir / "labels.png"
+            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=1920x1080:d=2",
+                         "-vf", _build_graphics_filter(graphics_path, fonts), "-ss", "0.5", "-frames:v", "1", str(image)])
+            frame = cv2.imread(str(image))
+            assert frame is not None
+
+            def bright(top: int, bottom: int, left: int = 1300, right: int = 1900) -> int:
+                region = frame[top:bottom, left:right]
+                return cv2.countNonZero(cv2.inRange(region, (180, 180, 180), (255, 255, 255)))
+
+            # The opening label and the label of the generated shot are stacked on the right edge, below the margin
+            # that kept them clear of the title and the topic band; the top corner stays empty.
             self.assertGreater(bright(DISCLOSURE_MARGIN_V, DISCLOSURE_MARGIN_V + 100), 100)
             self.assertGreater(bright(DISCLOSURE_MARGIN_V + 100, DISCLOSURE_MARGIN_V + 200), 100)
             self.assertEqual(bright(0, DISCLOSURE_MARGIN_V - 10, 1450, 1900), 0)
-            # GB 45438-2025 5.4 f): every character at least 5% of the short side (54 px), the Latin "AI" included.
-            unit = DISCLOSURE_FONT_SIZE / 1448
-            ai_left = round(1870 - _label_width(OPENING_DISCLOSURE_TEXT) + 3 * 1000 * unit + 8)
-            ai_right = round(ai_left + (641 + 330) * 1.15 * unit)
-            # Half coverage (128) measures the glyph edge itself, whatever the encoder's blur.
-            ink = cv2.inRange(frame[DISCLOSURE_MARGIN_V:DISCLOSURE_MARGIN_V + 100, ai_left:ai_right], (128, 128, 128), (255, 255, 255))
-            rows = [row for row in range(ink.shape[0]) if cv2.countNonZero(ink[row]) > 0]
-            self.assertGreaterEqual(rows[-1] - rows[0] + 1, 54)
-
-    async def test_labels_shown_with_a_long_legacy_headline_never_cover_it(self) -> None:
-        title = "南宁信息港广场迎春市集今天热闹开市啦市民们纷纷前来挑选年货体验非遗手艺"
-        with tempfile.TemporaryDirectory() as directory:
-            task_dir = Path(directory)
-            timing = SentenceTiming(sentence_id=0, text="市民在广场挑选年货。", audio_path="tts/sent_0.mp3",
-                                    duration=6.0, start=0.0, end=6.0, gap_after=0.0)
-            generate_ass_subtitles(task_dir, [timing], title=title)
-            graphics_path = generate_news_graphics(task_dir, topic="", headline="", total_duration=6.0,
-                                                   disclosure_intervals=[(1.0, 6.0)], keep_clear=headline_ink_boxes(title),
-                                                   keep_clear_until=TITLE_DURATION_SECONDS)
-            assert graphics_path is not None
-            fonts = _prepare_ass_font_directory(task_dir, Path(__file__).resolve().parent.parent / "backend" / "assets" / "fonts")
-            frames = {}
-            for name, path in (("headline", task_dir / "subs.ass"), ("labels", graphics_path)):
-                image = task_dir / f"{name}.png"
-                _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=1920x1080:d=3",
-                             "-vf", _build_graphics_filter(path, fonts), "-ss", "1.5", "-frames:v", "1", str(image)])
-                frames[name] = cv2.imread(str(image), cv2.IMREAD_GRAYSCALE)
-            headline = frames["headline"] > 30
-            headline[700:] = False  # the two-line headline, not the dialogue line at the bottom
-            self.assertGreater(cv2.countNonZero(headline.astype("uint8")), 1000)
-            # At 1.5 s the opening label and the shot label are both on screen, below the headline: none of their
-            # pixels (box included) lies on its ink. Without keep_clear they covered its right end.
-            labels = frames["labels"] > 8
-            self.assertGreater(cv2.countNonZero(labels.astype("uint8")), 1000)
-            self.assertEqual(cv2.countNonZero((labels & headline).astype("uint8")), 0)
 
     async def test_motion_and_color_preserve_geometry_and_duration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -544,21 +507,18 @@ class NewsGraphicsTest(unittest.TestCase):
             self.assertIn("重点项目今日启动", content)
             self.assertIn("GfxEnd", content)
 
-    def test_writes_time_bounded_generated_media_disclosures(self) -> None:
+    def test_news_graphics_carry_no_ai_label(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            task_dir = Path(directory)
             path = generate_news_graphics(
-                task_dir,
-                topic="",
-                headline="",
+                Path(directory),
+                topic="城市要闻",
+                headline="重点项目今日启动",
                 total_duration=6.0,
-                disclosure_intervals=[(0.25, 1.75), (3.0, 4.5)],
             )
             self.assertIsNotNone(path)
             content = Path(path).read_text(encoding="utf-8")
-            self.assertEqual(content.count("AI生成示意画面"), 2)
-            self.assertIn("0:00:00.25,0:00:01.75,GfxDisclosure", content)
-            self.assertIn("0:00:03.00,0:00:04.50,GfxDisclosure", content)
+            for label in ("AI生成", "本片含", "GfxDisclosure"):
+                self.assertNotIn(label, content)
 
     def test_generated_intervals_follow_clip_timeline(self) -> None:
         edl = [

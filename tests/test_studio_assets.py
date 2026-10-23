@@ -1168,7 +1168,7 @@ class StudioAssetMediaTests(AssetAPIHarness):
         self.assertLess(center[1], 160, "overlay should retain its intrinsic half alpha")
         self.assertEqual(hashlib.sha256(video.read_bytes()).hexdigest(), digest)
 
-    async def test_real_image_lut_job_keeps_mandatory_generated_disclosure_and_qc(self):
+    async def test_real_image_lut_job_records_generated_media_and_keeps_qc(self):
         image = await self.imported_image()
         lut = await self.imported_lut(swap=True)
         self.assertEqual((await self.save(image_project(image["id"], lut_id=lut["id"]))).status_code, 200)
@@ -1176,9 +1176,6 @@ class StudioAssetMediaTests(AssetAPIHarness):
             {"sentence_id": 0, "beat_id": 0, "shot_id": 0, "mode": "video", "prompt_sha256": "a"*64, "disclosure_text": "AI生成示意画面"}]}
         (self.root / "generated_media_disclosure.json").write_text(json.dumps(manifest), encoding="utf-8")
         confirm_synthetic_publication(self, self.record, generated=True)
-        for fmt in ("wav", "srt"):
-            response = await self.client.post(self.prefix+"/render", json={"expected_revision": 1, "options": {"format": fmt}})
-            self.assertEqual(response.status_code, 422)
         response = await self.client.post(self.prefix+"/render", json={"expected_revision": 1, "options": {"format": "png", "resolution": 360}})
         self.assertEqual(response.status_code, 202, response.text)
         await asyncio.gather(*list(_RUNNING.values()))
@@ -1186,10 +1183,10 @@ class StudioAssetMediaTests(AssetAPIHarness):
         self.assertEqual(job["state"], "succeeded", job)
         self.assertTrue(job["disclosure"])
         work = self.root / "studio/outputs/r1" / job["id"]
-        self.assertIn("AI生成示意画面", (work/"studio.ass").read_text(encoding="utf-8"))
+        self.assertFalse((work/"studio.ass").exists())
         actual = existing.ffmpeg("-i", str(work/"output.png"), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1")
-        self.assertTrue(any(max(actual[i:i+3])-min(actual[i:i+3]) < 20 and min(actual[i:i+3]) > 180 for i in range(0, 640*65*3, 3)),
-                        "disclosure must produce white pixels, not just an ASS file")
+        self.assertFalse(any(max(actual[i:i+3])-min(actual[i:i+3]) < 20 and min(actual[i:i+3]) > 180 for i in range(0, 640*65*3, 3)),
+                         "nothing is burned for generated media since 2026-10-23")
         before = (self.root / "quality_report.json").read_bytes()
         try:
             (self.root / "quality_report.json").write_bytes(synthetic_publication_files(blocked=True)["quality_report.json"])

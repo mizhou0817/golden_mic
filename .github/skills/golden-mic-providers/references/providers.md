@@ -104,12 +104,12 @@
 |---|---|---|
 | 上传完成后、开始制作之前 | Seed ASR 预转写 | `uploads._preprocess` → `_transcribe`（uploads.py:1039-1136） |
 | 阶段 2 | 对失败的素材补跑一次 ASR，`max_retries=0`；本地说话人分析（可选） | `mode_pipeline._retry_failed_asr`（mode_pipeline.py:388-428） |
-| 阶段 4 | Kimi 画面理解（没有空镜时跳过） | mode_pipeline.py:1880-1896 |
-| 阶段 5 | 不调用模型 | mode_pipeline.py:1902 |
+| 阶段 4 | Kimi 画面理解（没有空镜时跳过） | mode_pipeline.py:1879-1895 |
+| 阶段 5 | 不调用模型 | mode_pipeline.py:1901 |
 | 阶段 6 | 原话本地对齐，不调用模型；旁白匹配调用向量、LLM 精排、实体核验（走视觉服务）；可选生成补画面 | `_match_narration`、`_generated_narration`（mode_pipeline.py:939-1007） |
 | 阶段 7 | 读音规划（Kimi），然后逐句 TTS；本人录音走 ASR，`max_retries=0` | `_assemble_audio`、`_recorded_narration`（mode_pipeline.py:1149-1337） |
 | 阶段 8–10 | 不调用服务 | — |
-| 结果页修改 | 重新匹配、生成、配音 | `edit_mode_workspace`（mode_pipeline.py:2018-2261） |
+| 结果页修改 | 重新匹配、生成、配音 | `edit_mode_workspace`（mode_pipeline.py:2017-2260） |
 | 结果页上传录音 | ASR | `workbench._ingest_recording`（workbench.py:937-1017） |
 | AI 写作、选效果 | Kimi `complete_text` | main.py:762-826 |
 

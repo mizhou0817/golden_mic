@@ -80,8 +80,8 @@ Only affected video segments are rendered; unchanged EDL clips/in-points are pre
 Canonical ASS and its manifest are validated for all three caption modes.
 `news` keeps that presentation; `big` enlarges both body-caption styles 1.5×,
 preserving timing and safely reflowing text or failing if it cannot fit. `none`
-omits body captions only. Title, separate graphics, mandatory generated-content
-disclosure and text already burned into source footage are not erased. The
+omits body captions only. Title, separate graphics and text already burned into
+source footage are not erased. The
 temporary presentation does not replace canonical subtitle/ASR evidence.
 
 Only current `audio_kind:"sync"` units qualify for `enhance_speech`: source sync,

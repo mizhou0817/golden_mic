@@ -32,7 +32,7 @@ user-invocable: false
 | V2 生命周期 | `drafts.py`、`admission.py`、`uploads.py`、`task_manager.py`、`task_metadata.py`、`operations.py` | 草稿、分块上传、align、start、retry、恢复；SQLite 准入账本；上传会话和预转写；单 worker 队列、状态和重启恢复；到期时间；磁盘预留 |
 | 制作流水线 | `pipeline.py`（入口和旧流水线）、`mode_pipeline.py`（V2 编排、十个阶段、改后重算）、`production_modes.py`（分句、原话对齐、检查、跳切、切点）、`matching.py`、`assignment.py`、`vision_pipeline.py`、`tts_pipeline.py`、`media_input.py`、`media.py` | 十阶段制作 |
 | 编辑与发布 | `v2_editing.py`（apply 请求、`compile_plan`、导出路由）、`workbench.py`（版本、应用、录音、恢复）、`revisions.py`（版本快照）、`publication.py`（发布门禁）、`quality.py`（质检） | 修改出新版本、检查、导出 |
-| 媒体 | `rendering.py`、`graphics.py`（字幕、人名条、AI 标注）、`subtitles.py`（字体常量和旧 ASS）、`audio_filters.py`、`music.py`、`studio_render.py`（导出） | 见 golden-mic-media |
+| 媒体 | `rendering.py`、`graphics.py`（字幕、人名条；AI 标识只给旧版本重建）、`subtitles.py`（字体常量和旧 ASS）、`audio_filters.py`、`music.py`、`studio_render.py`（导出） | 见 golden-mic-media |
 | 规则 | `backend/mode_rules.json` | 模式、阶段名称、阈值、检查码，前后端共用 |
 | 外部服务 | `backend/providers/` | 见 golden-mic-providers |
 | 旧功能 | `studio.py`、`asr_pipeline.py`、`script_segmentation.py` 等 | 只按兼容范围维护，不恢复已下线的 Studio、课堂入口 |

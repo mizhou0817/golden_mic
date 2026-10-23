@@ -11,7 +11,7 @@ export type CaptionStyle = "news" | "big" | "none";
 export interface EditingPreferences {
   pacing: EditingPacing;
   tone: EditingTone;
-  /** V2: news 42px / big 54px at 1080p; none leaves required graphics/disclosure. */
+  /** V2: news 42px / big 54px at 1080p; none still keeps the graphics overlay (news package, lower thirds). */
   caption_style?: CaptionStyle;
   /** Clock-preserving noise reduction for source speech / recordings, never TTS. */
   enhance_speech?: boolean;

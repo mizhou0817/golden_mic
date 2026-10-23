@@ -37,7 +37,7 @@
 | POST | `/api/tasks/{id}/restore` | `restore_v2`（`workbench.py:1451`） | W 写 | 202 |
 | POST | `/api/tasks/{id}/recordings` | `recordings_v2`（`workbench.py:1460`） | W 写 | 201 |
 | GET | `/api/tasks/{id}/quotes/{row}/takes` | `main.py:1413-1422` | 读 | 200 |
-| POST/GET/DELETE | `/api/tasks/{id}/exports`、`/exports/{eid}`、`/exports/{eid}/file` | `v2_editing.py:562`、`v2_editing.py:701`、`v2_editing.py:712`、`v2_editing.py:728` | E | 202 / 200 / 200 / 200 或 206 |
+| POST/GET/DELETE | `/api/tasks/{id}/exports`、`/exports/{eid}`、`/exports/{eid}/file` | `v2_editing.py:562`、`v2_editing.py:702`、`v2_editing.py:713`、`v2_editing.py:729` | E | 202 / 200 / 200 / 200 或 206 |
 | GET | `/api/config/limits` | `public_limits`（`main.py:363-397`） | 公开 | 200 |
 
 ## 表里没有的接口
@@ -113,7 +113,7 @@
 
 ### `POST /api/tasks/{id}/exports`
 - 请求体 `V2ExportOptions {fmt, aspect, res, sub, frame_seconds, expected_revision, acknowledge_unresolved}`（`studio_render.py:476-483`）。
-- 支持的格式：mp4、gif、mp3、srt、png；画幅 16:9、9:16、1:1；分辨率 360p、720p、1080p。
+- 支持的格式：mp4、gif、mp3、srt、png（含 AI 画面的作品也一样，2026-10-23 起）；画幅 16:9、9:16、1:1；分辨率 360p、720p、1080p。
 - 每个任务最多 20 个导出作业，全站同时最多 2 个（`v2_editing.py:578-582`）。
 
 ### `GET /api/config/limits`

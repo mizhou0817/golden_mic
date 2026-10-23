@@ -1422,7 +1422,7 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
             </section>}
             {mode !== "original" && <section className="gm-effect-card gm-generative" data-active={generativeAllowed && preferences.generative_fill}>
               <button type="button" className="gm-switch-button" role="switch" aria-checked={generativeAllowed && preferences.generative_fill} aria-describedby={`${id}-generative-hint`} disabled={!generativeAllowed} onClick={() => setPreferences((current) => ({ ...current, generative_fill: !current.generative_fill }))}><strong>AI 示意画面补充</strong><span className="gm-switch-track" aria-hidden="true"><span /></span></button>
-              <p id={`${id}-generative-hint`} className="gm-muted gm-small">{generativeAllowed ? "画面不够时用 AI 生成示意画面，会标注“AI生成”，可能产生费用。" : "服务器未开启此功能。"}</p>
+              <p id={`${id}-generative-hint`} className="gm-muted gm-small">{generativeAllowed ? "画面不够时用 AI 生成示意画面，可能产生费用。结果页会标出这些画面，成片里不加 AI 标识。" : "服务器未开启此功能。"}</p>
             </section>}
           </div>
           <label className="gm-sr-only" htmlFor={`${id}-custom`}>想对 AI 剪辑师说的话</label>
