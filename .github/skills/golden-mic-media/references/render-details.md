@@ -10,7 +10,7 @@
 | 淡入淡出 | 只作用于画面：开头 `fade=t=in` 0.5 秒，结尾 `fade=t=out` 0.6 秒，音频不淡化。只在开启 `transitions` 时生效；导出时在导出滤镜链里按设置应用 | `rendering.py`、`studio_render.py` |
 | 成片编码 | 素材先统一成 1920×1080、`fps=30`、SAR 1；用 libx264 veryfast 编码，CRF 20，yuv420p。成片要校验：H.264、1920×1080、30fps、AAC 48 kHz，和旁白的时长差不超过 0.3 秒 | `media.py`、`rendering.py` |
 | 导出 | 格式、画幅、分辨率见下方"导出格式" | `studio_render.py`（`V2ExportOptions`，第 474–483 行）、`v2_editing.py` |
-| 子进程 | 异步执行，用 `asyncio.wait_for` 控制超时。取消或超时时：Linux 和 macOS 用独立会话加 `killpg`（先 SIGTERM，10 秒后 SIGKILL）；**Windows 只结束直接子进程，不清理进程树**。固定超时：质检 600 秒，启动探测 15 秒，上传按素材时长计算，V2 导出取 min(设置值, max(120, 4 × 时长)) | `media.py`、`quality.py`、`readiness.py`、`uploads.py`、`studio_render.py` |
+| 子进程 | 异步执行，用 `asyncio.wait_for` 控制超时。取消或超时时：Linux 和 macOS 用独立会话加 `killpg`（先 SIGTERM，10 秒后 SIGKILL）；**Windows 先结束整棵子进程树（`media.kill_windows_descendants`），再结束直接子进程**。固定超时：质检 600 秒，启动探测 15 秒，上传按素材时长计算，V2 导出取 min(设置值, max(120, 4 × 时长)) | `media.py`、`quality.py`、`readiness.py`、`uploads.py`、`studio_render.py` |
 
 ## 导出格式
 
@@ -22,7 +22,7 @@
 - **MP3**：libmp3lame 192k，只含人声。
 - **其他**：SRT 字幕、PNG 封面。
 - **含 AI 标注的作品拒绝导出 MP3 和 SRT**，因为这两种格式会丢失标注。
-- **并发限制**：每个任务最多 20 个导出作业，全站同时最多 2 个（`v2_editing.py:577-581`）。
+- **并发限制**：每个任务最多 20 个导出作业，全站同时最多 2 个（`v2_editing.py:578-582`）。
 
 ## 能力预检
 

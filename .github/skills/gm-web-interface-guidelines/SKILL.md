@@ -42,6 +42,16 @@ argument-hint: "<文件或 glob，例如 frontend/src/components/ResultWorkbench
 - 每条一行：`路径:行 — 规则类别 — 问题 — 建议`，按"影响使用 > 可访问性 > 一致性 > 细节"排序。
 - 末尾附"不适用的条目"及原因，以及建议配合使用的 skill（accessibility、break-ui、playwright-cli）。
 
+## 示例
+`/gm-web-interface-guidelines frontend/src/components/<组件>.tsx` 得到的清单，每条一行，格式如下（内容仅为格式示例）：
+`frontend/src/components/<组件>.tsx:<行> — 可访问性 — 图标按钮没有 aria-label — 加上说明按钮作用的 aria-label`
+末尾列出不适用的条目，例如“Hydration Safety（本项目没有服务端渲染）”。
+
+## 验证
+- 清单里每条的“路径:行”都能打开，并看到所指的代码。
+- 审查没有改动任何文件：`git status` 无新增改动。
+- 规则原文没有被联网更新：`command.md` 的 SHA-256 仍是上文记录的值。
+
 ## 来源
 - 规则原文和许可证见上文。
 - 项目约束：[docs/UI_SIMPLIFICATION_20261014.md](../../../docs/UI_SIMPLIFICATION_20261014.md)、[frontend/package.json](../../../frontend/package.json)。

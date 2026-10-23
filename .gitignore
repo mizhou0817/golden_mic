@@ -38,3 +38,7 @@ dist/
 .playwright-cli/
 # Local specs and tickets written by the Matt Pocock agent skills (docs/agents/issue-tracker.md)
 .scratch/
+# playwright-cli state files can hold cookies and tokens (see its references/storage-state.md); recordings are large
+storage-state-*.json
+*.auth-state.json
+*.webm

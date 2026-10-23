@@ -1,6 +1,6 @@
 # 改动清单：检查码、AI 服务商、导出格式
 
-本文依据提交 af1e4e7 的代码整理（2026-10-21）。以函数名为准，行号会变。改完按 golden-mic-verify 验证；涉及接口和配置时，另按 golden-mic-api-change 的同步清单检查。
+本文依据提交 af1e4e7 的代码整理（2026-10-21）。以函数名为准，行号会变。改完按 golden-mic-verify 验证；涉及接口和配置时，另按 golden-mic-api-change 的同步清单检查。下面"测试"一项列的文件里，只有 `test_v2_*` 和 `--legacy` 的 8 个模块会被受保护入口运行；其余的（例如 `test_asr`、`test_m4_tts`、`test_mode_pipeline`）要按 golden-mic-verify 的"单独跑某个测试模块"运行，或者把新用例写进 `test_v2_*`。
 
 ## 1. 新增发布检查码
 

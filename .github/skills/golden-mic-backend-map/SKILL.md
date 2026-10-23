@@ -6,7 +6,7 @@ user-invocable: false
 
 # 金话筒后端地图
 
-帮你快速定位代码、评估改动的影响面。下面的内容按代码现状整理；交接文档或旧报告和代码冲突时，以代码为准，冲突列在"待确认"。
+帮你快速定位代码、评估改动的影响面。下面的内容按代码现状整理；交接文档或旧报告和代码冲突时，以代码为准；已更正和仍未消除的差异列在"文档与代码的差异"。
 
 ## 何时使用 / 不要使用
 
@@ -45,7 +45,7 @@ user-invocable: false
 2. **编辑稿件**，然后**分块上传**：每块 8 MiB，传完调用 complete。
 3. **预处理和预转写**：probe → 波形和静音区间 → Seed ASR。**这一步就开始收费，早于开始制作。**
 4. **对齐预览**：`POST /{id}/align`，只预览，不提交。
-5. **显式开始**：`POST /{id}/start`。缺原话返回 422；先过准入账本（每小时额度，已接收的不退），等待队列最多 50 个；然后入队。
+5. **显式开始**：`POST /{id}/start`。先校验原话（缺原话 422）和等待队列（最多 50 个，满了返回 503，不占额度）；再预留磁盘、复制素材、做说话人分析和匹配，最后复查一次队列容量；之后才写准入账本（每小时额度，已接收的不退，用完 429，重复 409）；然后入队。
 6. **执行十个阶段**：单 worker。状态依次为 queued → running → done、failed 或 cancelled。**重启后不续跑**：queued 和 running 一律改为 failed。
 7. **修改**：`POST /{id}/apply` → `compile_plan` → 产生新版本。失败时保留上一版。
 8. **检查与导出**：经过 `publication_gate`，再 `POST /{id}/exports`。
@@ -72,13 +72,14 @@ user-invocable: false
 
 ## 重做规则（改后重跑哪些阶段）
 
-实际执行的阶段由 `v2_editing.compile_plan` 计算（`v2_editing.py:210-258`、`workbench.py:600-606`），**不读** `mode_rules.json` 的 `plan_stages`；后者只给前端显示用。
+实际执行的阶段由 `v2_editing.compile_plan` 计算（`v2_editing.py:211-259`、`workbench.py:600-606`），**不读** `mode_rules.json` 的 `plan_stages`。读它的只有后端 `production_modes.recommend_plan` 和前端 `recommendPlan`，两者除测试外都没有调用方；2026-10-22 起它的值和 `compile_plan` 一致（`tests/cases/text-rules.json` 有用例）。界面显示的是服务端回执里的阶段。
 
 | 修改 | 重跑阶段 |
 |---|---|
 | 首版制作 | 1–10 |
-| 删句、改字、本人录音、调语速、剪短原声、换一段、改字幕样式或人声增强 | 7–10 |
-| 转成旁白（仅 B） | **6**–10（`mode_rules.json` 和交接文档写的是 7–10，以代码为准） |
+| 删句、改字、本人录音、调语速、剪短原声、换一段 | 7–10 |
+| 改字幕样式或人声增强（只有旧的 `POST /api/tasks/{id}/edit` 接受；V2 `/apply` 没有这两个字段） | 7–10 |
+| 转成旁白（仅 B） | 6–10 |
 | 只改说话人 | 8–10 |
 | 空的 apply（只重新合成） | 9–10 |
 | 换画面（每句一步） | 6、9、10 |
@@ -95,23 +96,23 @@ user-invocable: false
 | `original`（C） | 只用原声 | 只有原声 | 不调用 TTS；强制 `voice=ai`、`pacing=normal`、`generative_fill=False`；开始制作时拒绝不连续的原话（422 `quote_unverified`） |
 
 - 原声句**不能改字**，只能剪短、换一段、转成旁白（仅 B）或删掉。
-- 原话匹配的状态：分数 ≥ 0.85 为 `ok`；0.6–0.85 为 `low`，发 `QUOTE_MATCH_LOW`（1 级，要人工确认）；< 0.6 或没有来源为 `missing`，发 `QUOTE_NOT_FOUND`（0 级，阻断发布）（`production_modes.py:484-488`）。
+- 原话匹配的状态：分数 ≥ 0.85 为 `ok`；0.6–0.85 为 `low`，发 `QUOTE_MATCH_LOW`（1 级，要人工确认）；< 0.6 或没有来源为 `missing`，发 `QUOTE_NOT_FOUND`（0 级，阻断发布）（`production_modes.py:496-500`）。
 - 句型的优先级：手动标记 > 行首标记（"同期："、"【同期】"、"姓名（身份）："）> 默认旁白。分句：原声句按"。！？"拆，旁白按"，。；！？"拆（交接文档 §2；实现见 `production_modes.parse_sentences`）。
 
 ## 限额与常量（摘要）
 
-完整清单，以及和交接文档 §10 的差异，见 [references/limits.md](references/limits.md)。
+完整清单，以及仍未消除的不一致，见 [references/limits.md](references/limits.md)。
 
 - **素材**：文件最多 20 个；单个不超过 500 MiB，合计不超过 5 GiB；单个不超过 30 分钟，合计不超过 60 分钟；镜头最多 120 个；图片定格 3 秒。
 - **稿件**：最多 8000 字，超过 3000 字给提示；标题不超过 40 字；最多 200 句，单句不超过 2000 字。
 - **原声与节奏**：原声句时长 1 / 20 / 30 秒；语速 230 / 265 / 290 字每分钟，容差 ±8%；单句画面不超过 6.5 秒。
-- **准入**：每小时按会话 / IP / 全站分别 2 / 5 / 10 次；V2 等待队列最多 50 个；单 worker。
-- 前端以 `GET /api/config/limits` 返回的值为准，其中一部分字段是写死的（见 golden-mic-api-change）。
+- **准入**：每小时按会话 / IP / 全站分别计数，默认 2 / 5 / 10 次，生产模板 10 / 30 / 60 次；V2 等待队列最多 50 个；单 worker。
+- 前端以 `GET /api/config/limits` 返回的值为准，每个字段都取自执行处（见 golden-mic-api-change）。
 
 ## 数据保留（摘要）
 
-- **草稿**：闲置 24 小时到期，每次操作续期，到期返回 410 `draft_expired`。
-- **终态作品**：完成后 72 小时到期，**每次成功修改或恢复都会重置倒计时**。到期返回 410 `task_gone`，墓碑保留 30 天；手动删除的不写墓碑，之后返回 404。
+- **草稿**：闲置 24 小时到期，每次操作续期，到期返回 410 `task_gone`（`draft_expired` 只在请求处理中途草稿恰好到期时出现）。
+- **终态作品**：完成后 72 小时到期，**每次成功修改或恢复都会重置倒计时**。到期返回 410 `task_gone`，墓碑保留 30 天（凭访问令牌或同一会话才返回 410，否则 404）；手动删除的不写墓碑，之后返回 404。
 - **上传会话**：从创建起最长 72 小时。导出文件随任务一起删除。
 - **磁盘不足时可能提前删除**：先删已完成作品的上传副本，再删其他草稿的素材，最后删最早的已完成作品。
 - **清理循环**：每 3600 秒运行一次。
@@ -132,25 +133,38 @@ user-invocable: false
 
 新增发布检查码、新增 AI 服务商、新增导出格式时，要同步修改的文件见 [references/change-checklists.md](references/change-checklists.md)。
 
-## 待确认（交接文档或其他文档与代码不一致，不要自行裁决）
+## 步骤（用这张地图回答问题时）
 
-1. **§12 大多已实现。** 交接文档 §12 列为"需新增后端"的功能大多已经存在，路径和字段名也不同（`/api/tasks/{id}/…`，`start`/`end`/`speaker_id`/`alt_takes`）。
-2. **转旁白的重跑阶段。** 交接文档 §7、§9 和 `mode_rules.json` 写 7–10，代码是 6–10；交接文档第 2061 行自己也写 6–10。
-3. **revision 计数。** 文档写"每一步一次调用、revision + 1"；代码是一次 apply 跳过"步数"个号，只产生一个快照。
-4. **恢复是否重新合成。** 文档写"恢复 = 再重新合成一次"；代码只复制旧快照。
-5. **样片水印与导出门禁。** 交接文档要求烧录样片水印、未通过门禁只能导出样片；后端没有水印，而且 `acknowledge_unresolved` 可以导出不带水印的成片。
-6. **门禁默认值。** 文档写 `gateMode=block` 是现有行为；代码默认是 `warn`（`config.py:115`）。
-7. **`quote_caption` 的规范值。** `mode_rules.json` 写 canonical 是 `spoken`；`models.py` 存的是 `asr`，并把 `spoken` 转成 `asr`；`production_modes.py` 又把 `asr` 转成 `spoken`。
-8. **预转写的耗时。** 文档写不超过素材时长 × 0.3；代码的超时是 0.5 ×。
-9. **保留承诺。** 交接文档 §1 写"稿子和素材永远保留"，实际是 24 小时 / 72 小时，还可能提前清理。
-10. **C 模式的开始条件。** 文档要求全部"对上了"（≥ 0.85）；后端只拒绝 < 0.6 和不连续的原话。
-11. **偏好默认值。** `EditingPreferences` 的 `background_music`、`motion_effects`、`enhance_speech` 默认都是 False；交接文档 §5.4 写 A/B 模式默认开启。前端必须发送完整的偏好。
-12. **墓碑。** `admission.py:7-8` 说删除会保留墓碑，但手动删除实际不写。
-13. **失效链接。** `docs/README.md:61` 引用的 canary 证据文件已在 2026-10-21 按用户要求删除，不要重建。
+1. 先在"需求 → 代码位置"和 [references/requirements-index.md](references/requirements-index.md) 里找到入口，再读那段代码确认现状，不凭文档下结论。
+2. 判断影响面：改动落在哪个阶段（"十个阶段"）、会重跑哪些阶段（"重做规则"）、会不会增加外部调用或收费（见 golden-mic-providers）。
+3. 涉及限额、保留时长或检查码时，到 [references/limits.md](references/limits.md) 核对数值；数值的来源是 `mode_rules.json` 和 `config.py`，不要在别处再写一份。
+4. 要新增检查码、服务商或导出格式，照 [references/change-checklists.md](references/change-checklists.md) 逐项列出要改的文件。
+5. 代码和文档冲突时，以代码为准，把差异写进汇报，不要自行裁决。
 
-## 来源
+## 示例：问"转成旁白会重跑哪些阶段"
 
-- 交接文档（根目录的 `金话筒 · 新闻视频生成工具 - UI 设计交接文档（GPT-6 Astra）.md`）§1、2、6、7、8、10、12。**这个文件只读**：`tests/run_v2_validation.py` 会记录它的 SHA-256。
+1. 在"重做规则"里查到：转成旁白（仅 B 模式）重跑阶段 6–10。
+2. 读 `v2_editing.compile_plan` 确认（实际执行的阶段由它计算，不读 `mode_rules.json` 的 `plan_stages`）。
+3. 回答：从阶段 6（找画面，调火山 Embedding 和 Kimi 精排、实体核验）到阶段 10；阶段 7 还会调 Seed TTS，所以这一步会再次收费。回答里写明依据的函数名，没读到代码的部分写"未核实"。
+
+## 验证
+
+- 回答里的每个函数名、常量和数值都能在代码里找到；找不到的写"未核实"。
+- 行号会变，引用以函数名为准；换了代码后再引用，要重新核对。
+- 这个 skill 只做定位和说明，不运行制作，也不改文件。
+
+## 文档与代码的差异
+
+2026-10-22 按维护者要求，交接文档正文和 `docs/` 下的现行文档已按代码更正：§12 的接口现状、转旁白从阶段 6 重跑、revision 计数、恢复不重新合成、后端不烧录水印与"仍然导出"、`QUALITY_GATE_MODE`、预转写超时、保留期、C 模式开始条件、偏好默认值、`errorKind`、墓碑、已删除的 canary 证据。
+
+随后按维护者要求改了代码：`plan_stages` 的转旁白改为 6–10，和 `compile_plan` 一致；`admission.py` 的注释写明手动删除不留墓碑。只做记录的：
+
+1. **`quote_caption` 的两个名字。** `mode_rules.json` 写 canonical 是 `spoken`；`models.py` 存的是 `asr`，并把 `spoken` 转成 `asr`；`production_modes.py` 又把 `asr` 转成 `spoken`。两个名字指同一种字幕，只是别名，不是缺陷（`models.py` 有注释）。
+2. **附录里的原型。** 交接文档附录 A/B 是 2026-09-28 的原型源码，dev 标签、字段名（`t0`/`t1`/`spk`/`alts`）和 `gateMode` 等保持原样，现状以正文 §12 为准。
+
+## 参考
+
+- 交接文档（根目录的 `金话筒 · 新闻视频生成工具 - UI 设计交接文档（GPT-6 Astra）.md`）§1、2、6、7、8、10、12（2026-10-22 已按代码更正正文）。只在维护者要求时修改：`tests/run_v2_validation.py` 在每次运行前后比对它的 SHA-256，并解析附录 B 里含 `renderVals(){` 的代码块来统计设计索引，所以不要改附录 A/B/C，也不要在回归运行期间改它。
 - `backend/mode_rules.json`、`drafts.py`、`task_manager.py`、`v2_editing.py`、`workbench.py`、`revisions.py`、`admission.py`、`uploads.py`、`production_modes.py`、`mode_pipeline.py`、`config.py`、`models.py`
 - `docs/DEVELOPMENT.md` 第 2 节（那里没有列出 graphics、tts_pipeline、audio_filters、music、task_metadata、operations）
 - 2026-10-21 按工作区代码核对，行号会变，以函数名为准。

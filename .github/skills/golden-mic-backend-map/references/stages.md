@@ -5,9 +5,9 @@
 ## 总体结构
 
 - **入口**：V2 草稿创建时固定 `mode_contract=True`（`drafts.py`）。`pipeline.run_pipeline` 再转给编排器 `mode_pipeline.run_mode_pipeline`（`pipeline.py:124-130`）。`pipeline.py` 的其余部分是旧流水线，只为兼容保留。
-- **阶段编号**：整数 1–10。界面上的名称按模式取自 `backend/mode_rules.json` 的 `modes.<voiceover|mixed|original>.stages`。前端读的是同一个文件（`productionModes.ts`、`Processing.tsx`）；V2 任务也用这些名称和权重覆盖阶段（`task_manager.py:106-109`）。`models.py` 里的 `PIPELINE_STAGE_NAMES` 是旧名称，只出现在日志里。
+- **阶段编号**：整数 1–10。界面上的名称按模式取自 `backend/mode_rules.json` 的 `modes.<voiceover|mixed|original>.stages`。前端读的是同一个文件（`productionModes.ts`、`Processing.tsx`）；V2 任务也用这些名称和权重覆盖阶段（`task_manager.py:108-111`）。`models.py` 里的 `PIPELINE_STAGE_NAMES` 是旧名称，只出现在日志里。
 - **改后重算**：由 `v2_editing.compile_plan` 计算要跑哪些阶段，再由 `mode_pipeline.edit_mode_workspace` 执行。见 SKILL.md 的"重做规则"。
-- **单 worker**：`asyncio.Semaphore(min(MAX_CONCURRENT_TASKS, 1))`（`task_manager.py:122`）。apply 的执行和制作共用这把锁。
+- **单 worker**：`asyncio.Semaphore(min(MAX_CONCURRENT_TASKS, 1))`（`task_manager.py:124`）。apply 的执行和制作共用这把锁。
 
 ## 阶段表
 
@@ -24,15 +24,15 @@
 | 9 | 合成视频 | `_render_mode` → `build_mode_edl`（含跳切遮盖）→ `rendering.render_mode_video`；`music.prepare_music_bed` | 无（本地 FFmpeg） | `MEDIA_COMMAND_TIMEOUT_SECONDS`、`MUSIC_LIBRARY_DIR`、`MUSIC_BED_TARGET_LUFS` | test_m5_rendering、test_motion_rendering、test_v2_media |
 | 10 | 质量检查 | `_complete_mode`：音源核验、`quality.generate_quality_report`、`production_modes.evaluate_mode_checks`、`quality.enforce_quality_gate`。导出前另有 `publication.publication_gate` | 无（ffmpeg ebur128、silencedetect） | `QUALITY_GATE_MODE`（默认 warn）、`QUALITY_MIN_MATCH_CONFIDENCE`、`TTS_MAX_LOUDNESS_SPREAD_LU` | test_quality、test_publication、test_v2_export_unresolved |
 
-整条流水线的测试是 `tests/test_mode_pipeline.py`。它不是 `test_v2_*` 文件，受保护入口默认不会跑它；运行方式见 golden-mic-verify。
+整条流水线的测试是 `tests/test_mode_pipeline.py`。它不是 `test_v2_*` 文件，受保护入口（带不带 `--legacy` 都一样）不会跑它；只能按 golden-mic-verify 里"单独跑某个测试模块"的做法运行，要先征得用户同意。
 
 ## 计费与重复调用的风险点
 
 - **预转写**：上传完成后就排队预处理，`uploads._transcribe` 调用收费的 Seed ASR，早于"开始制作"。预转写失败不会自动重试。
-- **缓存**：V2 的预转写缓存在内存里（最多 16 条），另外复用同一 owner 72 小时内已就绪的清单；**不用 `ASR_CACHE_DIR`**，那个磁盘缓存只给旧流水线用（`uploads.py:1007-1074`）。
-- **阶段 2** 对转写失败的素材最多补跑一次，并且 `max_retries=0`（`mode_pipeline.py:381-421`）。
+- **缓存**：V2 的预转写缓存在内存里（最多 16 条），另外复用同一 owner 72 小时内已就绪的清单；**不用 `ASR_CACHE_DIR`**，那个磁盘缓存只给旧流水线用（`uploads.py:1012-1082`）。
+- **阶段 2** 对转写失败的素材最多补跑一次，并且 `max_retries=0`（`mode_pipeline.py:388-428`）。这只会在旧的预上传创建路径（`main.py::_create_preuploaded_task`）里发生；V2 开始制作要求所有素材已就绪，否则返回 422 `files_not_ready`（`drafts.py:1012-1015`）。
 - **超时和重试不是统一的**：
-  - ASR：60 秒、2 次重试（V2 的补跑和录音转写为 0 次）；
+  - ASR：60 秒、2 次重试只用于旧流水线；V2 的预转写、补跑、录音转写、本人录音都是 0 次（一次操作一次收费请求）；
   - TTS、Embedding、火山视觉：尝试次数 = max(3, 凭证数)；
   - LLM：120 秒、2 次重试，其中 `complete_text` 只重试 1 次，`classify_music_mood` 不重试；
   - 生成补画面：300 秒、不重试。

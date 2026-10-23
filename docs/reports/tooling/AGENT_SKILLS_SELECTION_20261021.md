@@ -61,20 +61,22 @@
 | 名称 | 来源 | 发布者 | 许可证 | 最近提交 | 采用度 | 安全审查 | 与金话筒的关联 | 安装方式 | 建议与理由 |
 |---|---|---|---|---|---|---|---|---|---|
 | insecure-defaults | [trailofbits/skills](https://github.com/trailofbits/skills) `plugins/insecure-defaults/skills/insecure-defaults`，`9ea55c5` | 官方组织 | CC BY-SA 4.0 | 2026-08-05 起上游已删掉这个 skill / 2026-10-20 | ★7.7K · Snyk W007 高危 | **不通过**：`allowed-tools: Read Grep Glob Bash`（红线 6） | 上线前查不安全的默认配置 | — | **拒绝**。上游最新版已改成只能在 Claude Code 里运行的插件命令 |
-| improve-codebase-architecture | mattpocock/skills `skills/engineering/improve-codebase-architecture`，`5beb35b` | 知名作者（个人） | MIT | — / 2026-10-19 | skills.sh ATH 警告、Snyk 警告 W012 | **不通过**：生成的报告页从 CDN 加载 Tailwind 和 Mermaid（`securityLevel: "loose"`），并用 `start` 自动打开（`HTML-REPORT.md:13-16`，`SKILL.md:39`） | 找可以"加深"的模块，不是这一轮后端工作的必需品 | — | **暂不安装**。需要时可以特批，同时加"不用 CDN、不自动打开"的覆盖规则 |
-| python-performance-optimization | wshobson/agents `plugins/python-development/skills/python-performance-optimization`，`0874a27` | 知名作者（个人） | MIT | — / 2026-10-19 | — | 有注意事项：多处建议 `pip install` 分析工具；`references/details.md:180-183` 说 `map` 加 `lambda` 比列表推导更快，结论错误 | 本项目的耗时主要在 FFmpeg 和外部服务，关联低 | — | **仅参考** |
+| improve-codebase-architecture | [mattpocock/skills](https://github.com/mattpocock/skills) `skills/engineering/improve-codebase-architecture`，`5beb35b` | 知名作者（个人） | MIT | — / 2026-10-19 | skills.sh ATH 警告、Snyk 警告 W012 | **不通过**：生成的报告页从 CDN 加载 Tailwind 和 Mermaid（`securityLevel: "loose"`），并用 `start` 自动打开（`HTML-REPORT.md:13-16`，`SKILL.md:39`） | 找可以"加深"的模块，不是这一轮后端工作的必需品 | — | **暂不安装**。需要时可以特批，同时加"不用 CDN、不自动打开"的覆盖规则 |
+| python-performance-optimization | [wshobson/agents](https://github.com/wshobson/agents) `plugins/python-development/skills/python-performance-optimization`，`0874a27` | 知名作者（个人） | MIT | — / 2026-10-19 | — | 有注意事项：多处建议 `pip install` 分析工具；`references/details.md:180-183` 说 `map` 加 `lambda` 比列表推导更快，结论错误 | 本项目的耗时主要在 FFmpeg 和外部服务，关联低 | — | **仅参考** |
 
 ### 2.5 仅参考（不装）
 
 | 名称 | 来源 | 发布者 | 许可证 | 最近提交 | 采用度 | 安全审查 | 与金话筒的关联 | 安装方式 | 建议与理由 |
 |---|---|---|---|---|---|---|---|---|---|
-| setup-matt-pocock-skills | mattpocock/skills `skills/engineering/setup-matt-pocock-skills`，`5beb35b` | 知名作者（个人） | MIT | 2026-10-07 / 2026-10-19 | 1.0M · 三项通过 | 有注意事项：默认用 GitHub issue（`gh issue create`、`gh label create`）；会改写 `CLAUDE.md` 或 `AGENTS.md` | 其他 Matt Pocock skill 需要的 tracker 配置 | — | **不装**。用它附带的模板（MIT）手写同样的配置：本地 `.scratch/` tracker，写进常驻规则和 `docs/agents/` |
-| python-resource-management、python-error-handling、python-configuration | wshobson/agents，`0874a27` | 知名作者（个人） | MIT | — / 2026-10-19 | — | 有错误：error-handling 用了 3.12 才有的语法；resource-management 的 `open()` 没指定 encoding；configuration 用 `str` 存密钥，校验失败时可能回显值 | 一般 Python 写法 | — | 仅参考 |
+| setup-matt-pocock-skills | [mattpocock/skills](https://github.com/mattpocock/skills) `skills/engineering/setup-matt-pocock-skills`，`5beb35b` | 知名作者（个人） | MIT | 2026-10-07 / 2026-10-19 | 1.0M · 三项通过 | 有注意事项：默认用 GitHub issue（`gh issue create`、`gh label create`）；会改写 `CLAUDE.md` 或 `AGENTS.md` | 其他 Matt Pocock skill 需要的 tracker 配置 | — | **不装**。用它附带的模板（MIT）手写同样的配置：本地 `.scratch/` tracker，写进常驻规则和 `docs/agents/` |
+| python-resource-management | [wshobson/agents](https://github.com/wshobson/agents)，`0874a27` | 知名作者（个人） | MIT | — / 2026-10-19 | — | 有错误：`open()` 没指定 encoding | 一般 Python 写法 | — | 仅参考 |
+| python-error-handling | [wshobson/agents](https://github.com/wshobson/agents)，`0874a27` | 知名作者（个人） | MIT | — / 2026-10-19 | — | 有错误：用了 3.12 才有的语法 | 一般 Python 写法 | — | 仅参考 |
+| python-configuration | [wshobson/agents](https://github.com/wshobson/agents)，`0874a27` | 知名作者（个人） | MIT | — / 2026-10-19 | — | 有错误：用 `str` 存密钥，校验失败时可能回显值 | 一般 Python 写法 | — | 仅参考 |
 | uv | [astral-sh/claude-code-plugins](https://github.com/astral-sh/claude-code-plugins) `plugins/astral/skills/uv`，`f3ce88a` | 官方组织 | Apache-2.0 | 2026-02-27 / 2026-02-27 | ★313 | 通过，内容准确 | 依赖管理 | — | 仅参考。近 8 个月没有提交，issue 没人回复，不满足维护要求 |
 | pydantic | [pydantic/skills](https://github.com/pydantic/skills) `skills/pydantic`，`98f591c` | 官方组织 | MIT | — / 2026-10-16 | ★144 | 通过。第 303 行用了 3.12 才有的语法 | Pydantic 写法 | — | 仅参考，和 fastapi 的 Pydantic 部分重叠 |
 | security-threat-model | [openai/skills](https://github.com/openai/skills) `skills/.curated/security-threat-model`，`49f948f` | 官方组织 | 每个 skill 自带 LICENSE.txt | 2026-06-23 / 2026-06-23 | ★28.2K | 通过 | 上线前做威胁建模 | — | 仅参考。仓库 2026-06-22 宣布弃用 |
-| acquire-codebase-knowledge | github/awesome-copilot `skills/acquire-codebase-knowledge`，`613efc8` | 官方组织 | MIT | — / 2026-10-21 | ★40.2K | 有注意事项：`scripts/scan.py:607-613` 把 `.env.example` 的内容原样写进输出（任务书要求只看键名）；遍历目录时不排除 `data/` | 生成代码库说明文档 | — | 仅参考。golden-mic-backend-map 会按仓库事实手写同类内容 |
-| bug-reproduction-brief | github/awesome-copilot | 官方组织 | MIT | — / 2026-10-21 | — | 通过 | 写复现说明 | — | 仅参考，和 diagnosing-bugs 重叠 |
+| acquire-codebase-knowledge | [github/awesome-copilot](https://github.com/github/awesome-copilot) `skills/acquire-codebase-knowledge`，`613efc8` | 官方组织 | MIT | — / 2026-10-21 | ★40.2K | 有注意事项：`scripts/scan.py:607-613` 把 `.env.example` 的内容原样写进输出（任务书要求只看键名）；遍历目录时不排除 `data/` | 生成代码库说明文档 | — | 仅参考。golden-mic-backend-map 会按仓库事实手写同类内容 |
+| bug-reproduction-brief | [github/awesome-copilot](https://github.com/github/awesome-copilot) | 官方组织 | MIT | — / 2026-10-21 | — | 通过 | 写复现说明 | — | 仅参考，和 diagnosing-bugs 重叠 |
 | ffmpeg-ops | [0xDarkMatter/claude-mods](https://github.com/0xDarkMatter/claude-mods) `skills/ffmpeg-ops`，`fa93328` | 个人 | MIT | 2026-10-07 / 2026-10-14 | ★69 / 23 · 三项通过 | 通过，但有多处错误：Windows 路径转义的两处写法互相矛盾；视频旋转的建议不对；用 sidechaincompress "压低 12 dB"的说法不成立 | FFmpeg 常见陷阱 | — | 仅参考。挑出正确的条目写进 golden-mic-media，注明出处和 MIT |
 | ffmpeg-skill | [kajisho5/ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) | 个人 | MIT | — / 2026-10-21 | ★2.0K | 没有逐文件审查。它带 42 个脚本和一个 MCP 服务器 | 让代理直接剪视频，不是写后端代码的指导 | — | 只作线索 |
 | volcengine-documentation | [bytedance/agentkit-samples](https://github.com/bytedance/agentkit-samples)，`d07cdc7` | 官方组织 | Apache-2.0 + NOTICE | 2026-04-03 / 2026-10-20 | ★474 | 有注意事项：要向 `docs-api.cn-beijing.volces.com` 发查询，需要 requests 库 | 查火山引擎文档 | — | 仅参考。golden-mic-providers 直接给出官方文档的地址 |
@@ -85,29 +87,39 @@
 
 | 名称 | 来源 | 发布者 | 许可证 | 最近提交 | 采用度 | 安全审查 | 与金话筒的关联 | 安装方式 | 建议与理由 |
 |---|---|---|---|---|---|---|---|---|---|
-| supply-chain-risk-auditor | trailofbits/skills，`a313174` | 官方组织 | CC BY-SA 4.0 | — / 2026-10-20 | ★7.7K | **不通过**：`scripts/sources.py:525` 运行 `gh auth token`；把整份依赖清单发给 OSV、deps.dev 等服务（`:304`、`:461`） | 依赖风险审查 | — | 拒绝（红线 2） |
+| supply-chain-risk-auditor | [trailofbits/skills](https://github.com/trailofbits/skills)，`a313174` | 官方组织 | CC BY-SA 4.0 | — / 2026-10-20 | ★7.7K | **不通过**：`scripts/sources.py:525` 运行 `gh auth token`；把整份依赖清单发给 OSV、deps.dev 等服务（`:304`、`:461`） | 依赖风险审查 | — | 拒绝（红线 2） |
 | differential-review | 同上 | 官方组织 | CC BY-SA 4.0 | — / 同上 | 同上 | **不通过**：`allowed-tools` 含 Bash；会 `git checkout <baseline>`；依赖 Claude Code 专用的 agent | 审查改动 | — | 拒绝（红线 6） |
-| static-analysis（semgrep、sarif-parsing、codeql） | 同上 | 官方组织 | CC BY-SA 4.0 | — / 同上 | 同上 | **不通过**：`allowed-tools` 含 Bash；联网下载规则，`npm install -g`；会给目标项目 `pip install` 依赖 | 静态分析 | — | 拒绝 |
-| security-review | getsentry/skills，`f57ada2` | 官方组织 | Apache-2.0；参考资料为 CC BY-SA 4.0 | — / 2026-10-19 | ★1.1K · skills.sh 上 ATH 和 Socket 不通过 | **不通过**：`allowed-tools: Read Grep Glob Bash Task`；正文引用的 7 个文件不存在 | 安全审查 | — | 拒绝。由 find-bugs 加 security-and-hardening 代替 |
-| security-best-practices | openai/skills，`49f948f` | 官方组织 | LICENSE.txt | 2026-06-23 | ★28.2K | **不通过**：仓库已弃用；多份参考文件让代理去 grep `.env` 和密钥内容 | 按框架做安全评审 | — | 拒绝（红线 2） |
-| security-review | github/awesome-copilot | 官方组织 | MIT | — / 2026-10-21 | ★40.2K | **不通过**：默认扫描包括 `.env` 在内的所有文件 | 安全审查 | — | 拒绝 |
-| codeql | github/awesome-copilot | 官方组织 | MIT | — / 2026-10-21 | ★40.2K | **不通过**：引导新建 CI 工作流并上传 SARIF。CodeQL CLI 只对开源代码免费，本仓库公开但没有开源许可证 | 静态扫描 | — | 拒绝。改 CI 也超出本任务范围 |
+| static-analysis（一个插件，含 semgrep、sarif-parsing、codeql 三个 skill，作为整体审查） | 同上 | 官方组织 | CC BY-SA 4.0 | — / 同上 | 同上 | **不通过**：`allowed-tools` 含 Bash；联网下载规则，`npm install -g`；会给目标项目 `pip install` 依赖 | 静态分析 | — | 拒绝 |
+| security-review | [getsentry/skills](https://github.com/getsentry/skills)，`f57ada2` | 官方组织 | Apache-2.0；参考资料为 CC BY-SA 4.0 | — / 2026-10-19 | ★1.1K · skills.sh 上 ATH 和 Socket 不通过 | **不通过**：`allowed-tools: Read Grep Glob Bash Task`；正文引用的 7 个文件不存在 | 安全审查 | — | 拒绝。由 find-bugs 加 security-and-hardening 代替 |
+| security-best-practices | [openai/skills](https://github.com/openai/skills)，`49f948f` | 官方组织 | LICENSE.txt | 2026-06-23 | ★28.2K | **不通过**：仓库已弃用；多份参考文件让代理去 grep `.env` 和密钥内容 | 按框架做安全评审 | — | 拒绝（红线 2） |
+| security-review | [github/awesome-copilot](https://github.com/github/awesome-copilot) | 官方组织 | MIT | — / 2026-10-21 | ★40.2K | **不通过**：默认扫描包括 `.env` 在内的所有文件 | 安全审查 | — | 拒绝 |
+| codeql | [github/awesome-copilot](https://github.com/github/awesome-copilot) | 官方组织 | MIT | — / 2026-10-21 | ★40.2K | **不通过**：引导新建 CI 工作流并上传 SARIF。CodeQL CLI 只对开源代码免费，本仓库公开但没有开源许可证 | 静态扫描 | — | 拒绝。改 CI 也超出本任务范围 |
 | webapp-testing | [anthropics/skills](https://github.com/anthropics/skills) `skills/webapp-testing`，`dbd4588` | 官方组织 | 目录内 LICENSE.txt | 2025-10 之后没改过 / 2026-10-09 | ★182.5K | **不通过**：`scripts/with_server.py` 用 `shell=True` 启动服务；端口已被占用时直接当作"已就绪"，测试会打到正在运行的实例；Windows 上 `terminate()` 只结束外层 shell，会留下孤儿进程；SKILL.md 要求"先运行脚本、别读源码" | 浏览器端到端测试 | — | 拒绝（红线 3、5）。和已装的 playwright-cli 重叠 |
-| python-testing-patterns | wshobson/agents，`0874a27` | 知名作者（个人） | MIT | — / 2026-10-19 | — | 通过 | — | — | 拒绝。只讲 pytest，本仓库的测试全是 unittest |
+| python-testing-patterns | [wshobson/agents](https://github.com/wshobson/agents)，`0874a27` | 知名作者（个人） | MIT | — / 2026-10-19 | — | 通过 | — | — | 拒绝。只讲 pytest，本仓库的测试全是 unittest |
 | uv-package-manager | 同上 | 知名作者（个人） | MIT | — / 同上 | — | **不通过**：引用不存在的参数，如 `uv lock --no-install`、`uv pip freeze --require-hashes`（已用本机 uv 0.11.11 核对）；示例里有 `uv lock --upgrade` 和 git commit | 依赖管理 | — | 拒绝 |
 | python-resilience | 同上 | 知名作者（个人） | MIT | — / 同上 | — | **不通过**：对收费的 POST 请求自动重试 3 次 | 重试与容错 | — | 拒绝。现有接口没有幂等键，超时后不能自动重试 |
-| copilot-instructions-blueprint-generator | github/awesome-copilot | 官方组织 | MIT | 2026-02-24 / 2026-10-21 | — | 有问题：输出到 `.github/copilot/`，路径不对 | 生成常驻指令初稿 | — | 拒绝。常驻指令按仓库事实手写 |
-| ai-ready | github/awesome-copilot（包装 johnpapa/ai-ready） | 官方组织 + 个人 | — | — | — | **不通过**：包装的上游没有固定版本；上游会建 CI、commit、push、开 PR | 同上 | — | 拒绝（红线 8） |
+| copilot-instructions-blueprint-generator | [github/awesome-copilot](https://github.com/github/awesome-copilot) | 官方组织 | MIT | 2026-02-24 / 2026-10-21 | — | 有问题：输出到 `.github/copilot/`，路径不对 | 生成常驻指令初稿 | — | 拒绝。常驻指令按仓库事实手写 |
+| ai-ready | [github/awesome-copilot](https://github.com/github/awesome-copilot)（包装 johnpapa/ai-ready） | 官方组织 + 个人 | — | — | — | **不通过**：包装的上游没有固定版本；上游会建 CI、commit、push、开 PR | 同上 | — | 拒绝（红线 8） |
 | Superpowers 整套（插件） | [obra/superpowers](https://github.com/obra/superpowers) | 知名作者（个人） | MIT | — / 2026-10-21 | ★302.7K | **不通过**：SessionStart hook 每次会话注入 `<EXTREMELY_IMPORTANT>` 指令；writing-plans、subagent-driven-development 会自动提交；brainstorming 的本地服务器有遥测；建 worktree 时自动装依赖 | 工作流框架 | 插件 | 拒绝。只取 verification-before-completion |
-| Matt Pocock 的插件装法 | mattpocock/skills | 知名作者（个人） | MIT | — | — | **不通过**：装在用户目录，每天自动更新，一次带进 27 个 skill，其中有读写 `.env` 的 wizard | — | 插件 | 拒绝这种装法，改为逐个 `gh skill install --pin` |
+| Matt Pocock 的插件装法 | [mattpocock/skills](https://github.com/mattpocock/skills) | 知名作者（个人） | MIT | — | — | **不通过**：装在用户目录，每天自动更新，一次带进 27 个 skill，其中有读写 `.env` 的 wizard | — | 插件 | 拒绝这种装法，改为逐个 `gh skill install --pin` |
 | ffmpeg | [TerminalSkills/skills](https://github.com/TerminalSkills/skills)，`6edcf94` | 组织（社区） | Apache-2.0 | — / 2026-10-20 | ★174 | 有错误：要求 `sudo apt install`；缺 `yuv420p`；concat 的结论不对；`afade` 参数单位写错 | FFmpeg | — | 拒绝 |
-| byted-las-*（火山引擎 LAS） | bytedance/agentkit-samples，`d07cdc7` | 官方组织 | Apache-2.0 | — / 2026-10-20 | ★474 | **不通过**：`npm i -g @volcengine/las-cli`；上传到 TOS，按次计费；audio-convert 的 `scripts/env_init.sh:32-41` 不校验哈希就 `pip install` 远程 wheel | 云端数据处理 | — | 拒绝（会计费，也不是写代码的指导） |
+| byted-las-*（火山引擎 LAS） | [bytedance/agentkit-samples](https://github.com/bytedance/agentkit-samples)，`d07cdc7` | 官方组织 | Apache-2.0 | — / 2026-10-20 | ★474 | **不通过**：`npm i -g @volcengine/las-cli`；上传到 TOS，按次计费；audio-convert 的 `scripts/env_init.sh:32-41` 不校验哈希就 `pip install` 远程 wheel | 云端数据处理 | — | 拒绝（会计费，也不是写代码的指导） |
 | byted-voice-to-text、byted-text-to-speech | 同上 | 官方组织 | Apache-2.0 | — / 同上 | 同上 | **不通过**：`scripts/api_key.py:172-217` 会在你的账号上调用 `CreateAPIKey`，并把密钥明文写入 `.env`；把转写结果当作用户消息（提示注入入口）；`ensure_ffmpeg.py` 自己用 winget、choco、sudo 安装 FFmpeg | 转写、配音 | — | 拒绝（红线 1、2）。其中的接口信息只作线索，以官方文档为准 |
 | byted-mediakit-voiceover-editing | 同上 | 官方组织 | Apache-2.0 | — / 同上 | 同上 | **不通过**：`serve_review_page.py:402-412` 以 `Access-Control-Allow-Origin: *` 暴露任意绝对路径的文件 | 配音剪辑 | — | 拒绝。其中"删词时从前一个词的结尾切到后一个词的开头"的规则可以参考 |
-| volcengine-knowledge-search | volcengine/volcengine-agent-toolkit，`04a90fe` | 官方组织 | MIT | — | — | **不通过**：要装 `ve` 命令行；所在插件的 hooks 会上报遥测 | 检索火山文档 | — | 拒绝 |
-| 方舟文档类 skill（ark-docs-assistant 等） | 火山方舟 | 官方 | — | — | — | 无法核实：用 `npx skills@latest add` 从 TOS 存储桶安装，没有版本号 | 查方舟文档 | — | 拒绝 |
-| 社区豆包语音 skill（如 vahnxu/doubao-asr） | 个人仓库 | 个人 | Apache-2.0 | — / 2026-09-27 | ★2 | 没有审查 | 转写 | — | 拒绝。个人仓库，几乎没人用，而且会调用收费接口 |
-| eval-driven-dev、webapp-testing（awesome-copilot 版）、pytest-coverage、transloadit-media-processing、screen-recording | github/awesome-copilot | 官方组织 | MIT | — / 2026-10-21 | — | **不通过**，原因依次为：强制调用真实 LLM；自动安装 Playwright；只支持 pytest；把文件上传到第三方云；要求 `pip install` | — | — | 拒绝 |
+| volcengine-knowledge-search | [volcengine/volcengine-agent-toolkit](https://github.com/volcengine/volcengine-agent-toolkit)，`04a90fe` | 官方组织 | MIT | — | — | **不通过**：要装 `ve` 命令行；所在插件的 hooks 会上报遥测 | 检索火山文档 | — | 拒绝 |
+| 方舟文档类 skill（ark-docs-assistant 等） | 火山方舟官方文档站（没有固定的仓库地址，未查到） | 官方 | — | — | — | 无法核实：用 `npx skills@latest add` 从 TOS 存储桶安装，没有版本号 | 查方舟文档 | — | 拒绝 |
+| 社区豆包语音 skill（如 vahnxu/doubao-asr） | [vahnxu/doubao-asr](https://github.com/vahnxu/doubao-asr)（个人仓库） | 个人 | Apache-2.0 | — / 2026-09-27 | ★2 | 没有审查 | 转写 | — | 拒绝。个人仓库，几乎没人用，而且会调用收费接口 |
+| eval-driven-dev | [github/awesome-copilot](https://github.com/github/awesome-copilot) | 官方组织 | MIT | — / 2026-10-21 | — | **不通过**：强制调用真实 LLM | — | — | 拒绝 |
+| webapp-testing（awesome-copilot 版） | [github/awesome-copilot](https://github.com/github/awesome-copilot) | 官方组织 | MIT | — / 2026-10-21 | — | **不通过**：自动安装 Playwright | — | — | 拒绝 |
+| pytest-coverage | [github/awesome-copilot](https://github.com/github/awesome-copilot) | 官方组织 | MIT | — / 2026-10-21 | — | **不通过**：只支持 pytest | — | — | 拒绝 |
+| transloadit-media-processing | [github/awesome-copilot](https://github.com/github/awesome-copilot) | 官方组织 | MIT | — / 2026-10-21 | — | **不通过**：把文件上传到第三方云 | — | — | 拒绝 |
+| screen-recording | [github/awesome-copilot](https://github.com/github/awesome-copilot) | 官方组织 | MIT | — / 2026-10-21 | — | **不通过**：要求 `pip install` | — | — | 拒绝 |
+
+### 2.7 暂不安装（与当前技术栈不符）
+
+| 名称 | 来源 | 发布者 | 许可证 | 最近提交 | 采用度 | 安全审查 | 与金话筒的关联 | 安装方式 | 建议与理由 |
+|---|---|---|---|---|---|---|---|---|---|
+| Supabase、Prisma、Redis、Stripe、Better Auth、Cloudflare、Azure 等 | 各厂商官方仓库（任务书 3.3 最后一行，没有逐个检索） | 官方组织 | — | — | — | 未审查 | 与当前技术栈不符（本项目没有数据库、支付或云平台依赖） | — | 暂不安装。以后做账号或数据库时再评估 |
 
 另外：**Kimi 没有官方的 API 开发 skill**。MoonshotAI 的 kimi-cli、kimi-code 里的 skill 和本项目无关。golden-mic-providers 会直接引用 Kimi 和火山方舟的官方文档。
 
@@ -213,7 +225,7 @@ Matt Pocock 的 skill 需要一份项目配置，阶段二按它的 MIT 模板�
   - gh 没有登录，`gh skill search` 和 `gh skill preview` 被匿名额度挡住（403）。
   - 网页抓取工具打不开 github.com。
   - 所以改用 git clone、匿名的 GitHub API（经另一条出口）和 skills.sh 网页。
-- **证据。** 逐文件审查的笔记（含行号）在 `%TEMP%\gm-skills-review-20261021\selection-evidence.md`。阶段二会把结论并入 `docs/AGENT_SKILLS.md`。
+- **证据。** 逐文件审查的笔记（含行号）原放在系统临时目录 `%TEMP%\gm-skills-review-20261021\selection-evidence.md`，该目录后来被清空，笔记没有保留（2026-10-22 核对）。结论已并入 `docs/AGENT_SKILLS.md`；表中带 `文件:行` 的审查结论，需要时用固定提交重新克隆复核。
 
 ## 8. 需要你确认
 
@@ -228,3 +240,12 @@ Matt Pocock 的 skill 需要一份项目配置，阶段二按它的 MIT 模板�
 - `.scratch/` 加进 `.gitignore`。
 - 每个第三方 skill 目录都补上 LICENSE。
 - 提交和推送之前，会再单独问你。
+
+### 用户答复（2026-10-21 起，在对话中选择）
+
+1. 安装清单：选“按建议装 15 个（推荐）”。可选的 2 个没有装。
+2. 安装途径：选“我登录 gh，用 gh 安装（推荐）”。
+3. 重叠的 skill：选“合并重叠的 3 个（推荐）”。
+4. playwright-cli：选“删掉 allowed-tools 这一行（推荐）”。2026-10-22 全面核对后，它又被设为只能手动调用，见 [AGENT_SKILLS.md](../../AGENT_SKILLS.md) 第 3 节。
+
+任务书标为“安装”、最后没有装的候选（Trail of Bits 的 4 个、webapp-testing、acquire-codebase-knowledge、security-best-practices、security-threat-model 等），理由见 2.5 和 2.6。用户按“装 15 个”的清单确认，没有就这些候选单独作答。

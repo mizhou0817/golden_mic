@@ -20,17 +20,19 @@
 
 | 要替换的东西 | 补丁目标 |
 |---|---|
-| 预转写的 ASR | `backend.uploads.create_asr_provider`（uploads.py:63），或 `patch.object(UploadStore, "_transcribe", ...)` |
+| 预转写的 ASR | `backend.uploads.create_asr_provider`（uploads.py:64），或 `patch.object(UploadStore, "_transcribe", ...)` |
 | 制作流程里的 ASR、TTS | `backend.mode_pipeline.create_asr_provider`、`backend.mode_pipeline.create_tts_provider`（mode_pipeline.py:37-41） |
 | 开始制作时的媒体准备 | `backend.media_input.create_asr_provider`（media_input.py:30） |
 | 画面理解 | `backend.providers.vision.VisionProvider.from_settings`（类方法，打在类上） |
 | workbench 里的服务 | `backend.workbench.EmbeddingProvider.from_settings`、`backend.workbench.LLMProvider.from_settings`、`backend.workbench.create_tts_provider` |
-| AI 写作 | `patch.object(LLMProvider, "validate_configuration" / "complete_text", AsyncMock(...))`（tests/test_v2_script_assist.py:84-91） |
+| AI 写作 | `patch.object(LLMProvider, "validate_configuration" / "complete_text", AsyncMock(...))`（tests/test_v2_script_assist.py:148-155） |
 | 视频向量的全局并发控制器 | 测试前后调用 `reset_video_embedding_controllers()`（tests/test_embedding_concurrency.py:15-21） |
 
-`workbench.py:993` 在函数内部导入 ASR，仓库里还没有针对这条路径的模拟写法。为录音转写写测试时，先读这段代码，再决定补丁打在哪里。
+`workbench.py:993` 在函数内部导入 ASR（`from .providers.asr import create_asr_provider`），所以要打在 `backend.providers.asr.create_asr_provider`；`backend.workbench` 里没有这个名字，patch 它会报 AttributeError。仓库里还没有用例走这条路径，这个写法是读代码得出的，写第一个用例时先验证。
 
 ## 现成的假实现
+
+受保护入口只运行 `tests/test_v2_*.py`，加 `--legacy` 时再运行 `test_upload_sessions`、`test_mode_workbench` 等 8 个旧模块。下面和上表引用的 `test_workbench.py`、`test_mode_pipeline.py`、`test_asr.py`、`test_m4_tts.py`、`test_embedding_concurrency.py` 不在入口里，只当写法范例读；新测试写进 `tests/test_v2_*.py`。
 
 - `FakeTTS`、`FakeEmbedding`、`FakeLLM`：tests/test_workbench.py:45-86
 - `FakeVoice`（用 ffmpeg 生成正弦音调）、`FakeVision`、`FakeContext`、`fake_match`，以及辅助方法 `providers()`：tests/test_mode_pipeline.py:103-158、tests/test_mode_pipeline.py:480-495

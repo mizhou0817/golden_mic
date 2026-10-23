@@ -5,7 +5,7 @@
 ## Seed ASR：`backend/providers/asr.py`
 
 - **类**：`VolcengineASRProvider`（asr.py:95）。工厂是 `create_asr_provider`，`ASR_PROVIDER` 可选 volcengine、doubao（asr.py:296-300）。
-- **传输**：WebSocket（`websockets.asyncio.client.connect`）。测试时可以注入 `connect_factory`（asr.py:113、asr.py:219-226）。
+- **传输**：WebSocket（`websockets.asyncio.client.connect`）。测试时可以注入 `connect_factory`（asr.py:113、asr.py:221-227）。
 - **端点**：`VOLCENGINE_ASR_BASE_URL` + `/` + `VOLCENGINE_ASR_ENDPOINT_PATH`，默认拼成 `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async`。resource 默认 `volc.seedasr.sauc.duration`（config.py:68-71）。
 - **请求头**：
   - `X-Api-App-Key` 放 `VOLCENGINE_APP_ID`，`X-Api-Access-Key` 放 `VOLCENGINE_ACCESS_TOKEN`；
@@ -16,11 +16,11 @@
   - nonstream 模式下追加 `enable_speaker_info` 和 `ssd_version=200`（asr.py:190-218）；
   - 音频按 6400 字节分块发送（asr.py:254-270）。
 - **超时与重试**：
-  - `ASR_TIMEOUT_SECONDS=60`；`ASR_MAX_RETRIES=2`，即最多 3 次，退避 1 秒 × 2^n；
-  - 响应上限 16 MiB（asr.py:18-21、asr.py:160-172）；
-  - 接收超时为 max(60, 字节数 / 32000 + 60)。
+  - `ASR_TIMEOUT_SECONDS=60`；`ASR_MAX_RETRIES=2`，即最多 3 次，退避 1 秒 × 2^n（asr.py:18-19、asr.py:161-172）。只有旧流水线（`pipeline.py`）照用；V2 的预转写、补跑、录音转写、本人录音都把它设为 0（`max_retries = 0`）；
+  - 响应上限 16 MiB（asr.py:21、asr.py:226）；
+  - 接收超时为 max(60, 字节数 / 32000 + 60)（asr.py:235-238）。
 - **错误类**：`ASRProviderError`、`ASRConfigurationError`。
-- **必填校验**：BASE_URL、ENDPOINT_PATH、APP_ID、ACCESS_TOKEN、RESOURCE_ID；URL 必须是 ws 或 wss（asr.py:138-153）。`VOLCENGINE_ASR_CLUSTER_ID` 不会发给服务端，只进缓存签名。
+- **必填校验**：`VOLCENGINE_ASR_BASE_URL`、`VOLCENGINE_ASR_ENDPOINT_PATH`、`VOLCENGINE_APP_ID`、`VOLCENGINE_ACCESS_TOKEN`、`VOLCENGINE_ASR_RESOURCE_ID`；URL 必须是 ws 或 wss（asr.py:138-153）。`VOLCENGINE_ASR_CLUSTER_ID` 不会发给服务端，只进缓存签名。
 
 ## Seed TTS：`backend/providers/tts.py`
 
@@ -39,14 +39,14 @@
 
 ## 画面理解：`backend/providers/vision.py`
 
-- **默认实现 `KimiVisionProvider`**（vision.py:416）：POST `{KIMI_BASE_URL}/chat/completions`，带 `reasoning_effort` 和 `response_format=json_object`。默认值：`https://api.moonshot.cn/v1`、`kimi-k3`、`low`（config.py:28-31）。
-- **`VolcengineVisionProvider`**（vision.py:242）：POST `{base}/responses`，`thinking` 设为 disabled。只有在 `VISION_PROVIDER=volcengine` 时才使用，凭证是 `VOLCENGINE_VISION_API_KEYS`（多 key 轮换，尝试次数 = max(3, key 数)）。
+- **默认实现 `KimiVisionProvider`**（vision.py:417）：POST `{KIMI_BASE_URL}/chat/completions`，带 `reasoning_effort` 和 `response_format=json_object`。默认值：`https://api.moonshot.cn/v1`、`kimi-k3`、`low`（config.py:28-31）。
+- **`VolcengineVisionProvider`**（vision.py:241）：POST `{base}/responses`，`thinking` 设为 disabled。只有在 `VISION_PROVIDER=volcengine` 时才使用，凭证是 `VOLCENGINE_VISION_API_KEYS`（多 key 轮换，尝试次数 = max(3, key 数)）。
 - **`VisionProvider`**（vision.py:59）：OpenAI 兼容接口，用 `VISION_BASE_URL`、`VISION_API_KEY`、`VISION_MODEL`。
 - **发出的数据**：
-  - 每个镜头一张 5 帧拼图（JPEG，base64）；失败时退回中间帧（vision_pipeline.py:61-74、vision_pipeline.py:179-200）；
+  - 每个镜头一张 5 帧拼图（JPEG，base64）；失败时退回中间帧（vision_pipeline.py:61-74、vision_pipeline.py:177-198）；
   - 实体核验另外发 `visual_beat` 和 `target_entities`。
 - **超时、重试、并发**：60 秒、2 次重试；并发 `MAX_VISION_CONCURRENCY=4`（vision_pipeline.py:23）。
-- **工厂**：`VisionProvider.from_settings`，`VISION_PROVIDER` 可选 kimi、moonshot、volcengine、doubao、ark、openai、openai-compatible（vision.py:532-556）。
+- **工厂**：`VisionProvider.from_settings`，`VISION_PROVIDER` 可选 kimi、moonshot、volcengine、doubao、ark、openai、openai-compatible（vision.py:535-559）。
 
 ## 向量：`backend/providers/embedding.py`、`embedding_concurrency.py`
 
@@ -64,12 +64,12 @@
 
 ## 文本模型：`backend/providers/llm.py`
 
-- **`LLMProvider`**（llm.py:127）：统一 POST `{base}/chat/completions`。
-- **`from_settings` 按 `LLM_PROVIDER` 选择**（llm.py:156-184）：
+- **`LLMProvider`**（llm.py:130）：统一 POST `{base}/chat/completions`。
+- **`from_settings` 按 `LLM_PROVIDER` 选择**（llm.py:162-192）：
   - kimi / moonshot：用 `KIMI_*`，不发送 temperature；
   - volcengine：用 `VOLCENGINE_LLM_*`，`thinking` 设为 disabled；
   - openai：用 `LLM_*`。
-- **`for_script_segmentation`** 固定使用 Kimi（llm.py:186-193）。V2 阶段 5 不调用它，旧流水线和预检仍在用。
+- **`for_script_segmentation`** 固定使用 Kimi（llm.py:194-201）。V2 阶段 5 不调用它，旧流水线和预检仍在用。
 - **各方法发送的内容**：
   - `segment_script`：全文；
   - `rerank`：句子、视觉节拍、候选镜头的描述、关键词、OCR；
@@ -77,7 +77,7 @@
   - `classify_music_mood`：稿件前 4000 字；
   - `complete_text`：system 与 user 文本。
 - **超时与重试**：120 秒、2 次重试；`complete_text` 只在 httpx 错误时重试 1 次；`classify_music_mood` 不重试。
-- **AI 写作接口**：`/api/script/assist` 和 `/api/script/effects` 的并发槽 2 个；每个客户端每小时 30 次，全站每小时 300 次（main.py:699-717）。
+- **AI 写作接口**：`/api/script/assist` 和 `/api/script/effects` 的并发槽 2 个；每个客户端每小时 30 次，全站每小时 300 次（main.py:730-748）。
 
 ## 生成补画面：`backend/providers/generative.py`
 
@@ -88,7 +88,7 @@
 - **凭证**：优先 `SEEDANCE_2_0_API_KEY`，否则用 `VOLCENGINE_GEN_API_KEYS` 的第一个；同一个 key 同时用于图片和视频。
 - **发出的数据**：只发文本提示（generative.py:350-355）。
 - **下载**：只接受 https，且主机属于 `.volces.com`、`.volccdn.com`、`.byteimg.com`、`.bytedance.com`；禁止重定向；单个文件不超过 64 MB。
-- **触发条件**：`generative_fill_configured`、任务偏好 `generative_fill`、不是 original 模式，三者同时满足（mode_pipeline.py:975-984）。
+- **触发条件**：`generative_fill_configured`、任务偏好 `generative_fill`、不是 original 模式，三者同时满足（mode_pipeline.py:982-991）。
 
 ## 本地语音：`backend/providers/local_speech.py`
 
@@ -96,22 +96,22 @@
 - **强制对齐**：transformers 的 CTC 模型，读 `LOCAL_ALIGNMENT_MODEL_PATH`。设置 `local_files_only=True`、`trust_remote_code=False`。
 - **默认关闭**，从不下载模型。`LOCAL_SPEECH_REQUIRED=true` 时，缺模型会抛出 `SpeechUnavailable`。
 - **就绪检查**：`local_speech_readiness`，检查运行库、模型路径和许可确认（`LOCAL_SPEECH_LICENSE_REVIEWED`）。
-- CTC 模型尚未交付（`docs/CONFIGURATION.md:79`）。
+- CTC 模型尚未交付（`docs/CONFIGURATION.md:68`）。
 
 ## 各阶段的调用点（V2）
 
 | 时机 | 调用 | 出处 |
 |---|---|---|
-| 上传完成后、开始制作之前 | Seed ASR 预转写 | `uploads._preprocess` → `_transcribe`（uploads.py:1034-1128） |
-| 阶段 2 | 对失败的素材补跑一次 ASR，`max_retries=0`；本地说话人分析（可选） | `mode_pipeline._retry_failed_asr`（mode_pipeline.py:381-421） |
-| 阶段 4 | Kimi 画面理解（没有空镜时跳过） | mode_pipeline.py:1870-1886 |
-| 阶段 5 | 不调用模型 | mode_pipeline.py:1892 |
-| 阶段 6 | 原话本地对齐，不调用模型；旁白匹配调用向量、LLM 精排、实体核验；可选生成补画面 | `_match_narration`、`_generated_narration`（mode_pipeline.py:932-1000） |
-| 阶段 7 | 读音规划（Kimi），然后逐句 TTS；本人录音走 ASR，`max_retries=0` | `_assemble_audio`、`_recorded_narration`（mode_pipeline.py:1142-1330） |
+| 上传完成后、开始制作之前 | Seed ASR 预转写 | `uploads._preprocess` → `_transcribe`（uploads.py:1039-1136） |
+| 阶段 2 | 对失败的素材补跑一次 ASR，`max_retries=0`；本地说话人分析（可选） | `mode_pipeline._retry_failed_asr`（mode_pipeline.py:388-428） |
+| 阶段 4 | Kimi 画面理解（没有空镜时跳过） | mode_pipeline.py:1880-1896 |
+| 阶段 5 | 不调用模型 | mode_pipeline.py:1902 |
+| 阶段 6 | 原话本地对齐，不调用模型；旁白匹配调用向量、LLM 精排、实体核验（走视觉服务）；可选生成补画面 | `_match_narration`、`_generated_narration`（mode_pipeline.py:939-1007） |
+| 阶段 7 | 读音规划（Kimi），然后逐句 TTS；本人录音走 ASR，`max_retries=0` | `_assemble_audio`、`_recorded_narration`（mode_pipeline.py:1149-1337） |
 | 阶段 8–10 | 不调用服务 | — |
-| 结果页修改 | 重新匹配、生成、配音 | `edit_mode_workspace`（mode_pipeline.py:2008-2251） |
-| 结果页上传录音 | ASR | `workbench._ingest_recording`（workbench.py:937-1014） |
-| AI 写作、选效果 | Kimi `complete_text` | main.py:729-790 |
+| 结果页修改 | 重新匹配、生成、配音 | `edit_mode_workspace`（mode_pipeline.py:2018-2261） |
+| 结果页上传录音 | ASR | `workbench._ingest_recording`（workbench.py:937-1017） |
+| AI 写作、选效果 | Kimi `complete_text` | main.py:760-824 |
 
 ## `errorKind`
 
@@ -119,6 +119,7 @@
   - `quote_missing`：`QuoteMissingError`；
   - `qc`：`ModeQualityError`，或阶段回执被拒；
   - `shortage`：`ShotShortageError`；另外消息里同时有"镜头"和"不足"时也归为 shortage；
-  - `transient`：其余所有异常的默认值（task_manager.py:830-847）；
+  - `speech_prerequisite`：`local_speech.SpeechUnavailable`（本机语音组件没准备好）。凡是带 `error_kind` 属性的异常，`task_manager` 都原样采用（task_manager.py:832-851）；
+  - `transient`：没有 `error_kind`、消息也不是镜头不足的其余异常；
   - `network`：已声明，但后端没有赋值处。
-- **前端怎样处理**：errorKind 为空、`network` 或 `transient` 时显示"再试一次"；`qc`、`shortage`、`quote_missing` 时只显示"回去改稿子"。V2 下的 shortage 可以选择"重复使用画面"后继续（Processing.tsx:76-101）。
+- **前端怎样处理**：errorKind 为空、`network` 或 `transient` 时显示"再试一次"；`qc`、`shortage`、`quote_missing` 时只显示"回去改稿子"；`speech_prerequisite` 不显示"再试一次"，提示联系维护人员（非 A 模式还可以改用 AI 配音继续）。V2 下的 shortage 可以选择"重复使用画面"后继续（Processing.tsx:81-108）。

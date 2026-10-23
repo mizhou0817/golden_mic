@@ -23,18 +23,18 @@ argument-hint: "[调研|方案|任务拆解]"
 - 引入 `c2pa-python` 等新依赖、申请签名证书、改动导出格式，都要先经用户批准。
 - 不读取或使用真实凭证，不上传素材，不调用付费服务。
 
-## 现有行为（2026-10-21 读代码核对，提交 af1e4e7）
+## 现有行为（2026-10-22 读代码核对）
 | 项目 | 现状 | 位置 |
 |---|---|---|
 | AI 画面开关 | 默认关闭（`GENERATIVE_FILL_ENABLED=False`），默认生成**视频**（Seedance）。需要全局开关、Key、本任务勾选三者同时满足，C 模式不可用。涉及事实的句子（实体、日期、机构）不会生成 | `backend/config.py`、`backend/providers/generative.py`、`backend/mode_pipeline.py` |
-| 显式标识 | ASS 样式 GfxDisclosure：右上角，字号 30（1920×1080 画布），带底框，**只在 AI 镜头期间显示**。Studio 路径另有"AI生成示意画面（本片含AI生成内容）" | `backend/graphics.py`、`backend/studio_render.py` |
-| 导出 | 先裁切填满画幅，再烧录 graphics，所以竖屏、方形导出不会裁掉披露。MP3/SRT 由服务端以 422 拒绝，但界面仍显示这两个选项 | `backend/studio_render.py`、`backend/v2_editing.py`、`frontend/src/components/ResultWorkbench.tsx` |
+| 显式标识 | 只要用了 AI 画面：片头 0 秒起靠右边缘（在标题和话题条下面，上边距 130）显示"本片含AI生成内容"3 秒（片子更短就到片尾），每个 AI 镜头期间显示"AI生成示意画面"。ASS 样式 GfxDisclosure，字号 96、上边距 130（1920×1080 画布；上边距 40 时片头标识在 1:1 导出里盖住 54% 的标题像素，9:16 里 94%，所以放在标题和话题条下面），带底框；不用 `\pos`，两条重叠时由 libass 上下排开。2026-10-22 之前完成的作品保留旧版（字号 30、`\pos(1870,40)`、没有片头标识），导出时按存档的 graphics.ass 字节重新生成；新版在文件头有一行 `; template: GM-GFX-DISCLOSURE-V2-20261022`（`graphics.uses_disclosure_v2` 靠它区分）。按内置 Noto Sans SC 的字形算，汉字字高 ≥ 54 像素（最短边的 5%）；用 FFmpeg 实际渲染量得汉字 57–63 像素，"AI"两个拉丁字母约 49 像素。Studio 导出路径另有一条整段时长的"AI生成示意画面（本片含AI生成内容）"（左上角 `\an7\pos(20,20)`，字号取画面高度的 3.5%，没改过：量过，竖屏下约占 70% 宽度、字高约 5% 最短边，16:9 和方形约 3%；放大到 5% 字高约 93 号会宽过竖屏和方形画面），它不是 5% 字高的那条；达标靠 graphics.ass 里的两种标识 | `backend/graphics.py`、`backend/studio_render.py` |
+| 导出 | 先裁切填满画幅，再烧录 graphics，所以竖屏、方形导出不会裁掉披露（2026-10-22 用本机 FFmpeg 在 1280×720、720×1280、1080×1920、720×720、1920×1080 实测，两行标识都完整在画面内；720×1280 时较长一行约占画面宽度的 86%）。MP3/SRT 由服务端以 422 拒绝，界面上也不再给这两个选项 | `backend/studio_render.py`、`backend/v2_editing.py`、`frontend/src/components/ResultWorkbench.tsx` |
 | 发布检查 | `generated_media` 是级别 0 但**可确认**的唯一例外；AI 句子同时会触发不可确认的 MATCH_FALLBACK | `backend/publication.py`、`backend/quality.py` |
 | 隐式标识 | **没有**。`provenance.py` 只写流水线清单和散列，不写 AIGC 元数据或 C2PA | `backend/provenance.py` |
 | 合成人声 | Seed TTS 旁白目前**没有任何标识** | `backend/mode_pipeline.py` |
 
 ## 待评估的差距（需核实后再下结论）
-1. 显式标识的位置、字高、时长：按 GB 45438-2025 第 5.4 条的转载文本，要求起始画面显示不少于 2 秒，字高不低于最短边的 5%（1080p 约 54 像素）。现行字号 30，大约是最短边的 2.8%，并且只在 AI 镜头期间出现。TODO(待确认)：先对照官方全文。
+1. 显式标识的位置、字高、时长：2026-10-22 已按 GB 45438-2025 第 5.4 条的转载文本实现（起始画面靠右边缘 3 秒，汉字字高不低于最短边的 5%，见上表；测试 `tests/test_v2_code_doc_agreement.py` 从字体文件核对字高）。TODO(待确认)：对照官方全文核实，包括"文字高度"是否按汉字字高计，"AI"两个拉丁字母更矮是否可以接受。
 2. 合成人声（TTS）是否需要显式标识（语音提示或节奏提示）。
 3. 隐式元数据：AIGC JSON 和 C2PA 清单分别怎么写入 MP4、MP3、PNG、GIF；每个文件只保留一份 AIGC 元数据；服务提供者编码从哪里来。
 4. "仍然导出（带未通过的检查）"路径下，标识是否完整保留：现有代码注释说披露门禁仍然生效，需要有测试证明。
@@ -63,6 +63,17 @@ argument-hint: "[调研|方案|任务拆解]"
 | 是否生成内容 | 生成（画面、人声）或只做辅助（转写、匹配） | 设计判定 |
 | 用户可见标识 | 烧录文字、界面徽标、无 | 渲染与界面 |
 | 人工核对状态 | 记者是否已确认 | 发布检查 |
+
+## 示例：评估要不要给 TTS 旁白加语音提示（假设）
+1. 读 [references/regulations.md](references/regulations.md) 里关于合成语音的条款，注意每条的来源级别；标为 [转载] 的先写成 TODO(待确认)。
+2. 读 `backend/mode_pipeline.py` 的 TTS 调用位置，确认“现有行为”表里“没有任何标识”仍然成立。
+3. 写差距表一行：要求（来源、级别）、现状、差距、风险；再列方案选项（语音提示 / 只用画面标识 / 两者），标出需要用户或法务确认的项。
+4. 不写代码，等用户批准方案。
+
+## 验证
+- 方案里每条法规引用都能在 `references/regulations.md` 找到，并带着来源级别。
+- “现有行为”表里的位置用 grep 重新核对过。
+- 设计阶段没有改动产品代码：`git status` 里只有文档。
 
 ## 输出格式
 一份 Markdown 设计稿：差距表、方案、参与清单字段、任务拆解、待批准事项、TODO(待确认) 列表。放在用户指定的位置；未指定时只在对话中给出，不写进仓库。

@@ -47,9 +47,12 @@ argument-hint: "[静态|后端|前端|构建|全部]"
 5. **后端受保护回归**：改了 `backend/`、`tests/` 或 `mode_rules.json` 时运行命令 B。耗时数分钟，运行前告诉用户。
 6. **前端回归**：改了 `frontend/`、`scripts/` 或 `mode_rules.json` 时运行命令 C。它会启动真实浏览器，**先征得用户同意**。
 7. **构建**：需要交付时运行命令 D。先确认 8000 端口的服务没有在用 `frontend/dist/`。
-8. **汇报**：按"汇报格式"输出。
+8. **汇报**：按"验证结果的汇报格式"输出。
 
-想单独跑某个测试模块快速看结果时，先征得用户同意，并且必须在**不含 `.env` 和 `data/` 的副本**里运行。做法：用 `git ls-files -co --exclude-standard` 列出的文件复制到 `$env:TEMP` 下的新目录，在那里运行 `& <仓库>\.venv\Scripts\python.exe -I -B -m unittest tests.<模块名>`。这只是辅助，结论以命令 B 为准。
+想单独跑某个测试模块快速看结果时，先征得用户同意，再按下面的顺序选：
+
+- **文件自带受保护运行器的，直接运行那个文件。** 目前有 `tests/test_mode_pipeline.py`（文件头注释写明"显式运行，不要 discovery"）：`& .\.venv\Scripts\python.exe -B tests/test_mode_pipeline.py [类名或 类名.用例名 …]`。它只保留系统运行必需的环境变量（服务商凭证被清掉）、屏蔽 dotenv，禁止访问 `.env`、`data/`、`eval_sample/`、`canary_test/artifacts` 和网络，只放行本机 FFmpeg、ffprobe 子进程，并且要求 WinGet 安装的 Gyan.FFmpeg。`tests/test_mode_exports.py` 的 `main()` 用 `run_core_validation` 的同一套防护，也直接运行它。
+- **其余文件没有受保护运行器**（例如 `test_m4_tts`、`test_m5_rendering`、`test_motion_rendering`、`test_asr`；`tests/run_legacy_validation.py` 只盘点，不执行）。这条路**没有受保护入口的闸门**：不屏蔽 dotenv，不拦外部连接，也不限制子进程；`-E` 只忽略 `PYTHON*` 变量，进程环境里的服务商 Key 和网络都还在。所以只跑已经确认全部外部调用都被模拟的模块（先读测试里的 `patch`、`MockTransport`），在新开的 PowerShell 里先清掉名字含 `KEY`、`TOKEN`、`SECRET`、`APP_ID` 的环境变量，并且必须在**不含 `.env` 和 `data/` 的副本**里运行。做法：用 `git ls-files -co --exclude-standard` 列出的文件复制到 `$env:TEMP` 下的新目录，在那里运行 `& <仓库>\.venv\Scripts\python.exe -E -s -B -m unittest tests.<模块名>`（不能用 `-I`：它不把当前目录放进 `sys.path`，会报 "No module named 'tests'"）。每个模块单独开一个进程跑：同一进程里先导入了 `backend.main` 的模块，会让 `test_v2_text_rules` 的导入检查失败。需要真实 FFmpeg 的用例，先把 FFmpeg 所在目录加进 PATH（受保护入口会自己找 WinGet 安装的 Gyan.FFmpeg）。这只是辅助，结论以命令 B 为准。
 
 ## 命令（Windows PowerShell，仓库根目录）
 
@@ -109,7 +112,7 @@ npm.cmd --prefix frontend run build
 - 不改依赖和锁文件，不装新包。
 - 平台排除项（例如 Linux 不跑的 Windows 原生用例）逐项单独列出，不算进通过数。
 
-## 汇报格式
+## 验证结果的汇报格式
 
 | 检查项 | 命令 | 退出码 | 结果（通过/总数） | 备注或未运行原因 |
 |---|---|---|---|---|
@@ -144,13 +147,17 @@ npm.cmd --prefix frontend run build
 
 ## 已知情况
 
-- 2026-10-21，在本机（Windows 11 10.0.26300）上，`tests.test_v2_release_integrity` 有 2 项失败，结尾都是 `AssertionError: unexpected native tool`：
+- 2026-10-21，在本机（Windows 11 10.0.26300）上直接运行 `tests.test_v2_release_integrity` 有 2 项失败，结尾都是 `AssertionError: unexpected native tool`（2026-10-22 已修，见下文）：
   - `test_generated_checks_select_dist_without_changing_readiness_globals`
   - `test_selected_checks_still_reject_dependency_and_sbom_drift`
 
-  原因：这个系统版本下 `platform.win32_ver()` 会派生 `ver` 子进程，碰上了测试的 mock。在干净的 `git archive HEAD` 导出里也能复现，和改动无关。汇报时标为"已知基线失败"，不要当成新回归，也不要为此改测试。
+  原因：这个系统版本下第一次调用 `platform.uname()`（经 `win32_ver()`）会派生 `ver` 子进程，碰上了测试替换的 `subprocess.run`。2026-10-22 起测试模块在导入时先调用一次 `platform.uname()` 填好缓存，在副本里直接运行 66 项全过；受保护入口本来就替换了 `platform._syscmd_ver`，不受影响。
+- 2026-10-22 最后一次全面核对的结果：受保护入口 `run_v2_validation.py --compile-ast --legacy` 共 994 项，993 项通过，1 项出错，0 项跳过，342 个受保护文件无漂移（约 18 分钟；上一次是 984 项、983 项通过，约 26 分钟）。出错的是 `tests.test_v2_validation_environment` 的 `test_darwin_homebrew_style_links_resolve_to_paired_real_tools`：`WinError 1314`，本机账号没有创建符号链接的权限；在干净的 `git archive HEAD` 导出里同样失败，所以退出码是 1。同一次运行的设计清单还报告 `view_keys` 声明 311、实际 357（交接文档附录 C 的标题数字，附录不能改）。汇报时把它们标为"已知基线失败"，并写明数字。
+- 前端全部测试（`node --test --test-concurrency=1 scripts/test-*.mjs`，约 7 分钟）：1335 项，1332 通过，3 项失败，都出在两个文件里，和改动无关，在 `git archive HEAD` 导出里一模一样：`test-v2-responsive-audit.mjs` 的 create 场景及其父用例（305 像素宽、20 像素字号时页面横向溢出），和 `test-v2-sample-review.mjs` 的 Edge 运行时用例。`tsc --noEmit` 无错误。在副本里跑之前先确认副本的 `frontend/scripts` 不是空的：目录是空的时候 `node --test` 会以 0 项、退出码 0 “通过”，要看测试数量，不能只看退出码。
+- `tests/test_mode_pipeline.py`（37 项）和 `tests/test_mode_exports.py`（29 项）不在受保护入口的选择里，各有自己的受保护直跑入口：`./.venv/Scripts/python.exe -B tests/test_mode_pipeline.py [类名或 类.方法名]`、`./.venv/Scripts/python.exe -B tests/test_mode_exports.py [--focused|--main-only|--long-only]`。它们需要真的 FFmpeg，找不到会报错，不会跳过；一次要 6–20 分钟，取决于机器负载。2026-10-22 最后一次：前者 37 项全过（约 7 分钟），后者 29 项全过（约 9 分钟）。其间改正的是过期的测试，不是本机问题：V2 的遮挡时长是 min(2 秒, 被遮盖句子的 40%)，按整帧取整；大字幕每行 14 个字符，连续字母会被换行拆开；传给 `ass=filename=` 的 Windows 盘符冒号要转义。
+- `tests/` 里不在受保护入口选择、也没有自己直跑入口的旧测试文件，末尾是裸 `unittest.main()`，没有防护。不要在仓库里直接运行；要跑就在没有 `.env` 和 `data/` 的副本里，并先征得用户同意。2026-10-22 把其余 30 个旧模块在这样的副本里逐个跑过（`test_workspace_access` 和 `test_m6_operations` 单独跑，也过了）：25 个全过；`test_editing_enhancements` 和 `test_prototype_preferences` 里按旧位置（右上角）数亮像素的断言，在 AI 标识挪到右侧边缘（上边距 130）后失败，已按新位置更正，两个模块都全过；`test_deployment`（匿名生产契约期望 429，实得 413）和 `test_mode_api`（20 个文件上限期望 429，实得 201）在原始提交上就失败，是过期的断言；`test_task_operations` 的 MAX_PATH 用例取决于副本的路径长度（257 不大于 260）；`test_deployment` 的另一项在副本里缺 `frontend/dist` 时失败，把 `dist` 拷进副本就过。
 
-## 来源
+## 参考
 
 - [docs/DEVELOPMENT.md](../../../docs/DEVELOPMENT.md) 第 1、4–9 节
 - [README.md](../../../README.md)"先预检，再启动单进程服务"

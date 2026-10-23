@@ -12,7 +12,7 @@
 
 ## 写法一：只挂路由（最常用）
 
-参照 `tests/test_v2_drafts.py:26-37`、`tests/test_v2_drafts.py:688-697`、`tests/test_workbench.py:88-115`。
+参照 `tests/test_v2_drafts.py:27-38`、`tests/test_v2_drafts.py:689-698`、`tests/test_workbench.py:88-115`。
 
 ```python
 import httpx
@@ -52,7 +52,7 @@ class NewEndpointTests(IsolatedAsyncioTestCase):
 
 ## 写法二：真实 `main.app`，不进 lifespan
 
-参照 `tests/test_v2_drafts.py:453-458`、`tests/test_v2_export_download_auth.py:36-85`。
+参照 `tests/test_v2_drafts.py:454-459`、`tests/test_v2_export_download_auth.py:36-85`。
 
 - 用 `patch.multiple(main, settings=..., task_manager=..., upload_capacity_guard=..., _upload_store=..., _draft_service=...)` 换掉全局对象。
 - 客户端用 `httpx.ASGITransport(app=main.app, client=("198.51.100.23", 12345))`。故意用非回环地址，避免"本机可信"的放行逻辑掩盖鉴权缺失。
@@ -65,7 +65,7 @@ class NewEndpointTests(IsolatedAsyncioTestCase):
 ## 必测的情况
 
 - 没有 token、token 错误：都返回 404；任务已到期：返回 410。
-- `expected_revision` 过期：返回 409，并带 `current_revision`。
+- `expected_revision` 过期：返回 409。apply、restore、checks 的响应体带 `current_revision`；metadata 是 `stale_metadata`；exports 是纯文本（见 status-codes.md）。
 - 请求体超限：返回 413；缺 Content-Length：返回 411。
 - 多余字段：返回 422（strict 模型）。
 - 收费服务的工厂一次都没有被构造；会收费的路径只被调用预期的次数，例如 `factory.call_count == 1`。
@@ -73,4 +73,4 @@ class NewEndpointTests(IsolatedAsyncioTestCase):
 
 ## 运行
 
-用 golden-mic-verify 的命令 B。本机上 `test_v2_release_integrity` 有 2 项已知的基线失败，见该 skill 的"已知情况"。
+用 golden-mic-verify 的命令 B。本机上已知的基线失败只有符号链接权限那一项（`WinError 1314`）；`test_v2_release_integrity` 曾有的 2 项失败已在 2026-10-22 修好，见该 skill 的"已知情况"。
