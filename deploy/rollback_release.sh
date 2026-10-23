@@ -71,7 +71,8 @@ if systemctl is-active --quiet golden-mic.service; then
     DRAINED_CURRENT_SERVICE=1
     active=1
     for _ in $(seq 1 1440); do
-      active=$(curl --fail --silent http://127.0.0.1:8000/api/admin/drain | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["active_tasks"]))')
+      # active_tasks plus upload_jobs (uploads in paid speech recognition); a server that predates upload_jobs counts 0.
+      active=$(curl --fail --silent http://127.0.0.1:8000/api/admin/drain | python3 -c 'import json,sys; d=json.load(sys.stdin); print(int(d["active_tasks"]) + int(d.get("upload_jobs", 0)))')
       if (( active == 0 )); then
         break
       fi

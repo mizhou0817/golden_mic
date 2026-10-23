@@ -29,4 +29,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS -H "Host: localhost" http://127.0.0.1:8000/health/live || exit 1
 ENTRYPOINT ["tini", "--"]
-CMD ["sh", "-c", "mkdir -p /data/tmp /data/tasks /data/cache/asr && exec python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log"]
+# --timeout-graceful-shutdown: as in the systemd unit; compose stop_grace_period (7200 s) is the hard stop.
+CMD ["sh", "-c", "mkdir -p /data/tmp /data/tasks /data/cache/asr && exec python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log --timeout-graceful-shutdown 7100"]

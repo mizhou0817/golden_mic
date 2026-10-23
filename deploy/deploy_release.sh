@@ -240,13 +240,15 @@ if systemctl is-active --quiet golden-mic.service; then
   DRAINED_OLD_SERVICE=1
   deadline=$(( $(date +%s) + DRAIN_TIMEOUT ))
   while true; do
-    active_tasks=$(curl --fail --silent http://127.0.0.1:8000/api/admin/drain | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["active_tasks"]))')
+    # Work still running: active_tasks plus upload_jobs (uploads in paid speech recognition, cancelled by a restart).
+    # A server that predates upload_jobs counts 0.
+    active_tasks=$(curl --fail --silent http://127.0.0.1:8000/api/admin/drain | python3 -c 'import json,sys; d=json.load(sys.stdin); print(int(d["active_tasks"]) + int(d.get("upload_jobs", 0)))')
     if (( active_tasks == 0 )); then
       break
     fi
     if (( $(date +%s) >= deadline )); then
       curl --fail --silent --request DELETE http://127.0.0.1:8000/api/admin/drain >/dev/null || true
-      echo "Drain timed out with ${active_tasks} active task(s); deployment aborted." >&2
+      echo "Drain timed out with ${active_tasks} unit(s) of work (tasks, exports, uploads being transcribed) still running; deployment aborted." >&2
       exit 1
     fi
     sleep 5

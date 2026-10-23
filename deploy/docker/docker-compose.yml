@@ -15,7 +15,9 @@ services:
     volumes:
       - /opt/goldmic/data:/data
       - /opt/goldmic/samples:/app/backend/assets/samples:ro
-    stop_grace_period: 60s
+    # Same stop budget as the systemd unit (media 6800 s < app 6900 s < uvicorn 7100 s < 7200 s).
+    # Update with build/deploy/docker/update.sh, which drains first, so a normal stop is quick.
+    stop_grace_period: 7200s
     logging:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
