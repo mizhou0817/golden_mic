@@ -282,9 +282,9 @@
 }
 
 /* AI writing helper under the manuscript */
-.gm-create-wizard .gm-assist { margin: .75rem 0; padding: .875rem 1rem; border: .125rem dashed var(--gm-line); border-radius: .875rem; background: var(--gm-surface); display: grid; gap: .75rem; }
+.gm-create-wizard .gm-assist { margin: .75rem 0; padding: .875rem 1rem; border: .125rem dashed var(--gm-line); border-radius: .875rem; background: var(--gm-surface); display: grid; grid-template-columns: minmax(0,1fr); gap: .75rem; }
 .gm-create-wizard .gm-assist-title { margin: 0; }
-.gm-create-wizard .gm-assist-block { display: grid; gap: .5rem; }
+.gm-create-wizard .gm-assist-block { display: grid; grid-template-columns: minmax(0,1fr); gap: .5rem; }
 .gm-create-wizard .gm-assist-block > label, .gm-create-wizard .gm-assist-label { margin: 0; }
 .gm-create-wizard .gm-assist-brief { width: 100%; box-sizing: border-box; padding: .5rem .625rem; border: .125rem solid var(--gm-line); border-radius: .625rem; font: inherit; resize: vertical; min-height: 4.5rem; }
 .gm-create-wizard .gm-assist-instruction { flex: 1; min-width: min(14rem,100%); padding: .4rem .625rem; border: .125rem solid var(--gm-line); border-radius: .625rem; font: inherit; }
@@ -294,7 +294,7 @@
 .gm-create-wizard .gm-assist-go { background: var(--gold); border-color: var(--gold); color: var(--ink); font-weight: 900; }
 .gm-create-wizard .gm-assist-go:disabled { opacity: .55; }
 .gm-create-wizard .gm-assist-busy { margin: 0; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
-.gm-create-wizard .gm-assist-result { padding: .75rem; border: .125rem solid var(--gm-line); border-radius: .75rem; background: var(--white); display: grid; gap: .5rem; }
+.gm-create-wizard .gm-assist-result { padding: .75rem; border: .125rem solid var(--gm-line); border-radius: .75rem; background: var(--white); display: grid; grid-template-columns: minmax(0,1fr); gap: .5rem; }
 .gm-create-wizard .gm-assist-result p { margin: 0; }
 .gm-create-wizard .gm-assist-preview { margin: 0; padding: .625rem .75rem; max-height: 16rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.7; background: var(--gm-surface); border-radius: .5rem; }
 .gm-create-wizard .gm-assist-warnings { margin: 0; padding: .5rem .75rem .5rem 1.5rem; border: .125rem dashed var(--gm-red, #b4533a); border-radius: .5rem; background: var(--gm-redwash, #fbeee9); font-size: .8125rem; }
