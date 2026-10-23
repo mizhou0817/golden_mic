@@ -7,14 +7,19 @@ export type AssistLength = "short" | "normal" | "long";
 export interface AssistRequest {
   action: AssistAction; mode: Exclude<ProductionMode, "original">;
   brief?: string; text?: string; instruction?: string; length?: AssistLength;
+  /** Mixed-mode edits: sentences the AI must keep word for word, in manuscript order. */
+  quotes?: string[];
 }
 export interface AssistResult { text: string; warnings: string[] }
 
 /** What the writing page hands to the assistant; the page stays the owner of the manuscript. */
 export interface ScriptAssistContext {
   mode: ProductionMode; script: string; disabled: boolean; maxScript: number;
-  /** Replace the manuscript with this text (goes through the page's normal edit path). */
-  onApply: (text: string) => void;
+  /** The sentences typed as original sound (mixed mode), hand marks included: their lines may carry no 同期 prefix. */
+  quotes?: readonly string[];
+  /** Replace the manuscript with this text (goes through the page's normal edit path). `quotes`: the original-sound
+   * sentences the server checked were kept word for word, so the page can mark them again wherever they now stand. */
+  onApply: (text: string, quotes?: readonly string[]) => void;
 }
 
 export const ASSIST_LIMITS = { brief: 2000, text: 3000, instruction: 300 } as const;

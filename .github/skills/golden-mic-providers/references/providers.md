@@ -111,7 +111,7 @@
 | 阶段 8–10 | 不调用服务 | — |
 | 结果页修改 | 重新匹配、生成、配音 | `edit_mode_workspace`（mode_pipeline.py:2018-2261） |
 | 结果页上传录音 | ASR | `workbench._ingest_recording`（workbench.py:937-1017） |
-| AI 写作、选效果 | Kimi `complete_text` | main.py:760-824 |
+| AI 写作、选效果 | Kimi `complete_text` | main.py:762-826 |
 
 ## `errorKind`
 

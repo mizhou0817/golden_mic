@@ -63,7 +63,7 @@ description: 金话筒媒体处理约定（FFmpeg / ffprobe）。涵盖依赖与
 - **长路径**：Windows 用 `\\?\` 前缀（`revisions.py:50-61`）。
 - **取消子进程**：Linux 和 macOS 用独立会话加 `killpg`，先 SIGTERM，10 秒后 SIGKILL；**Windows 先结束整棵子进程树**（`kill_windows_descendants`，因为 scoop、chocolatey 的 ffmpeg 外壳会再启动真正的 ffmpeg.exe），再 terminate，10 秒后 kill（`media.py:396`、`media.py:494`、`media.py:564-588`）。
 - **空输出**：Windows 用 `NUL`，其他平台用 `/dev/null`（`quality.py:740`、`tts_pipeline.py:1459`）。
-- **请求路径**：含 Windows 非法字符时直接返回 404（`main.py:1322-1326`）。
+- **请求路径**：含 Windows 非法字符时直接返回 404（`main.py:1324-1328`）。
 
 ## 步骤（改媒体相关代码时）
 

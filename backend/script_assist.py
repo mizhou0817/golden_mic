@@ -7,18 +7,19 @@ guard cuts lines the way the parser does (str.splitlines). Voiceover mode reads 
 there only an explicit 同期 mark keeps a line frozen, and the prompt says the same. Everything the model
 returns is cleaned and checked here, and any change to a number is surfaced as a warning for the journalist.
 
-Not visible here: a sentence the journalist marked as original sound by hand on a later page (a type mark)
-has no prefix in the text, so the guard reads it as narration. If the AI rewrites such a sentence, the quote
-match against the footage refuses the reworded quote when the video is made (quote_missing), so nothing
-invented reaches the video, but the journalist has to repair that line.
+A sentence the journalist marked as original sound by hand on a later page (a type mark) has no prefix in the
+text. So in mixed mode the page sends the sentences typed as original sound along with an edit (`quotes`, in
+manuscript order): the prompt lists them, and an answer that does not keep every one of them as a whole sentence
+of the manuscript parser, in the same order, is refused. The page then marks them again wherever they now stand.
 """
 from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Sequence
 from typing import Literal
 
-from .production_modes import LIMITS, TITLE_END_PUNCTUATION, TITLE_MAX_CHARS, has_sync_mark, parse_line
+from .production_modes import LIMITS, TITLE_END_PUNCTUATION, TITLE_MAX_CHARS, has_sync_mark, parse_line, parse_sentences
 from .providers.llm import LLMProvider
 
 Action = Literal["write", "edit"]
@@ -53,6 +54,20 @@ def _quote_lines(lines: list[str], mode: str) -> list[str]:
     return [line.strip() for line in lines[1:] if is_quote_line(line, mode)]
 
 
+def _sentence_texts(text: str) -> list[str] | None:
+    """The sentences of a mixed-mode manuscript as the parser cuts them (what a type mark points at); None if it refuses the text."""
+    try:
+        return [sentence.text for sentence in parse_sentences(text, "mixed")]
+    except ValueError:
+        return None
+
+
+def _keeps_in_order(quotes: Sequence[str], sentences: Sequence[str] | None) -> bool:
+    """Every quote is one whole sentence, in this order (other sentences may stand between them)."""
+    remaining = iter(sentences or ())
+    return all(any(sentence == quote for sentence in remaining) for quote in quotes)
+
+
 class ScriptAssistError(ValueError):
     """A problem with the request or the model's answer, worded for the person using the page."""
 
@@ -75,9 +90,13 @@ _QUOTE_RULES = {
 SYSTEM_WRITE = "你是一名资深电视新闻编辑，为“口播新闻视频”撰写旁白稿。\n" + _COMMON_RULES + "\n6. 篇幅：正文约 {chars} 字（可上下浮动 20%）。"
 SYSTEM_EDIT = ("你是一名资深电视新闻编辑，按用户的修改要求改写一篇“口播新闻视频”的稿子。\n" + _COMMON_RULES
                + "\n6. 未被修改要求涉及的内容保持原样；所有原声行逐字保留，位置和顺序不变。")
+# Only with an edit that carries the sentences typed as original sound (hand marks have no prefix in the text).
+MARKED_QUOTES_RULE = ("7. 【原声句】列出的是用户标出的素材原话：每一句都逐字保留，顺序不变；它前后用标点和别的话隔开，"
+                      "不要并进别的句子，也不要在它前面加“同期”。")
 
 
-def build_prompts(*, action: Action, mode: str, brief: str, text: str, instruction: str, length: Length) -> tuple[str, str]:
+def build_prompts(*, action: Action, mode: str, brief: str, text: str, instruction: str, length: Length,
+                  quotes: Sequence[str] = ()) -> tuple[str, str]:
     instruction = instruction.strip()
     if action == "write":
         user = f"【素材要点】\n{brief.strip()}\n"
@@ -85,7 +104,12 @@ def build_prompts(*, action: Action, mode: str, brief: str, text: str, instructi
             user += f"【写作要求】\n{instruction}\n"
         user += "【模式】" + ("只写旁白；不要写原声行（“同期”行或“姓名（身份）：”行）。" if mode == "mixed" else "全稿由 AI 配音朗读。")
         return SYSTEM_WRITE.format(chars=TARGET_CHARS[length], quote_rule=_QUOTE_RULES[mode]), user
-    return SYSTEM_EDIT.format(quote_rule=_QUOTE_RULES[mode]), f"【修改要求】\n{instruction or DEFAULT_EDIT_INSTRUCTION}\n【原稿】\n{text.strip()}"
+    system = SYSTEM_EDIT.format(quote_rule=_QUOTE_RULES[mode])
+    user = f"【修改要求】\n{instruction or DEFAULT_EDIT_INSTRUCTION}\n【原稿】\n{text.strip()}"
+    if quotes:
+        system += "\n" + MARKED_QUOTES_RULE
+        user += "\n【原声句】\n" + "\n".join(quotes)
+    return system, user
 
 
 def clean_output(raw: str) -> str:
@@ -104,7 +128,8 @@ def _numbers(text: str) -> Counter[str]:
     return Counter(NUMBER.findall(text))
 
 
-def check_result(*, action: Action, mode: str, brief: str, text: str, result: str) -> tuple[str, list[str]]:
+def check_result(*, action: Action, mode: str, brief: str, text: str, result: str,
+                 quotes: Sequence[str] = ()) -> tuple[str, list[str]]:
     """Return the accepted manuscript and warnings, or raise ScriptAssistError."""
     warnings: list[str] = []
     lines = _lines(result)
@@ -124,6 +149,8 @@ def check_result(*, action: Action, mode: str, brief: str, text: str, result: st
             raise ScriptAssistError("AI 没有写出可用的旁白，请换个说法再试一次。")
     elif action == "edit" and result_quotes != original_quotes:
         raise ScriptAssistError("AI 改动或删掉了“同期”原声句（包括“姓名（身份）：”写法的原话）。原声必须保持原样，这次结果已丢弃，请再试一次。")
+    if action == "edit" and quotes and not _keeps_in_order(quotes, _sentence_texts(result)):
+        raise ScriptAssistError("AI 改动、拆开或删掉了标成原声的句子。原声必须保持原样，这次结果已丢弃，请再试一次。")
     before = _numbers(text if action == "edit" else brief)
     after = _numbers(result)
     if action == "edit" and before != after:
@@ -138,15 +165,21 @@ def check_result(*, action: Action, mode: str, brief: str, text: str, result: st
 
 
 async def assist_script(provider: LLMProvider, *, action: Action, mode: str, brief: str, text: str,
-                        instruction: str, length: Length) -> dict[str, object]:
+                        instruction: str, length: Length, quotes: Sequence[str] = ()) -> dict[str, object]:
+    """`quotes`: the sentences typed as original sound, in manuscript order (mixed-mode edits only)."""
     if mode == "original":
         raise ScriptAssistError("“只用原声”的稿子必须是素材里真实说过的话，不能由 AI 写或改。")
     if action == "write" and not brief.strip():
         raise ScriptAssistError("请先写几句要点：时间、地点、人物、发生了什么。")
     if action == "edit" and not text.strip():
         raise ScriptAssistError("稿子是空的，请先写点内容，或用“AI 写一稿”。")
-    system, user = build_prompts(action=action, mode=mode, brief=brief, text=text, instruction=instruction, length=length)
+    if quotes and (action != "edit" or mode != "mixed"):
+        raise ScriptAssistError("只有修改“旁白 + 原声”的稿子时，才能指定要保留的原声句。")
+    if quotes and not _keeps_in_order(quotes, _sentence_texts(text)):
+        raise ScriptAssistError("标成原声的句子和稿子对不上，请刷新页面后再试。")
+    system, user = build_prompts(action=action, mode=mode, brief=brief, text=text, instruction=instruction, length=length,
+                                 quotes=quotes)
     raw = await provider.complete_text(system, user, max_tokens=4096 if length != "short" else 2048,
                                        temperature=0.7 if action == "write" else 0.3)
-    result, warnings = check_result(action=action, mode=mode, brief=brief, text=text, result=clean_output(raw))
+    result, warnings = check_result(action=action, mode=mode, brief=brief, text=text, result=clean_output(raw), quotes=quotes)
     return {"text": result, "warnings": warnings}

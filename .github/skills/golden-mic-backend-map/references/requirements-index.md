@@ -9,7 +9,7 @@
 | 预转写：转写、区分说话人、词级时间戳，正式制作复用 | 部分 | 上传完成后自动执行：`uploads.complete` → `_preprocess` → `_transcribe`（`uploads.py:846-879`、`uploads.py:1085-1136`）。说话人用 ASR 返回的 `speaker_id`，另有可选的本地声纹。词级时间戳是 `Word(w, s, e)`，不可靠时降为 segment 精度（`uploads.py:1468-1495`）。复用：开始制作时写入 `pretranscripts.json`，阶段 2 直接读取 | `POST …/pretranscribe` 只用来重试失败的转写。"耗时不超过素材时长 × 0.3"在代码里不存在：ASR 超时 = max(5 秒, min(7200 秒, 0.5 × 时长))，而且这只是超时，不是性能保证 |
 | 强制对齐：返回 score/t0/t1/spk/alts | 已有 | `POST /{id}/align` → `DraftService.align`（`drafts.py:1088-1106`）→ `production_modes.align_quotes`；另有 `/api/match/preview` | 字段名不同：`score`、`start`、`end`、`speaker_id`、`alt_takes`（最多 5 条） |
 | 剪短原声 | 已有 | `ApplyRequest.trims{row: {t0, t1}}` → `validate_quote_trim`（`production_modes.py:1234-1267`） | 只能缩短，至少 1 秒，不能切进词里；segment 精度的原声不能剪 |
-| 换一段 | 已有 | `ApplyRequest.takes`（`v2_editing.py:173`），只能选当前的 `alt_takes`；候选列表 `GET /{id}/quotes/{row}/takes`（`main.py:1411-1420`） | — |
+| 换一段 | 已有 | `ApplyRequest.takes`（`v2_editing.py:173`），只能选当前的 `alt_takes`；候选列表 `GET /{id}/quotes/{row}/takes`（`main.py:1413-1422`） | — |
 | 转成旁白 | 已有（仅 B 模式） | `ApplyRequest.to_narration`（`v2_editing.py:391-417`）；`mode_pipeline.py:2070-2085` | 从阶段 6 开始重跑（2026-10-22 起 `mode_rules.json` 的 `plan_stages` 也写 6） |
 | 改说话人 | 已有 | `ApplyRequest.speakers{id: {name ≤ 8, role ≤ 12}}`（`v2_editing.py:151-153`） | 从阶段 8 开始重跑 |
 | 多处修改一次提交 | 已有 | `POST /{id}/apply`（`workbench.py:1364-1382`），回执写入 `v2_operations` | 一次 apply 产生一个快照，revision 一次跳过"步数"个号 |

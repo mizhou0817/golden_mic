@@ -4,7 +4,7 @@
 
 鉴权缩写：
 
-- **P**：`_authorize_private`，即 `_authorize_task`（`main.py:878`）加上 `service().check`（`drafts.py:1444-1447`）。
+- **P**：`_authorize_private`，即 `_authorize_task`（`main.py:880`）加上 `service().check`（`drafts.py:1444-1447`）。
 - **W**：workbench 的 `access()`（`workbench.py:1031-1038`）。写请求还要经过 `_authorize_workbench_mutation`。
 - **E**：V2 导出。先把作用域改写成 `/studio/export`，再授权（`v2_editing.py:500-510`）。
 
@@ -13,11 +13,11 @@
 | 方法 | 路径 | handler（位置） | 鉴权 | 成功 |
 |---|---|---|---|---|
 | POST | `/api/tasks`（JSON 不带 script 和 upload_ids 时建草稿） | `create_task`（`main.py:653`） | 草稿 owner；生产环境要有会话 | 201 |
-| GET | `/api/tasks/{id}`、`/status` | `get_task`（`main.py:931-932`） | `_authorize_task` | 200；ETag 命中返回 304 |
-| POST | `/api/tasks/{id}/retry` | `retry_task_v2`（`main.py:1332`） | 写 | 202 |
-| PATCH | `/api/tasks/{id}/metadata` | `patch_task_metadata`（`main.py:897`） | 写 | 200 |
-| GET/POST/PUT | `/api/tasks/{id}/checks` | `task_checks`、`check_confirmation`（`main.py:1391-1397`） | `_authorize_task` | 200 |
-| DELETE | `/api/tasks/{id}` | `delete_task`（`main.py:1084`） | 写 | 204 |
+| GET | `/api/tasks/{id}`、`/status` | `get_task`（`main.py:933-934`） | `_authorize_task` | 200；ETag 命中返回 304 |
+| POST | `/api/tasks/{id}/retry` | `retry_task_v2`（`main.py:1334`） | 写 | 202 |
+| PATCH | `/api/tasks/{id}/metadata` | `patch_task_metadata`（`main.py:899`） | 写 | 200 |
+| GET/POST/PUT | `/api/tasks/{id}/checks` | `task_checks`、`check_confirmation`（`main.py:1393-1399`） | `_authorize_task` | 200 |
+| DELETE | `/api/tasks/{id}` | `delete_task`（`main.py:1086`） | 写 | 204 |
 | GET | `/api/tasks/{id}/draft` | `draft`（`drafts.py:1449`） | P | 200 |
 | POST | `/api/tasks/{id}/recover-draft` | `recover_draft`（`drafts.py:1454`） | P，且必须恰好一个 `X-Task-Token` | 201 |
 | PATCH | `/api/tasks/{id}/draft`、`/api/tasks/{id}` | `patch`（`drafts.py:1467`） | P 写 | 200 |
@@ -36,7 +36,7 @@
 | GET | `/api/tasks/{id}/operations/{op}` | `operation`（`workbench.py:1384`） | W | 200 |
 | POST | `/api/tasks/{id}/restore` | `restore_v2`（`workbench.py:1451`） | W 写 | 202 |
 | POST | `/api/tasks/{id}/recordings` | `recordings_v2`（`workbench.py:1460`） | W 写 | 201 |
-| GET | `/api/tasks/{id}/quotes/{row}/takes` | `main.py:1411-1420` | 读 | 200 |
+| GET | `/api/tasks/{id}/quotes/{row}/takes` | `main.py:1413-1422` | 读 | 200 |
 | POST/GET/DELETE | `/api/tasks/{id}/exports`、`/exports/{eid}`、`/exports/{eid}/file` | `v2_editing.py:562`、`v2_editing.py:701`、`v2_editing.py:712`、`v2_editing.py:728` | E | 202 / 200 / 200 / 200 或 206 |
 | GET | `/api/config/limits` | `public_limits`（`main.py:363-397`） | 公开 | 200 |
 
@@ -46,7 +46,7 @@
 
 - **主应用（`main.py`）**：
   - `GET /api/tasks`（我的作品列表）、`GET /api/session`（匿名会话）、`GET /api/config/availability`、`GET /api/config/workspace`；
-  - `POST /api/match/preview`（原话预检）、`POST /api/script/assist`（AI 写稿或润色，调用收费的 LLM）、`POST /api/script/effects`（AI 自动选效果；没有可用的模型、模型忙或排空期间，只按稿子里的关键词回答，永远有结果）；
+  - `POST /api/match/preview`（原话预检）、`POST /api/script/assist`（AI 写稿或润色，调用收费的 LLM；B 模式润色可带 `quotes`：当前所有原声句，含手动标的，按稿中顺序，结果必须逐字保留）、`POST /api/script/effects`（AI 自动选效果；没有可用的模型、模型忙或排空期间，只按稿子里的关键词回答，永远有结果）；
   - 取成片和素材：`GET /api/tasks/{id}/report`、`/video`、`/thumbs/{shot_id}.jpg`、`/poster`、`/waves/{row}.json`（别名 `/waveform/{row}`）、`/quote/{row}/takes`（`/quotes/…` 的别名）；
   - 旧接口：`POST /api/tasks/{id}/remix`、`/replace-shot`、`/export`（V2 用 `/exports`）；
   - 范例：`GET /api/samples/default`、`/api/samples/default/video`、`/api/samples/default/{kind}/{name}`；

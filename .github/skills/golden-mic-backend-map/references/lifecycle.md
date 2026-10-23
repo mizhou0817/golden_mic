@@ -63,7 +63,7 @@
 
 | 数据 | 保留规则 | 到期后 | 出处 |
 |---|---|---|---|
-| 草稿 | 闲置 24 小时到期，每次操作续期 | 410 `task_gone`（由 `_authorize_task` 返回，`main.py:866-868`）；`draft_expired` 只在请求通过授权后、处理过程中（等待操作锁或接收分块时）草稿恰好到期才出现 | `drafts.py:4-7`、`drafts.py:481-490` |
+| 草稿 | 闲置 24 小时到期，每次操作续期 | 410 `task_gone`（由 `_authorize_task` 返回，`main.py:868-870`）；`draft_expired` 只在请求通过授权后、处理过程中（等待操作锁或接收分块时）草稿恰好到期才出现 | `drafts.py:4-7`、`drafts.py:481-490` |
 | V2 终态作品（done、failed、cancelled） | `processing_completed_at` 加 72 小时；没有时依次用 `updated_at`、`created_at`。**每次成功修改或恢复都会重置倒计时** | 410 `task_gone`；墓碑保留 30 天，期间凭访问令牌或同一会话访问返回 410，否则 404（`admission.py:150-164`） | `drafts.py:1412-1415`、`task_metadata.py:52-59`、`admission.py:127-164` |
 | 手动删除的作品 | 立即删除，不写墓碑 | 404 | `drafts.py:1378-1394` |
 | 上传会话 | 从创建起最长 72 小时 | 由 `cleanup_owned` 删除 | `uploads.py:92`、`uploads.py:1241-1255` |

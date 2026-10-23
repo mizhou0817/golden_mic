@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager, suppress
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile, status
@@ -755,6 +755,8 @@ class ScriptAssistRequest(BaseModel):
     text: str = Field(default="", max_length=3000)
     instruction: str = Field(default="", max_length=300)
     length: Literal["short", "normal", "long"] = "normal"
+    # Mixed-mode edits: the sentences typed as original sound, hand marks included, in manuscript order.
+    quotes: list[Annotated[str, Field(min_length=1, max_length=3000)]] = Field(default_factory=list, max_length=3000)
 
 
 @app.post("/api/script/assist")
@@ -782,7 +784,7 @@ async def assist_script_endpoint(request: Request) -> dict[str, Any]:
         async with _assist_slot, provider:
             return await asyncio.wait_for(assist_script(
                 provider, action=payload.action, mode=payload.mode, brief=payload.brief, text=payload.text,
-                instruction=payload.instruction, length=payload.length), timeout=150)
+                instruction=payload.instruction, length=payload.length, quotes=payload.quotes), timeout=150)
     except ScriptAssistError as exc:
         raise HTTPException(422, str(exc)) from None
     except (LLMProviderError, TimeoutError):

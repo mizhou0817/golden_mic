@@ -15,7 +15,7 @@ import type { ElementKey, MediaMetadata, MediaSelection } from "../lib/mediaInpu
 import {
   MATCH_OK, MODE_CARDS, MODE_LABELS, MODE_LIMITS, PACING_CPM, TITLE_PLACEHOLDER,
   applySpeakerHints, countPreviewJumpCuts, defaultModePreferences, isProductionMode, matchState, parseModeScript,
-  quoteGate, quoteTextEvidence, readModePreferences, readSentenceInputs, readSpeakers,
+  quoteGate, quoteTextEvidence, readModePreferences, readSentenceInputs, readSpeakers, restoreQuoteMarks,
   scriptFromSentences, selectTranscriptSentence, sentencesMatchScript,
 } from "../lib/productionModes";
 import type { ModePreferences, ProductionMode, SentenceInput, SentenceKind, Speaker, TranscriptSegment, UploadSnapshot, MatchPreview, TerminalPunctuation } from "../lib/productionModes";
@@ -568,7 +568,8 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
     setStep(target);
   }
 
-  function changeScript(value: string) {
+  /** `keepQuotes`: the original-sound sentences an adopted AI edit (or its undo) kept word for word. */
+  function changeScript(value: string, keepQuotes: readonly string[] = []) {
     setAlignmentEnabled(true);
     invalidatePreview();
     try {
@@ -587,7 +588,11 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
           ...(old.source_hint ? { source_hint: old.source_hint } : {}),
           speaker_hint: sentence.speaker_hint || (old.source_hint ? old.speaker_hint : "") };
       });
-      setConfirmedSentences(merged); setSentenceKinds(currentBody === nextBody ? sentenceKinds : retainedKinds);
+      // An AI edit can move the quotes it had to keep to other rows (a hand mark has no 同期 prefix to follow).
+      const restored = mode === "mixed" && keepQuotes.length > 0 && currentBody !== nextBody
+        ? restoreQuoteMarks(merged, analysis.rows, keepQuotes) : null;
+      for (const idx of restored?.marked ?? []) retainedKinds[idx] = "quote";
+      setConfirmedSentences(restored?.rows ?? merged); setSentenceKinds(currentBody === nextBody ? sentenceKinds : retainedKinds);
     } catch { setConfirmedSentences(null); setSentenceKinds({}); }
     setScript(value); setElements({}); setSentenceChecks({});
     // An existing whole-document recording no longer certifies the edited manuscript.
@@ -1237,7 +1242,8 @@ export function CreateWizard({ limits, intro, initialDraft, generativeAllowed, b
             {analysis.titleFixable && <button type="button" className="gm-small-button" onClick={() => changeScript(analysis.fixedScript)}>去掉首行句末标点，当标题</button>}
             <span className={charCount > cap.maxScript ? "gm-danger-text gm-push" : "gm-muted gm-push"}>{charCount} / {MODE_LIMITS.script_soft_chars} 字</span>
           </div>
-          {scriptAssistant?.({ mode, script, disabled: locked || audioBusy, maxScript: cap.maxScript, onApply: changeScript })}
+          {scriptAssistant?.({ mode, script, disabled: locked || audioBusy, maxScript: cap.maxScript, onApply: changeScript,
+            quotes: mode === "mixed" ? analysis.rows.filter(row => row.kind === "quote").map(row => row.text) : [] })}
           {charCount > MODE_LIMITS.script_soft_chars && <p className="gm-warning">稿子超过 {MODE_LIMITS.script_soft_chars} 字，建议精简（最多 {cap.maxScript} 字）。</p>}
           {analysis.longSentences.length > 0 && <div className="gm-warning">第 {analysis.longSentences.slice(0, 6).map((item) => item.index + 1).join("、")} 句超过 30 字，建议拆开。</div>}
           {mode !== "original" && script.trim() && <details className="gm-writing-tools"><summary>写稿小帮手 <span className="gm-muted gm-small">五要素 · 拍摄清单</span></summary>

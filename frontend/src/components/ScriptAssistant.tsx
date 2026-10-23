@@ -8,14 +8,15 @@ const message = (error: unknown) => error instanceof Error && error.message ? er
  * Write a first draft from a few facts, or polish/rewrite the draft already on the page.
  * The result is shown for review and only replaces the manuscript when the user adopts it; adopting can be undone.
  */
-export default function ScriptAssistant({ mode, script, disabled, maxScript, onApply }: ScriptAssistContext) {
+export default function ScriptAssistant({ mode, script, disabled, maxScript, quotes = [], onApply }: ScriptAssistContext) {
   const [brief, setBrief] = useState("");
   const [length, setLength] = useState<AssistLength>("normal");
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState<AssistAction | null>(null);
-  const [result, setResult] = useState<(AssistResult & { action: AssistAction; editInstruction: string }) | null>(null);
+  // `quotes`: what the request asked the AI to keep word for word (the server refused anything else).
+  const [result, setResult] = useState<(AssistResult & { action: AssistAction; editInstruction: string; quotes: readonly string[] }) | null>(null);
   const [error, setError] = useState("");
-  const [adopted, setAdopted] = useState<{ previous: string; text: string } | null>(null);
+  const [adopted, setAdopted] = useState<{ previous: string; text: string; quotes: readonly string[] } | null>(null);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
   // A draft written for one production mode must never be adopted into another: drop everything on a mode change.
@@ -31,17 +32,20 @@ export default function ScriptAssistant({ mode, script, disabled, maxScript, onA
   }
   const hasScript = script.trim().length > 0;
   const mixed = mode === "mixed";
+  const kept = mixed ? quotes : [];
 
   async function run(action: AssistAction, editInstruction = "") {
     if (busy || disabled) return;
     controller.current?.abort();
     const abort = new AbortController(); controller.current = abort;
     setBusy(action); setError(""); setResult(null);
+    // A new draft keeps nothing of the old manuscript; an edit must keep every sentence typed as original sound.
+    const sent = action === "edit" ? [...kept] : [];
     try {
       const value = await requestScriptAssist(action === "write"
         ? { action, mode: mode as "voiceover" | "mixed", brief, instruction: instruction.trim(), length }
-        : { action, mode: mode as "voiceover" | "mixed", text: script, instruction: editInstruction.trim() }, abort.signal);
-      if (controller.current === abort && !abort.signal.aborted) setResult({ ...value, action, editInstruction });
+        : { action, mode: mode as "voiceover" | "mixed", text: script, instruction: editInstruction.trim(), ...(sent.length ? { quotes: sent } : {}) }, abort.signal);
+      if (controller.current === abort && !abort.signal.aborted) setResult({ ...value, action, editInstruction, quotes: sent });
     } catch (failure) {
       if (!abort.signal.aborted) setError(message(failure));
     } finally {
@@ -50,12 +54,12 @@ export default function ScriptAssistant({ mode, script, disabled, maxScript, onA
   }
   function adopt() {
     if (!result) return;
-    setAdopted({ previous: script, text: result.text });
-    onApply(result.text); setResult(null);
+    setAdopted({ previous: script, text: result.text, quotes: result.quotes });
+    onApply(result.text, result.quotes); setResult(null);
   }
   function undo() {
     if (!adopted) return;
-    onApply(adopted.previous); setAdopted(null);
+    onApply(adopted.previous, adopted.quotes); setAdopted(null);
   }
   function cancel() { controller.current?.abort(); controller.current = null; setBusy(null); }
 
@@ -85,6 +89,7 @@ export default function ScriptAssistant({ mode, script, disabled, maxScript, onA
         <button type="button" className="gm-small-button gm-assist-go" data-control="assist-edit" disabled={disabled || busy !== null || !hasScript || !instruction.trim()}
           onClick={() => void run("edit", instruction)}>{busy === "edit" ? "AI 正在改…" : "按要求修改"}</button>
       </div>
+      {kept.length > 0 && <p className="gm-muted gm-small" data-testid="script-assist-quotes">AI 修改时，稿子里的 {kept.length} 句原声会逐字保留。</p>}
     </div>
     {busy && <p role="status" className="gm-assist-busy">AI {busy === "write" ? "正在写稿" : "正在修改"}…<button type="button" className="gm-small-button" data-control="assist-cancel" onClick={cancel}>取消</button></p>}
     {error && <p className="gm-danger-text gm-small" role="alert" data-testid="script-assist-error">{error}稿子没有被改动。</p>}

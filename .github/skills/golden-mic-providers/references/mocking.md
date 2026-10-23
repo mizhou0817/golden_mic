@@ -25,7 +25,7 @@
 | 开始制作时的媒体准备 | `backend.media_input.create_asr_provider`（media_input.py:30） |
 | 画面理解 | `backend.providers.vision.VisionProvider.from_settings`（类方法，打在类上） |
 | workbench 里的服务 | `backend.workbench.EmbeddingProvider.from_settings`、`backend.workbench.LLMProvider.from_settings`、`backend.workbench.create_tts_provider` |
-| AI 写作 | `patch.object(LLMProvider, "validate_configuration" / "complete_text", AsyncMock(...))`（tests/test_v2_script_assist.py:148-155） |
+| AI 写作 | `patch.object(LLMProvider, "validate_configuration" / "complete_text", AsyncMock(...))`（tests/test_v2_script_assist.py:179-186） |
 | 视频向量的全局并发控制器 | 测试前后调用 `reset_video_embedding_controllers()`（tests/test_embedding_concurrency.py:15-21） |
 
 `workbench.py:993` 在函数内部导入 ASR（`from .providers.asr import create_asr_provider`），所以要打在 `backend.providers.asr.create_asr_provider`；`backend.workbench` 里没有这个名字，patch 它会报 AttributeError。仓库里还没有用例走这条路径，这个写法是读代码得出的，写第一个用例时先验证。

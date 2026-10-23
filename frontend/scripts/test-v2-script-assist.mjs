@@ -39,7 +39,7 @@ test('assist request validation rejects empty or oversized input before any netw
 });
 
 // ---- the component, in a real browser
-async function open(mode, script, handler) {
+async function open(mode, script, handler, quotes) {
   const browser = await launchBrowser({ headless: true });
   const context = await browser.newContext({ offline: true, serviceWorkers: 'block', acceptDownloads: false });
   const requests = [];
@@ -64,11 +64,12 @@ async function open(mode, script, handler) {
     const compModule={exports:{}};(function(module,exports,require){${compile(read('../src/components/ScriptAssistant.tsx'))}\n})(compModule,compModule.exports,name=>{
       if(name==='react')return React;if(name==='react/jsx-runtime')throw Error('classic jsx expected');if(name==='../lib/scriptAssist')return libModule.exports;throw Error('x '+name);});
     const Assistant=compModule.exports.default;
-    window.applied=[];
+    window.applied=[];window.appliedQuotes=[];
     function Host(){const [script,setScript]=React.useState(${JSON.stringify(script)}),[mode,setMode]=React.useState(${JSON.stringify(mode)});
       window.setScript=setScript;window.setMode=setMode;
       return React.createElement('div',{className:'gm-create-wizard'},React.createElement('output',{id:'script'},script),
-        React.createElement(Assistant,{mode,script,disabled:false,maxScript:3000,onApply:t=>{window.applied.push(t);setScript(t);}}));}
+        React.createElement(Assistant,{mode,script,disabled:false,maxScript:3000,${quotes ? `quotes:${JSON.stringify(quotes)},` : ''}
+          onApply:(t,q)=>{window.applied.push(t);window.appliedQuotes.push(q===undefined?null:q);setScript(t);}}));}
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Host));
   ` });
   return { browser, context, page, requests, errors };
@@ -117,6 +118,31 @@ test('edit: quick edits and custom requests send the current text; undo disappea
     assert.deepEqual(plain({ ...h.requests[2], text: '' }), { action: 'edit', mode: 'mixed', text: '', instruction: '缩短到 100 字' });
     assert.equal(h.requests[2].text, '用户又手动改了');
   } finally { await h.context.close(); await h.browser.close(); }
+});
+
+test('B mode: every edit sends the sentences typed as original sound; adopting and undoing hand them back to the page', async () => {
+  const quotes = ['今年收成很好', '大家都很高兴'], before = '标题\n村民说，今年收成很好，大家都很高兴。', after = '标题\n一位村民说，今年收成很好，大家都很高兴。';
+  const h = await open('mixed', before, (route, body) => ok(body.action === 'edit' ? after : '新标题\n新的旁白。')(route), quotes);
+  try {
+    const { page } = h;
+    assert.match(await page.locator('[data-testid=script-assist-quotes]').textContent(), /2 句原声会逐字保留/);
+    await page.getByRole('button', { name: '润色，更通顺' }).click(); await page.locator('[data-testid=script-assist-result]').waitFor();
+    assert.deepEqual(plain(h.requests[0].quotes), quotes);
+    await page.locator('[data-control=assist-adopt]').click(); await page.locator('[data-control=assist-undo]').click();
+    assert.deepEqual(await page.evaluate(() => [window.applied, window.appliedQuotes]), [[after, before], [quotes, quotes]]);
+    await page.getByLabel(/写几句要点/).fill('要点'); await page.locator('[data-control=assist-write]').click();
+    await page.locator('[data-testid=script-assist-result]').waitFor();
+    assert.equal('quotes' in h.requests[1], false, 'a new draft keeps nothing of the old manuscript');
+    await page.locator('[data-control=assist-adopt]').click();
+    assert.deepEqual(await page.evaluate(() => window.appliedQuotes.at(-1)), []);
+    assert.deepEqual(h.errors, []);
+  } finally { await h.context.close(); await h.browser.close(); }
+  const voiceover = await open('voiceover', before, ok(after), quotes);
+  try {
+    assert.equal(await voiceover.page.locator('[data-testid=script-assist-quotes]').count(), 0);
+    await voiceover.page.getByRole('button', { name: '润色，更通顺' }).click(); await voiceover.page.locator('[data-testid=script-assist-result]').waitFor();
+    assert.equal('quotes' in voiceover.requests[0], false, 'A mode reads every line as narration');
+  } finally { await voiceover.context.close(); await voiceover.browser.close(); }
 });
 
 test('changing the production mode discards any pending AI draft, a running request and the undo', async () => {

@@ -25,26 +25,26 @@ description: 用于在金话筒后端新增或修改 HTTP 接口（FastAPI 路�
 - **V2 链路。** 草稿回执 → 在该任务下分块上传 → complete/探测/预转写 → 对齐预览 → 显式 start → 异步制作 → apply 产生新版本 → 检查和导出（`docs/DEVELOPMENT.md` 第 2 节）。
 - **§1.4 的接口大多已经存在。** 交接文档 §12 原先列为"需新增后端"的 pretranscribe、align、apply（剪短 `trims`、换段 `takes`、换画面 `replaces`、转旁白 `to_narration`、改说话人 `speakers`）、versions、restore、recordings、exports，代码里都已经有了（2026-10-22 §12 已按代码更新），见 [references/endpoints.md](references/endpoints.md)。**先扩展现有接口，不要另起一套。**
 - **路由挂载。**
-  - 路由由各模块的工厂函数创建：`create_draft_router`（`drafts.py`）、`create_workbench_router`（`workbench.py`）、`create_v2_editing_router`（`v2_editing.py`）、`create_upload_router`（`uploads.py`）。它们在 `main.py:1329-1366` 挂载，必须排在兜底路由 `/api/{unmatched_path:path}`（`main.py:1568`）之前。
+  - 路由由各模块的工厂函数创建：`create_draft_router`（`drafts.py`）、`create_workbench_router`（`workbench.py`）、`create_v2_editing_router`（`v2_editing.py`）、`create_upload_router`（`uploads.py`）。它们在 `main.py:1331-1368` 挂载，必须排在兜底路由 `/api/{unmatched_path:path}`（`main.py:1570`）之前。
   - 工厂是惰性的：导入模块或生成 OpenAPI 时不能打开存储（`main.py:92-95`）。
-- **鉴权回调** 的签名是 `authorize(request, task_id, write=False)`（`main.py:878-894`）。
-  - V2 任务即使从本机访问也必须带 `X-Task-Token`（`main.py:862-867`）。
-  - 凭据有误一律返回 404；能证明任务已删除时返回 410 `{"code":"task_gone"}`（`main.py:835-876`）。
+- **鉴权回调** 的签名是 `authorize(request, task_id, write=False)`（`main.py:880-896`）。
+  - V2 任务即使从本机访问也必须带 `X-Task-Token`（`main.py:864-869`）。
+  - 凭据有误一律返回 404；能证明任务已删除时返回 410 `{"code":"task_gone"}`（`main.py:837-878`）。
   - 后端不返回 401。
 
 ## 规则
 
 ### 1. 鉴权、Origin 与 CSRF
-- **写路径要在前缀列表里。** 排空（503）、Origin 检查（403）、生产环境 CSRF（403，响应头 `X-Anonymous-Session: required`）都按前缀生效，列表在 `main.py:1245-1271`。新增顶层前缀时要同步这些列表。
+- **写路径要在前缀列表里。** 排空（503）、Origin 检查（403）、生产环境 CSRF（403，响应头 `X-Anonymous-Session: required`）都按前缀生效，列表在 `main.py:1247-1273`。新增顶层前缀时要同步这些列表。
 - **新的自定义请求头** 要加进 CORS 的 `allow_headers`（`main.py:326`）。
-- **读完请求体后再复核一次授权**，写法参照 `main.py:907-910`（metadata）和 `workbench.py:1040-1048`（`mutation_intent`：先 `before_mutation` 复核，再 `ready()`）。
+- **读完请求体后再复核一次授权**，写法参照 `main.py:909-912`（metadata）和 `workbench.py:1040-1048`（`mutation_intent`：先 `before_mutation` 复核，再 `ready()`）。
 - **不新增 401。** 凭据失败返回 404，不暴露任务是否存在。
 
 ### 2. 请求体
 - **长度和上限。** `/api/tasks/` 下的写请求必须带 Content-Length，缺了返回 411。默认上限 256 KiB，`recordings` 为 21 MiB，分片 PUT 为 8 MiB，超限返回 413（`main.py:251-266`）。
 - **读取方式。** JSON 要用有上限、有超时的读取函数：`main._bounded_json`、`drafts.bounded_json`、`v2_editing.parse_request`。
 - **请求模型** 用 strict、禁止额外字段，参照 `ApplyRequest`（`v2_editing.py:166-193`）。
-- **OpenAPI。** 手动读取请求体的路由，要用 `openapi_extra` 声明请求体（`main.py:653-657`），或登记进 `_openapi_document`（`main.py:1537-1544`）。生产环境关闭 OpenAPI（`config.py:202-203`）。
+- **OpenAPI。** 手动读取请求体的路由，要用 `openapi_extra` 声明请求体（`main.py:653-657`），或登记进 `_openapi_document`（`main.py:1539-1546`）。生产环境关闭 OpenAPI（`config.py:202-203`）。
 
 ### 3. 状态码和错误体
 - **按约定选状态码**，不新造含义。对照表见 [references/status-codes.md](references/status-codes.md)。

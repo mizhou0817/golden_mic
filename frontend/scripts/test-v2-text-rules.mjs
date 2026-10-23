@@ -112,6 +112,20 @@ test('reconcileManual keeps new source endings while carrying manual kinds and s
   assert.throws(() => pm.reconcileManual(parsed, old, { 0: 'bad' }, 'mixed'));
   assert.equal(JSON.stringify({ old, parsed }), before);
 });
+test('restoreQuoteMarks marks the quotes an AI edit kept again wherever they moved, in order, with their hints', () => {
+  const old = pm.parseModeScript('标题\n村民说，今年收成很好，大家都很高兴。\n旁白二。', 'mixed', { 1: 'quote', 2: 'quote' });
+  old[1].source_hint = { upload_id: 'u', seg_id: 's' }; old[1].speaker_hint = 'S1';
+  const parsed = pm.parseModeScript('标题\n记者走进村子。\n今年收成很好，大家都很高兴！\n大家都很高兴。', 'mixed'), before = JSON.stringify({ old, parsed });
+  const { rows, marked } = pm.restoreQuoteMarks(parsed, old, ['今年收成很好', '大家都很高兴']);
+  assert.deepEqual(plain(rows.map(s => [s.text, s.kind, s.terminal_punctuation])),
+    [['记者走进村子', 'narration', '。'], ['今年收成很好', 'quote', '，'], ['大家都很高兴', 'quote', '！'], ['大家都很高兴', 'narration', '。']]);
+  assert.deepEqual(plain(marked), [1, 2]);
+  assert.deepEqual(plain(rows[1].source_hint), { upload_id: 'u', seg_id: 's' }); assert.equal(rows[1].speaker_hint, 'S1');
+  assert.equal(rows[2].source_hint, undefined); assert.equal(rows[2].speaker_hint, '');
+  assert.deepEqual(plain(pm.restoreQuoteMarks(parsed, old, []).rows), plain(parsed));
+  assert.deepEqual(plain(pm.restoreQuoteMarks(parsed, old, ['大家都很高兴', '今年收成很好']).marked), [2], 'order counts, as on the server');
+  assert.equal(JSON.stringify({ old, parsed }), before);
+});
 test('C sample has three factual rows without invented clocks or total duration', () => {
   const sample = cases.samples.find(c => c.mode === 'original');
   const rows = pm.parseModeScript(sample.script, sample.mode);

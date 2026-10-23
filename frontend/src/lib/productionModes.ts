@@ -265,6 +265,29 @@ export function reconcileManual(
   });
 }
 
+/** After an adopted AI edit, or undoing one: the request listed these original-sound sentences, and the server
+ * refused any answer that did not keep each of them as a whole sentence, in this order. Mark them as original
+ * sound again wherever they now stand, with the source and speaker hints they had. Rows are matched in order,
+ * first match first, as the server checked them; `marked` lists the rows this turned from narration into quotes.
+ */
+export function restoreQuoteMarks(
+  parsed: readonly SentenceInput[], previous: readonly SentenceInput[], quotes: readonly string[],
+): { rows: SentenceInput[]; marked: number[] } {
+  const sources = previous.filter(row => row.kind === "quote"), used = new Set<SentenceInput>(), marked: number[] = [];
+  let next = 0;
+  const rows = parsed.map(sentence => {
+    if (next >= quotes.length || sentence.text !== quotes[next]) return sentence;
+    next++;
+    const old = sources.find(row => !used.has(row) && row.text === sentence.text);
+    if (old) used.add(old);
+    if (sentence.kind !== "quote") marked.push(sentence.idx);
+    return { ...sentence, kind: "quote" as const,
+      ...(old?.source_hint ? { source_hint: { ...old.source_hint } } : {}),
+      speaker_hint: sentence.speaker_hint || (old?.source_hint ? old.speaker_hint : "") };
+  });
+  return { rows, marked };
+}
+
 const boundary = (character: string) => whitespace.test(character) || /[\p{P}\p{Z}\p{S}]/u.test(character);
 const fillers = ["就是说", "那个", "就是", "然后", "嗯", "啊", "呃"];
 const discourseNext = ["我们", "我", "你", "他们", "他", "她", "大家", "想", "希望", "要", "再", "今天", "这个", "其实"];

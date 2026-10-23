@@ -204,7 +204,7 @@ test('NFKC, combining accents, Jamo and locale-independent casefold are stable',
 test('original text evidence rejects inserted words and noncontiguous deletion, including interior fillers', () => {
   assert.equal(modes.quoteTextEvidence('今天欢迎大家', '前文今天欢迎大家后文').contiguous, true);
   assert.equal(modes.quoteTextEvidence('我们欢迎大家', '我们今天欢迎大家').unverified, true);
-  assert.equal(modes.quoteTextEvidence('我们，嗯，欢迎大家', '我们欢迎大家').unverified, true);
+  assert.equal(modes.quoteTextEvidence('我们，嗯，欢迎大家', '我们欢迎大家').unverified, true);
   // The recognizer heard '那边比较旺一点' this time: the typed line is blocked in 只用原声, and taking the
   // transcript's exact words (what “改成素材里的原话” does) passes the same literal check.
   assert.equal(modes.quoteTextEvidence('那边比较方便', '那边比较旺一点。').unverified, true);
@@ -681,6 +681,22 @@ test('AI 自动选效果 applies the whole suggested choice in one click, keeps 
   assert.ok(h.content(h.tree).includes('AI 已选好：solemn/slow/false（悼念活动）'));
   h.click('撤销'); assert.deepEqual(plain(h.drafts.at(-1).preferences), before);
   assert.ok(!h.content(h.tree).includes('AI 已选好')); h.unmount();
+});
+
+test('an adopted AI edit and its undo keep hand-marked original sound marked, even where it moved', () => {
+  let assistant;
+  const script = '采访标题\n村民说，今年收成很好，大家都很高兴。\n旁白二。', edited = '采访标题\n记者走进村子。\n一位村民告诉记者。\n今年收成很好，大家都很高兴！';
+  const make = () => wizardHarness({ draft: draft({ script, mode: 'mixed', preferences: modes.defaultModePreferences('mixed'), sentenceKinds: { 1: 'quote', 2: 'quote' } }),
+    props: { scriptAssistant: context => { assistant = context; return null; } } });
+  const h = make(), quotes = plain(assistant.quotes);
+  assert.deepEqual(quotes, ['今年收成很好', '大家都很高兴'], 'hand marks go to the assistant although their line has no 同期 prefix');
+  assistant.onApply(edited, quotes); h.flush();
+  assert.deepEqual(plain(h.drafts.at(-1).sentenceKinds), { 2: 'quote', 3: 'quote' });
+  assert.deepEqual(plain(h.drafts.at(-1).sentences.map(row => row.kind)), ['narration', 'narration', 'quote', 'quote']);
+  assistant.onApply(script, quotes); h.flush();  // undo
+  assert.deepEqual(plain(h.drafts.at(-1).sentenceKinds), { 1: 'quote', 2: 'quote' }); h.unmount();
+  const typed = make(); typed.script(edited);  // typed by hand, a mark survives only on an identical row at the same index
+  assert.deepEqual(plain(typed.drafts.at(-1).sentenceKinds), {}); typed.unmount();
 });
 
 test('blank original mode can enter uploads without weakening the normal-script minimum', () => {

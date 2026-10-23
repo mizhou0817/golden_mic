@@ -87,6 +87,37 @@ class CleaningAndChecksTests(unittest.TestCase):
                     with self.assertRaises(sa.ScriptAssistError):
                         sa.check_result(action="edit", mode="mixed", brief="", text=original, result=changed)
 
+    def test_hand_marked_quotes_are_listed_in_the_prompt_and_kept_word_for_word(self):
+        # Typed as original sound by hand on the matching page: the line itself has no 同期 prefix.
+        original = "标题\n村民说，今年收成很好，大家都很高兴。\n旁白二。"
+        quotes = ["今年收成很好", "大家都很高兴"]
+        system, user = sa.build_prompts(action="edit", mode="mixed", brief="", text=original, instruction="", length="normal", quotes=quotes)
+        self.assertIn(sa.MARKED_QUOTES_RULE, system)
+        self.assertTrue(user.endswith("【原声句】\n今年收成很好\n大家都很高兴"), user)
+        plain_system, plain_user = sa.build_prompts(action="edit", mode="mixed", brief="", text=original, instruction="", length="normal")
+        self.assertNotIn("原声句", plain_system + plain_user)
+        kept, warnings = sa.check_result(action="edit", mode="mixed", brief="", text=original, quotes=quotes,
+                                         result="标题\n一位村民告诉记者。\n今年收成很好，大家都很高兴！\n更顺的旁白二。")
+        self.assertEqual(warnings, []); self.assertIn("今年收成很好，大家都很高兴", kept)
+        for changed in ("标题\n村民说，今年收成非常好，大家都很高兴。\n旁白二。",  # reworded
+                        "标题\n村民说今年收成很好，大家都很高兴。\n旁白二。",  # merged into another sentence
+                        "标题\n村民说，大家都很高兴，今年收成很好。\n旁白二。",  # order changed
+                        "标题\n村民说，大家都很高兴。\n旁白二。",  # dropped
+                        "标题\n同期：今年收成很好，大家都很高兴。\n旁白二。"):  # a new 同期 line, cut only at 。！？
+            with self.subTest(changed=changed), self.assertRaises(sa.ScriptAssistError):
+                sa.check_result(action="edit", mode="mixed", brief="", text=original, result=changed, quotes=quotes)
+
+    def test_quotes_belong_to_a_mixed_mode_edit_and_must_be_whole_sentences_of_it_in_order(self):
+        import asyncio
+        provider = AsyncMock()
+        text = "标题\n今年收成很好，大家都很高兴。"
+        for action, mode, quotes in (("write", "mixed", ["今年收成很好"]), ("edit", "voiceover", ["今年收成很好"]),
+                                     ("edit", "mixed", ["收成很好"]), ("edit", "mixed", ["大家都很高兴", "今年收成很好"])):
+            with self.subTest(action=action, mode=mode, quotes=quotes), self.assertRaises(sa.ScriptAssistError):
+                asyncio.run(sa.assist_script(provider, action=action, mode=mode, brief="要点", text=text, instruction="",
+                                             length="normal", quotes=quotes))
+        provider.complete_text.assert_not_called()
+
     def test_the_prompt_freezes_exactly_what_the_guard_freezes(self):
         mixed, _ = sa.build_prompts(action="edit", mode="mixed", brief="", text="标题\n正文", instruction="", length="normal")
         self.assertIn("姓名（身份）：", mixed)
@@ -167,6 +198,18 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
         with self.valid, patch.object(LLMProvider, "complete_text", AsyncMock(return_value="标题\n更好的旁白。\n同期：这是一句被改过的原话。")):
             bad = await self.post({"action": "edit", "mode": "mixed", "text": text})
         self.assertEqual(bad.status_code, 422); self.assertIn("同期", bad.text)
+
+    async def test_edit_keeps_hand_marked_quotes_or_is_refused(self):
+        body = {"action": "edit", "mode": "mixed", "text": "标题\n村民说，今年收成很好。", "quotes": ["今年收成很好"]}
+        with self.valid, patch.object(LLMProvider, "complete_text", AsyncMock(return_value="标题\n一位村民说，今年收成很好。")) as model:
+            ok = await self.post(body)
+        self.assertEqual(ok.status_code, 200, ok.text)
+        self.assertTrue(model.await_args.args[1].endswith("【原声句】\n今年收成很好"))
+        with self.valid, patch.object(LLMProvider, "complete_text", AsyncMock(return_value="标题\n村民说，今年收成相当好。")):
+            bad = await self.post(body)
+        self.assertEqual(bad.status_code, 422); self.assertIn("标成原声", bad.text)
+        for quotes in ([""], ["x" * 3001], "今年收成很好", [1]):
+            self.assertEqual((await self.post({**body, "quotes": quotes})).status_code, 422, quotes)
 
     async def test_original_sound_mode_is_refused_before_any_model_call(self):
         with self.valid, patch.object(LLMProvider, "complete_text", AsyncMock()) as model:

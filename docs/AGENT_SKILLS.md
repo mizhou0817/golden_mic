@@ -211,6 +211,7 @@ $gh = "C:\Program Files\GitHub CLI\gh.exe"
   - 文档：skill 里的 `文件:行` 出处按当前代码重新对过；补齐了各 skill 缺的“示例”和“验证”；第 8 节给每个 skill 都配了测试提问。
 - 2026-10-23 按维护者的决定：
   - CI：`.github/workflows/linux-ci.yml` 先跑 `scripts/validate_agent_skills.py`，`deploy/docker/update.sh` 也纳入 `bash -n` 和 shellcheck（本机用 actionlint 和 shellcheck 0.9、0.11 核对过）。
+  - 代码：B 模式的 AI 润色看得到手动标成原声的句子（请求带 `quotes`，改动、拆开、合并、调序或删掉任何一句都作废），采用或撤销后仍标为原声；gm-news-integrity 和 USER_GUIDE 已同步。
 - 自建 skill 里的数字和行号都标了核对日期。改了 `mode_rules.json`、检查码、阈值、接口或界面术语后，要同步更新对应的 skill。
 
 ## 8. 试用和验证
