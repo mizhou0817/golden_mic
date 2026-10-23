@@ -120,10 +120,20 @@ class ValidationEnvironmentTests(unittest.TestCase):
 
     def test_darwin_homebrew_style_links_resolve_to_paired_real_tools(self):
         encoder, probe = self.tool("Cellar/ffmpeg/1/bin/ffmpeg"), self.tool("Cellar/ffmpeg/1/bin/ffprobe")
-        (self.root / "bin").mkdir()
-        links = {"ffmpeg": self.root / "bin/ffmpeg", "ffprobe": self.root / "bin/ffprobe"}
-        links["ffmpeg"].symlink_to(encoder)
-        links["ffprobe"].symlink_to(probe)
+        if os.name == "nt":
+            # File symlinks need Developer Mode or an elevated shell on Windows (WinError 1314).
+            # Link the keg directory instead, like Homebrew's opt/ffmpeg -> Cellar/ffmpeg/1.
+            import _winapi
+            keg = self.root / "opt/ffmpeg"
+            keg.parent.mkdir()
+            _winapi.CreateJunction(str(encoder.parents[1]), str(keg))
+            self.addCleanup(os.rmdir, keg)
+            links = {"ffmpeg": keg / "bin/ffmpeg", "ffprobe": keg / "bin/ffprobe"}
+        else:
+            (self.root / "bin").mkdir()
+            links = {"ffmpeg": self.root / "bin/ffmpeg", "ffprobe": self.root / "bin/ffprobe"}
+            links["ffmpeg"].symlink_to(encoder)
+            links["ffprobe"].symlink_to(probe)
         with patch.object(bootstrap.shutil, "which", side_effect=lambda name, **kw: str(links[name]) if name in links else None):
             self.assertEqual(bootstrap.media_tools({"PATH": "explicit"}, platform="darwin"),
                              (encoder.resolve(), probe.resolve()))

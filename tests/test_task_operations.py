@@ -585,7 +585,13 @@ class TaskOperationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(set(self.root.iterdir()), roots)
 
     def test_nested_snapshot_exceeds_max_path_without_shortening_task_identity(self) -> None:
-        source = synthetic_record(self.manager, complete=True)
+        # Pad DATA_DIR to 100 characters: with a short TEMP (a short user name)
+        # the expansion below would otherwise stay under MAX_PATH.
+        data_dir = self.root.parent / "data"
+        data_dir = data_dir.with_name("data" + "-" * max(0, 100 - len(str(data_dir))))
+        data_dir.mkdir()
+        settings = isolated_settings(data_dir)
+        source = synthetic_record(TaskManager(settings, UploadCapacityGuard(settings)), complete=True)
         # Reproduce the real task / .workbench-UUID / revisions /
         # .snapshot-UUID / revision.json.UUID.tmp expansion on Windows.
         workspace = source.task_dir / (".workbench-" + "b" * 32)

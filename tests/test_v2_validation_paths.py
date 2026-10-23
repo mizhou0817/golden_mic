@@ -93,6 +93,12 @@ class ValidationPathTests(unittest.TestCase):
             with self.assertRaises(core.SafetyViolation):
                 self.guard.audit("os.symlink", (str(self.root / "source"), "destination", 72))
 
+    def test_junction_target_and_link_stay_owned(self):
+        self.guard.audit("_winapi.CreateJunction", (str(self.root / "target"), str(self.root / "link")))
+        for target, link in ((self.foreign / "target", self.root / "link"), (self.root / "target", self.foreign / "link")):
+            with self.subTest(target=target, link=link), self.assertRaises(core.SafetyViolation):
+                self.guard.audit("_winapi.CreateJunction", (str(target), str(link)))
+
     def test_open_audit_preserves_original_fd_and_clears_context(self):
         def native(file, flags, mode, *, dir_fd=None):
             self.guard.audit("open", (os.fspath(file), None, flags | getattr(os, "O_CLOEXEC", 0)))

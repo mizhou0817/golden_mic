@@ -705,12 +705,19 @@ class _MainCases(unittest.TestCase):
         self.assertEqual(stranger.post("/api/tasks", headers=valid).status_code, 403)
         # Correct session/CSRF does not itself grant access to any task.
         self.assertEqual(self.client.delete(self.path(), headers=valid).status_code, 404)
-        for expected in (413, 413, 429):
-            response = self.client.post("/api/tasks", headers={**valid, "Content-Length": "6000000000"})
+        # An oversized body is refused from its declared length and spends no start budget.
+        oversized = str(self.settings.request_body_limit_bytes + 1)
+        for _ in range(3):
+            response = self.client.post("/api/tasks", headers={**valid, "Content-Length": oversized})
+            self.assertEqual(response.status_code, 413)
+        # A legacy multipart start spends the session budget (2 per hour) before its
+        # form is read, so starts rejected afterwards (an empty script: 400) count too.
+        for expected in (400, 400, 429):
+            response = self.client.post("/api/tasks", headers={**valid, "Content-Length": "1024"})
             self.assertEqual(response.status_code, expected)
         # Quota identity ignores client-spoofed authenticated usernames.
         self.assertEqual(self.client.post("/api/tasks", headers={
-            **valid, "Content-Length": "6000000000", "X-Authenticated-User": "another-operator",
+            **valid, "Content-Length": "1024", "X-Authenticated-User": "another-operator",
         }).status_code, 429)
 
 

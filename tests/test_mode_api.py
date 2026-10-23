@@ -151,12 +151,14 @@ class ModeAPIIsolationTest(unittest.TestCase):
                                PYTHONDONTWRITEBYTECODE="1", MODE_API_TEMP=str(root),
                                APP_ENV="test", DATA_DIR=str(root / "unused-environment-data"),
                                TEMP=str(scratch), TMP=str(scratch), TMPDIR=str(scratch))
+            # The child runs about 40 contract cases with asyncio debug on: about 70 s on an idle machine, 300 s on a
+            # busy one (2026-10-23). The timeout only catches a hung child, so it leaves room for slow machines.
             result = subprocess.run(
                 [sys.executable, "-B", "-m", "tests.test_mode_api", CHILD_FLAG],
                 # Stream redacted case names/failures to the owning runner so
                 # interruption cannot hide all progress behind communicate().
                 cwd=working, env=environment, stdout=subprocess.PIPE, text=True,
-                encoding="utf-8", errors="replace", timeout=180, check=False,
+                encoding="utf-8", errors="replace", timeout=900, check=False,
             )
             output = _redact(result.stdout)
             self.assertEqual(result.returncode, 0, output)
@@ -688,7 +690,10 @@ class _Contracts(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(token, json.dumps(snapshot))
         self.assertNotIn("token=", snapshot["thumb_url"])
 
-    async def test_upload_extension_mime_size_and_twenty_file_cap(self):
+    async def test_upload_extension_mime_size_and_hourly_upload_cap(self):
+        # The 20-file limit applies to one work (MAX_WORK_FILES, checked when the
+        # work is created); new uploads are capped per visitor and hour.
+        from backend.uploads import OWNER_CREATIONS_PER_HOUR
         common = {"bytes": 1, "sha256": hashlib.sha256(b"x").hexdigest()}
         cases = [("clip.webm", "video/webm", 415), ("photo.raw", "application/octet-stream", 415),
                  ("clip.mp4", "image/png", 415), ("../clip.mp4", "video/mp4", 422)]
@@ -697,7 +702,7 @@ class _Contracts(unittest.IsolatedAsyncioTestCase):
                 self.status(await self.client.post("/api/uploads", json={**common, "name": name, "content_type": mime}), expected)
         self.status(await self.client.post("/api/uploads", json={**common, "name": "photo.png", "bytes": 50 * 1024**2 + 1}), 413)
         self.status(await self.client.post("/api/uploads", json={**common, "name": "clip.mp4", "bytes": 500 * 1024**2 + 1}), 422)
-        for index in range(20):
+        for index in range(OWNER_CREATIONS_PER_HOUR):
             self.status(await self.client.post("/api/uploads", json={**common, "name": f"clip-{index}.mp4"}), 201)
         self.status(await self.client.post("/api/uploads", json={**common, "name": "overflow.mp4"}), 429)
 

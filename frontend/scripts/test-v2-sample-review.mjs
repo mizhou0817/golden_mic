@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { launchBrowser } from './browser.mjs';
-import { realpathSync, readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync, readFileSync, mkdtempSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -15,6 +15,25 @@ import ts from 'typescript';
 // No app host/build, user assets, credentials, persistence, or provider access.
 const require = createRequire(import.meta.url);
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+// The synthetic clip needs an installed H.264 encoder: GM_SAMPLE_FFMPEG, else ffmpeg on PATH, else on Windows the
+// newest WinGet Gyan.FFmpeg build (the one tests/validation_environment.media_tools uses), tried in that order.
+function sampleEncoders(env = process.env) {
+  if (env.GM_SAMPLE_FFMPEG) return [env.GM_SAMPLE_FFMPEG];
+  const builds = [];
+  const packages = process.platform === 'win32' && env.LOCALAPPDATA ? join(env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Packages') : '';
+  const walk = dir => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && entry.name === 'ffmpeg.exe' && existsSync(join(dir, 'ffprobe.exe'))) builds.push(full);
+    }
+  };
+  if (packages && existsSync(packages)) {
+    for (const name of readdirSync(packages)) if (name.startsWith('Gyan.FFmpeg')) walk(join(packages, name));
+  }
+  builds.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+  return ['ffmpeg', ...builds.slice(0, 1)];
+}
 const sources = Object.fromEntries([
   ['api', '../src/lib/appApi.ts'], ['report', '../src/lib/workbenchApi.ts'],
   ['sample', '../src/components/ui/SampleView.tsx'],
@@ -148,9 +167,14 @@ test('offline Edge runtime: actual SampleView + parsers + publicRequest; native 
     // Installed encoder, lavfi only, exclusive TEMP output. Unlike MediaRecorder
     // WebM this has a finalized seek index; never patch currentTime or events.
     const media = join(temp, 'synthetic-public.mp4');
-    const encoded = spawnSync(process.env.GM_SAMPLE_FFMPEG || 'ffmpeg', ['-nostdin', '-v', 'error', '-n',
+    const args = ['-nostdin', '-v', 'error', '-n',
       '-f', 'lavfi', '-i', 'testsrc2=size=160x90:rate=12:duration=4', '-an', '-c:v', 'libx264',
-      '-g', '12', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', media], { windowsHide: true, timeout: 15000 });
+      '-g', '12', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', media];
+    let encoded;
+    for (const encoder of sampleEncoders()) {
+      encoded = spawnSync(encoder, args, { windowsHide: true, timeout: 15000 });
+      if (encoded.error?.code !== 'ENOENT') break;
+    }
     assert.equal(encoded.status, 0, 'TEMP synthetic encoder must succeed');
     videoBytes = readFileSync(media);
     writeFileSync(join(temp, 'synthetic-report.json'), JSON.stringify(response));

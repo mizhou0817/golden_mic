@@ -214,6 +214,11 @@ $gh = "C:\Program Files\GitHub CLI\gh.exe"
   - 代码：B 模式的 AI 润色看得到手动标成原声的句子（请求带 `quotes`，改动、拆开、合并、调序或删掉任何一句都作废），采用或撤销后仍标为原声；gm-news-integrity 和 USER_GUIDE 已同步。
   - gm-ai-labeling：`references/regulations.md` 对照官方原文复核（标识办法含第八条，深度合成规定、生成式 AI 暂行办法、互联网新闻信息服务管理规定）；GB 45438-2025 官方全文在线取不到（只有图片阅读器），第 5.4 条改标为"多源转载"；收录七款同类产品协议的标识与转载条款。新增 `references/terms-clause.md`：用户协议里"人工智能生成合成内容的标识与转载"条款的草案，按金话筒的实际功能写，未经法务审核。
   - 代码：AI 标识第三代（`; template: GM-GFX-DISCLOSURE-V3-20261023`）："AI"放大到 115%，和汉字留约 1/8 em，量得 56 像素（之前 49，要求 54）；每条一个整齐的底框；旧流水线居中的长标题不再被标识盖住（标识让到标题下面，用 libass 渲染核对过，重叠像素从 2117、3386 降到 0）。第一、二代作品导出时按存档字节重新生成。
+  - 测试（第 6 项，本机的基线失败）：
+    - 符号链接测试在 Windows 上改用目录联接模拟 Homebrew 的 `opt/ffmpeg`，不再需要开发者模式；验证运行器的安全守卫对 `_winapi.CreateJunction` 和 `os.symlink` 一样检查，并补了测试。
+    - 过时的断言：`test_mode_api` 的上传上限按每个访客每小时计（`OWNER_CREATIONS_PER_HOUR`），隔离子进程的超时从 180 秒放宽到 900 秒（本机空闲时约 70 秒，繁忙时约 300 秒）；`test_task_operations` 把数据目录补到 100 个字符，结果不再取决于用户名长短；`test_workspace_access` 按现行的请求体上限和启动额度改写。
+    - 前端：`test-v2-sample-review.mjs` 在 PATH 上找不到 ffmpeg 时，按 `tests/validation_environment.media_tools` 的办法用 WinGet 安装的 FFmpeg；创建页的 AI 写作助手在 305 像素宽、20 像素大字时不再横向溢出（三个网格改用 `minmax(0,1fr)` 单列，和同一文件里的其他网格一致）。
+    - 设计清单的 `view_keys` 311 对 357 不是失败：交接文档附录 C-3 的标题写 311，实际是 357。运行器只把差异记在 `design_count_mismatches` 里，不判失败；附录按规定不改，`docs/DESIGN-MAP.md` 已有说明。
 - 自建 skill 里的数字和行号都标了核对日期。改了 `mode_rules.json`、检查码、阈值、接口或界面术语后，要同步更新对应的 skill。
 
 ## 8. 试用和验证

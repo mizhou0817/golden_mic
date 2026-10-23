@@ -196,6 +196,10 @@ class Guards:
             # Relative link targets are relative to the link's parent, not cwd.
             # Keep rejecting links to external/private targets as before.
             self.path(Path(destination).parent / os.fsdecode(arguments[0]), write=True)
+        elif event == "_winapi.CreateJunction":
+            # Windows directory junction (target, link): the same rule as os.symlink.
+            self.path(arguments[1], write=True)
+            self.path(arguments[0], write=True)
         elif event in {"os.listdir", "os.scandir", "sqlite3.connect"}:
             value = arguments[0]
             if event == "sqlite3.connect" and isinstance(value, str) and value.startswith("file:"):
