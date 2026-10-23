@@ -1025,11 +1025,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         )
     title_lines: list[str] = []
     if title and title.strip():
-        title_chunks = split_subtitle_text(title, max_chars=MAX_TITLE_CHARS)
-        if len(title_chunks) > 2:
-            compact_title = "".join(title_chunks).replace(" ", "")
-            title_chunks = [compact_title[:MAX_TITLE_CHARS], compact_title[MAX_TITLE_CHARS:]]
-        title_text = r"\N".join(_escape_ass_text(chunk) for chunk in title_chunks)
+        title_text = r"\N".join(_escape_ass_text(chunk) for chunk in headline_lines(title))
         title_end = min(TITLE_DURATION_SECONDS, events[-1].end if events else TITLE_DURATION_SECONDS)
         title_lines.append(
             f"Dialogue: {SUBTITLE_LAYER + 10},{format_ass_time(0.0)},{format_ass_time(title_end)},"
@@ -1101,10 +1097,17 @@ def _stable_ass_style_line(layout: SubtitleLayout) -> str:
     )
 
 
+def _title_font_size(layout: SubtitleLayout) -> int:
+    return max(layout.font_size, round(layout.frame_height * 0.075))
+
+
+def _title_center_y(layout: SubtitleLayout) -> int:
+    return max(layout.safe_margin_y, round(layout.frame_height * 0.25))
+
+
 def _title_style_line(layout: SubtitleLayout) -> str:
-    title_font_size = max(layout.font_size, round(layout.frame_height * 0.075))
     return (
-        f"Style: {TITLE_STYLE_NAME},{SUBTITLE_FONT_NAME},{title_font_size},"
+        f"Style: {TITLE_STYLE_NAME},{SUBTITLE_FONT_NAME},{_title_font_size(layout)},"
         "&H0000D7FF,&H0000D7FF,&H00101010,&H90000000,-1,0,0,0,100,100,"
         f"{layout.letter_spacing},0,1,{layout.outline_size},{layout.shadow_size},5,"
         f"{layout.safe_margin_x},{layout.safe_margin_x},{layout.safe_margin_y},1"
@@ -1128,8 +1131,49 @@ def _stable_ass_position_tag(layout: SubtitleLayout) -> str:
 
 
 def _title_position_tag(layout: SubtitleLayout) -> str:
-    title_y = max(layout.safe_margin_y, round(layout.frame_height * 0.25))
-    return rf"{{\an5\q2\pos({layout.horizontal_center},{title_y})}}"
+    return rf"{{\an5\q2\pos({layout.horizontal_center},{_title_center_y(layout)})}}"
+
+
+def headline_lines(title: str) -> list[str]:
+    """The lines the centred headline is printed in: MAX_TITLE_CHARS each, at most two."""
+    chunks = split_subtitle_text(title, max_chars=MAX_TITLE_CHARS)
+    if len(chunks) > 2:
+        compact_title = "".join(chunks).replace(" ", "")
+        chunks = [compact_title[:MAX_TITLE_CHARS], compact_title[MAX_TITLE_CHARS:]]
+    return chunks
+
+
+# Noto Sans SC in font units: libass maps the 1448-unit Windows line box (ascent 1160, descent 288) to the font
+# size, and Han ink stays inside the ideographic em box (880 above the baseline, 120 below).
+_FONT_LINE_BOX_UNITS = 1448
+_FONT_ASCENT_UNITS = 1160
+_IDEOGRAPHIC_TOP_UNITS = 880
+_IDEOGRAPHIC_BOTTOM_UNITS = 120
+
+
+def headline_ink_boxes(title: str | None, frame_width: int = DEFAULT_FRAME_WIDTH,
+                       frame_height: int = DEFAULT_FRAME_HEIGHT) -> list[tuple[float, float, float, float]]:
+    """(left, top, right, bottom) of each line of the centred headline in frame pixels, outline and shadow included.
+
+    For overlays that must not cover it (graphics.generate_news_graphics). The width is an upper bound: every
+    character counts as one em, the advance of a Han character, plus the letter spacing.
+    """
+    if not title or not title.strip():
+        return []
+    layout = SubtitleLayout.for_resolution(frame_width, frame_height)
+    size = _title_font_size(layout)
+    unit = size / _FONT_LINE_BOX_UNITS
+    lines = headline_lines(title)
+    top = _title_center_y(layout) - len(lines) * size / 2  # \an5 centres the block of line boxes
+    boxes = []
+    for index, line in enumerate(lines):
+        baseline = top + index * size + _FONT_ASCENT_UNITS * unit
+        half_width = len(line) * (1000 * unit + layout.letter_spacing) / 2
+        boxes.append((layout.horizontal_center - half_width - layout.outline_size,
+                      baseline - _IDEOGRAPHIC_TOP_UNITS * unit - layout.outline_size,
+                      layout.horizontal_center + half_width + layout.outline_size + layout.shadow_size,
+                      baseline + _IDEOGRAPHIC_BOTTOM_UNITS * unit + layout.outline_size + layout.shadow_size))
+    return boxes
 
 
 def _stable_subtitle_rows(text: str) -> list[str]:

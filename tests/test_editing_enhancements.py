@@ -28,7 +28,13 @@ from backend.pipeline import (  # pyright: ignore[reportPrivateUsage]
     _generated_media_intervals,
     _segment_render_options,
 )
-from backend.graphics import DISCLOSURE_MARGIN_V, generate_news_graphics
+from backend.graphics import (  # pyright: ignore[reportPrivateUsage]
+    DISCLOSURE_FONT_SIZE,
+    DISCLOSURE_MARGIN_V,
+    OPENING_DISCLOSURE_TEXT,
+    _label_width,
+    generate_news_graphics,
+)
 from backend.providers.generative import (
     GenerativeFillError,
     GenerativeFillProvider,
@@ -37,14 +43,16 @@ from backend.providers.generative import (
     generative_fill_configured,
     synthesize_fill_clip,
 )
-from backend.rendering import (
+from backend.rendering import (  # pyright: ignore[reportPrivateUsage]
     FinishOptions,
     MusicMixOptions,
     SegmentRenderOptions,
+    _build_graphics_filter,
+    _prepare_ass_font_directory,
     build_edl,
     render_final_video,
 )
-from backend.subtitles import generate_ass_subtitles
+from backend.subtitles import TITLE_DURATION_SECONDS, generate_ass_subtitles, headline_ink_boxes
 from backend.tts_pipeline import probe_audio_duration
 
 
@@ -378,6 +386,41 @@ class EnhancedRenderTest(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(bright(DISCLOSURE_MARGIN_V, DISCLOSURE_MARGIN_V + 100), 100)
             self.assertGreater(bright(DISCLOSURE_MARGIN_V + 100, DISCLOSURE_MARGIN_V + 200), 100)
             self.assertEqual(bright(0, DISCLOSURE_MARGIN_V - 10, 1450, 1900), 0)
+            # GB 45438-2025 5.4 f): every character at least 5% of the short side (54 px), the Latin "AI" included.
+            unit = DISCLOSURE_FONT_SIZE / 1448
+            ai_left = round(1870 - _label_width(OPENING_DISCLOSURE_TEXT) + 3 * 1000 * unit + 8)
+            ai_right = round(ai_left + (641 + 330) * 1.15 * unit)
+            # Half coverage (128) measures the glyph edge itself, whatever the encoder's blur.
+            ink = cv2.inRange(frame[DISCLOSURE_MARGIN_V:DISCLOSURE_MARGIN_V + 100, ai_left:ai_right], (128, 128, 128), (255, 255, 255))
+            rows = [row for row in range(ink.shape[0]) if cv2.countNonZero(ink[row]) > 0]
+            self.assertGreaterEqual(rows[-1] - rows[0] + 1, 54)
+
+    async def test_labels_shown_with_a_long_legacy_headline_never_cover_it(self) -> None:
+        title = "南宁信息港广场迎春市集今天热闹开市啦市民们纷纷前来挑选年货体验非遗手艺"
+        with tempfile.TemporaryDirectory() as directory:
+            task_dir = Path(directory)
+            timing = SentenceTiming(sentence_id=0, text="市民在广场挑选年货。", audio_path="tts/sent_0.mp3",
+                                    duration=6.0, start=0.0, end=6.0, gap_after=0.0)
+            generate_ass_subtitles(task_dir, [timing], title=title)
+            graphics_path = generate_news_graphics(task_dir, topic="", headline="", total_duration=6.0,
+                                                   disclosure_intervals=[(1.0, 6.0)], keep_clear=headline_ink_boxes(title),
+                                                   keep_clear_until=TITLE_DURATION_SECONDS)
+            assert graphics_path is not None
+            fonts = _prepare_ass_font_directory(task_dir, Path(__file__).resolve().parent.parent / "backend" / "assets" / "fonts")
+            frames = {}
+            for name, path in (("headline", task_dir / "subs.ass"), ("labels", graphics_path)):
+                image = task_dir / f"{name}.png"
+                _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=1920x1080:d=3",
+                             "-vf", _build_graphics_filter(path, fonts), "-ss", "1.5", "-frames:v", "1", str(image)])
+                frames[name] = cv2.imread(str(image), cv2.IMREAD_GRAYSCALE)
+            headline = frames["headline"] > 30
+            headline[700:] = False  # the two-line headline, not the dialogue line at the bottom
+            self.assertGreater(cv2.countNonZero(headline.astype("uint8")), 1000)
+            # At 1.5 s the opening label and the shot label are both on screen, below the headline: none of their
+            # pixels (box included) lies on its ink. Without keep_clear they covered its right end.
+            labels = frames["labels"] > 8
+            self.assertGreater(cv2.countNonZero(labels.astype("uint8")), 1000)
+            self.assertEqual(cv2.countNonZero((labels & headline).astype("uint8")), 0)
 
     async def test_motion_and_color_preserve_geometry_and_duration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

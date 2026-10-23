@@ -42,11 +42,11 @@ B 模式稿件里原话的写法：`同期 姓名（身份）：原话`（[USER_
 
 ### 3. AI 示意画面
 - 默认关闭。要同时满足三个条件才会生成：全局 `GENERATIVE_FILL_ENABLED`、配置了 Key、本任务勾选。默认生成的是**视频**（Seedance）。C 模式不可用；涉及实体、日期、机构的事实句子会跳过。
-- 画面上烧录 AI 标注，放在 `graphics.ass` 里，和字幕开关无关；导出时总会烧录 graphics：片头 3 秒"本片含AI生成内容"，每个 AI 镜头期间"AI生成示意画面"，汉字字高不低于最短边的 5%（见 gm-ai-labeling）。
+- 画面上烧录 AI 标注，放在 `graphics.ass` 里，和字幕开关无关；导出时总会烧录 graphics：片头 3 秒"本片含AI生成内容"，每个 AI 镜头期间"AI生成示意画面"，每个字符（包括"AI"）字高都不低于最短边的 5%，不遮挡标题（见 gm-ai-labeling）。
 - 含 AI 披露的作品，服务端用 422 拒绝导出 MP3/SRT（`v2_editing.py`）；含 AI 画面的作品，界面上也不再给这两个选项（`ResultWorkbench.tsx`）。
 - AI 句子会同时触发 `generated_media`（可确认）和不可确认的 MATCH_FALLBACK。
 - 标识是否符合国家标准，见 gm-ai-labeling。
-- 2026-10-22 之前完成的作品保留当时的旧版 graphics.ass（只有 AI 镜头期间的小标识），导出时按存档字节重新生成；片头标识只出现在之后生成的作品里（`graphics.uses_disclosure_v2`）。
+- 作品保留制作时那一代 graphics.ass，导出时按存档字节重新生成（`graphics.read_disclosure_generation`）：2026-10-22 之前是第一代（只有 AI 镜头期间的小标识），2026-10-22 起第二代加了片头标识，2026-10-23 起第三代放大了"AI"、不遮挡旧流水线的长标题。
 
 ### 4. 发布前检查与导出
 - 级别 0 是错误，不能确认，唯一例外是 `generated_media`（`acknowledgeable: true`）。级别 1 是警告，逐项确认；确认键绑定"版本号 + 报告哈希"，版本一变就失效，过期的版本号返回 409。级别 2 只做提示，不计入待确认。

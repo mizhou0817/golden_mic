@@ -232,7 +232,7 @@ sudo bash /opt/goldmic/build/deploy/docker/update.sh
 
 同一时间只能运行一个 update.sh（用 `flock` 锁 `$GM_ROOT/.update.lock`，需要 util-linux）。排空最长约 2 小时，请在 tmux 或 screen 里运行，免得 SSH 断线中断它。`GM_ROOT`（默认 `/opt/goldmic`）、`GM_DRAIN_TIMEOUT`、`GM_HEALTH_TIMEOUT` 用环境变量改，例如 `sudo env GM_DRAIN_TIMEOUT=3600 bash /opt/goldmic/build/deploy/docker/update.sh`。容器已经坏了（崩溃循环、卡住、不回应排空请求）而脚本因此退出时，先看 `docker logs goldmic`；确认里面没有值得保留的作品，再加 `--force` 重跑：跳过排空和等待，直接切换，旧容器里正在做的事会丢，compose 最多等 30 秒让它停下（不是 2 小时的停止宽限期）。脚本被 `kill -9` 这类无法处理的方式结束时，旧容器的排空会残留：它一直拒绝新作品，`/health/ready` 返回 503。手动取消：`sudo docker exec goldmic curl -fsS -X DELETE -H 'Host: localhost' http://127.0.0.1:8000/api/admin/drain`。
 
-回滚到上一版：`sudo bash /opt/goldmic/build/deploy/docker/update.sh --rollback`，同样先排空。回滚只换镜像，不恢复数据或 `goldmic.env`；新版本若已改写数据，先确认旧版本能读。2026-10-22 起完成的作品带新版 AI 标注（`graphics.ass` 里有 `; template: GM-GFX-DISCLOSURE-V2-20261022` 一行），回滚到这之前的版本后，这些作品的导出会返回 422（旧代码重新生成不出同样的标注）；改动前失败的任务的"再试一次"也会返回 409 `retry_inputs_changed`。
+回滚到上一版：`sudo bash /opt/goldmic/build/deploy/docker/update.sh --rollback`，同样先排空。回滚只换镜像，不恢复数据或 `goldmic.env`；新版本若已改写数据，先确认旧版本能读。2026-10-22 起完成的作品带新版 AI 标注（`graphics.ass` 里有 `; template: GM-GFX-DISCLOSURE-V2-20261022` 一行，2026-10-23 起是 `…V3-20261023`），回滚到带这一行的版本之前，这些作品的导出会返回 422（旧代码重新生成不出同样的标注）；改动前失败的任务的"再试一次"也会返回 409 `retry_inputs_changed`。
 
 直接 `docker compose up -d`、`docker restart` 或主机重启都**不会先排空**：容器收到 SIGTERM 后，应用最多等 `SHUTDOWN_GRACE_SECONDS`（模板 6900 秒）让进行中的任务结束，Uvicorn 的 `--timeout-graceful-shutdown` 为 7100 秒，`stop_grace_period: 7200s` 到时强制结束；到时仍在运行的任务会被中止，不会自动续跑。主机上旧的 `docker-compose.yml` 若还是 `stop_grace_period: 60s`，请照模板改为 `7200s`（update.sh 会提示）。数据和配置不受更新影响。
 生产模式要求 HTTPS（`__Host-` 安全 Cookie 与 https Origin），不能用纯 http + IP 访问。

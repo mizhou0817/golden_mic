@@ -19,7 +19,7 @@
 | 队列位置 | 已有 | `task_manager.py:435`；start 的回执里有 `queue` | — |
 | 预计时间（ETA） | 未实现 | — | 交接文档明确不给 ETA，只用阶段权重 |
 | 到期倒计时 | 部分 | 后端给出 `expires_at` 时间戳（`task_metadata.py:52-66`、`drafts.py:585-587`） | 倒计时要前端自己算；修改会重置到期时间 |
-| 人名条烧录 | 已有 | `graphics.generate_mode_graphics`：首次显示 2.5 秒，同一人间隔 60 秒以上再显示，未命名显示"受访者"（`graphics.py:387-453`） | — |
+| 人名条烧录 | 已有 | `graphics.generate_mode_graphics`：首次显示 2.5 秒，同一人间隔 60 秒以上再显示，未命名显示"受访者"（`graphics.py:526-592`） | — |
 | 跳切遮盖 | 已有 | 判定：`production_modes.calculate_jumpcuts`；渲染：`mode_pipeline.build_mode_edl`。细节见 golden-mic-media | — |
 | 样片水印烧录 | **未实现** | 后端没有 watermark 或 drawtext；只有前端用 CSS 叠加（`ResultWorkbench.tsx:898`、`ResultWorkbench.css:337-338`） | 而且 `acknowledge_unresolved` 可以导出不带水印的成片（`v2_editing.py:522-535`） |
 | 五要素、镜头数预估 | 部分 | `production_modes.facts_of`（时间、地点、主办方、数字、称谓）和 `sentence_needs`（`production_modes.py:470-494`） | 没有调用点，也没有接口；"何时、何地、何人、何事、为何"五要素没有实现 |

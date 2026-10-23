@@ -39,8 +39,9 @@ _END_CARD_SECONDS = 2.5
 # GB 45438-2025 5.4: an explicit label on an edge or corner of the frame from the first frame for at
 # least 2 s, its text at least 5% of the frame's short side. libass maps the bundled Noto Sans SC's
 # 1448-unit line box (win ascent + descent) to the ASS font size, so 96 on the 1080 canvas keeps the ink
-# of every Chinese label character (845 units or more, Regular or Bold) above 54 px; the Latin "AI"
-# is shorter, as capitals are. The persistent line of Studio exports is separate (studio_render.subtitle_document).
+# of every Chinese label character (845 units or more, Regular or Bold) above 54 px. The Latin capitals of
+# "AI" (733 or 741 units) only reach it at 115%, which the third label generation draws (below). The
+# persistent line of Studio exports is separate (studio_render.subtitle_document).
 DISCLOSURE_FONT_SIZE = 96
 DISCLOSURE_SHORT_SIDE_RATIO = DISCLOSURE_FONT_SIZE / _PLAY_RES_Y
 OPENING_DISCLOSURE_TEXT = "本片含AI生成内容"
@@ -52,27 +53,59 @@ OPENING_DISCLOSURE_SECONDS = 3.0
 DISCLOSURE_MARGIN_V = 130
 
 # graphics.ass is a hashed artifact that a V2 export regenerates and compares byte for byte
-# (studio.prepare_mode_export), so a work finished before the opening label keeps the overlay it was
-# made with, as the captions keep LEGACY_MODE_CAPTION_TEMPLATE. The current label generation names
-# itself in a comment line; the first generation has none.
-DISCLOSURE_TEMPLATE = "GM-GFX-DISCLOSURE-V2-20261022"
-_DISCLOSURE_MARKER = f"; template: {DISCLOSURE_TEMPLATE}"
+# (studio.prepare_mode_export), so a work keeps the label generation it was made with, as the captions
+# keep LEGACY_MODE_CAPTION_TEMPLATE. Each generation from the second on names itself in a comment line:
+#   1  a small label over each generated shot;
+#   2  2026-10-22: an opening label for the whole video as well, size 96 on the right edge, stacked by libass;
+#   3  2026-10-23: the Latin "AI" at 115% with Han-Latin spacing in one clean box per label, the slots placed
+#      here, and in the legacy pipeline a label moves below the centred headline instead of covering it.
+DISCLOSURE_GENERATION = 3
+_DISCLOSURE_TEMPLATES = {2: "GM-GFX-DISCLOSURE-V2-20261022", 3: "GM-GFX-DISCLOSURE-V3-20261023"}
+DISCLOSURE_TEMPLATE = _DISCLOSURE_TEMPLATES[DISCLOSURE_GENERATION]
+
+# Third-generation label layout, in units of the 1920x1080 canvas. Noto Sans SC Bold metrics in font units (a
+# test reads them from the font file): libass maps the 1448-unit line box (ascent 1160 + descent 288) to the
+# font size; every Han character advances one em (1000 units).
+_LINE_BOX_UNITS = 1448
+_ASCENT_UNITS = 1160
+_LATIN_ADVANCE_UNITS = {"A": 641, "I": 330}
+# Mixed Han and Latin: composite fonts scale the Latin by 105-120%, mostly 110-115%; at 115% the capitals' top meets
+# the Han top. About 1/8 em of space between the scripts (CSS text-autospace): 8 px after the Han character before
+# "AI" (the A's own side bearing leaves 3 px) and 2 px after the I (which already leaves 10 px).
+_LATIN_SCALE = 115
+_SPACE_BEFORE_LATIN = 8
+_SPACE_AFTER_LATIN = 2
+# The larger "AI" makes its line's ascent taller by this much. The text is lifted by it, so its baseline stays where
+# the box (drawn from the same text without the vertical scale, so as tall as one 96 line) expects it.
+_LATIN_LIFT = (_LATIN_SCALE / 100 - 1) * _ASCENT_UNITS / _LINE_BOX_UNITS * DISCLOSURE_FONT_SIZE
+_LABEL_RIGHT = _PLAY_RES_X - 50
+_LABEL_BORDER = 1.5
+_LABEL_PITCH = 100  # one slot: the 96 line box and its box border, the step libass stacked the second generation by
+_KEEP_CLEAR_GAP = 12
 
 
-def uses_disclosure_v2(content: bytes) -> bool:
-    """Whether a stored graphics.ass was written with the opening label (False: first generation)."""
-    return _DISCLOSURE_MARKER.encode("ascii") in content
+def read_disclosure_generation(content: bytes) -> int:
+    """The label generation a stored graphics.ass was written with (1: the first, which has no marker)."""
+    for generation in sorted(_DISCLOSURE_TEMPLATES, reverse=True):
+        if f"; template: {_DISCLOSURE_TEMPLATES[generation]}".encode("ascii") in content:
+            return generation
+    return 1
 
 
-def _header(disclosure_v2: bool = True) -> str:
-    style = (
-        f"Style: GfxDisclosure,Noto Sans SC,{DISCLOSURE_FONT_SIZE},&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H80141018&,-1,0,0,0,100,100,0,0,3,1,0,9,40,50,{DISCLOSURE_MARGIN_V},1\n\n"
-        if disclosure_v2 else
-        "Style: GfxDisclosure,Noto Sans SC,30,&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H80141018&,-1,0,0,0,100,100,0,0,3,1,0,9,40,40,40,1\n\n"
-    )
+def _header(generation: int = DISCLOSURE_GENERATION) -> str:
+    if generation >= 3:
+        # GfxDisclosure draws one box per label (BorderStyle 4, in BackColour) behind the GfxDisclosureText text.
+        style = (
+            f"Style: GfxDisclosure,Noto Sans SC,{DISCLOSURE_FONT_SIZE},&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H00101418&,-1,0,0,0,100,100,0,0,4,{_LABEL_BORDER},0,9,40,50,{DISCLOSURE_MARGIN_V},1\n"
+            f"Style: GfxDisclosureText,Noto Sans SC,{DISCLOSURE_FONT_SIZE},&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H00101418&,-1,0,0,0,100,100,0,0,1,0,0,9,40,50,{DISCLOSURE_MARGIN_V},1\n\n"
+        )
+    elif generation == 2:
+        style = f"Style: GfxDisclosure,Noto Sans SC,{DISCLOSURE_FONT_SIZE},&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H80141018&,-1,0,0,0,100,100,0,0,3,1,0,9,40,50,{DISCLOSURE_MARGIN_V},1\n\n"
+    else:
+        style = "Style: GfxDisclosure,Noto Sans SC,30,&H00FFFFFF&,&H00FFFFFF&,&H00101418&,&H80141018&,-1,0,0,0,100,100,0,0,3,1,0,9,40,40,40,1\n\n"
     return (
         "[Script Info]\n"
-        + (_DISCLOSURE_MARKER + "\n" if disclosure_v2 else "")
+        + (f"; template: {_DISCLOSURE_TEMPLATES[generation]}\n" if generation >= 2 else "")
         + "ScriptType: v4.00+\n"
         "WrapStyle: 2\n"
         "ScaledBorderAndShadow: yes\n"
@@ -157,12 +190,97 @@ def _end_card_events(headline: str, total_duration: float, accent: str) -> list[
     ]
 
 
+def _number(value: float) -> str:
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def _is_han(text: str) -> bool:
+    return len(text) == 1 and "一" <= text <= "鿿"
+
+
+def _label_characters(text: str) -> list[tuple[str, bool, float]]:
+    """(character, part of the scaled "AI", px of space after it) for each character of a label."""
+    characters: list[tuple[str, bool, float]] = []
+    index = 0
+    while index < len(text):
+        if text.startswith("AI", index):
+            characters += [("A", True, 0), ("I", True, _SPACE_AFTER_LATIN if _is_han(text[index + 2:index + 3]) else 0)]
+            index += 2
+            continue
+        space = _SPACE_BEFORE_LATIN if text.startswith("AI", index + 1) and _is_han(text[index]) else 0
+        characters.append((text[index], False, space))
+        index += 1
+    return characters
+
+
+def _label_markup(text: str, *, tall: bool) -> str:
+    """The label with its Latin "AI" at _LATIN_SCALE, spaced from the Han text around it.
+
+    `tall` False only widens the "AI": the box is drawn from that markup, so it is exactly as wide as the text and as
+    tall as one plain line.
+    """
+    scale = f"\\fscx{_LATIN_SCALE}" + (f"\\fscy{_LATIN_SCALE}" if tall else "")
+    reset = "\\fscx100" + ("\\fscy100" if tall else "")
+    parts: list[str] = []
+    for char, latin, space in _label_characters(text):
+        if latin and char == "A":
+            parts.append("{\\fsp0" + scale + "}")
+        if space or (latin and char == "I"):
+            # \fsp adds its space after every following glyph and is scaled with the run's \fscx.
+            parts.append("{\\fsp" + _number(space * 100 / _LATIN_SCALE if latin else space) + "}")
+        parts.append(char)
+        if latin and char == "I":
+            parts.append("{\\fsp0" + reset + "}")
+    return "".join(parts)
+
+
+def _label_width(text: str) -> float:
+    """Width of the label's text on the canvas: the "AI" by its advance at _LATIN_SCALE, anything else as one em."""
+    unit = DISCLOSURE_FONT_SIZE / _LINE_BOX_UNITS
+    return sum((_LATIN_ADVANCE_UNITS[char] * _LATIN_SCALE / 100 if latin else 1000) * unit + space
+               for char, latin, space in _label_characters(text))
+
+
+def _label_tops(
+    labels: Sequence[tuple[float, float, str]],
+    keep_clear: Sequence[tuple[float, float, float, float]],
+    keep_clear_until: float,
+) -> list[float]:
+    """Top of each label's line (its box adds _LABEL_BORDER all round), stacked down from DISCLOSURE_MARGIN_V.
+
+    A label takes the highest slot that is free when it starts and keeps it for its whole time, as libass stacked the
+    second generation. A label shown before `keep_clear_until` also skips any slot that would cover a `keep_clear`
+    box (the legacy headline) and may sit right below it instead.
+    """
+    starts = {DISCLOSURE_MARGIN_V} | {bottom + _KEEP_CLEAR_GAP + _LABEL_BORDER for _, _, _, bottom in keep_clear}
+    candidates = sorted({start + _LABEL_PITCH * step for start in starts for step in range(8)})
+    placed: list[tuple[float, float, float]] = []
+    tops: list[float] = []
+    for start_time, end_time, text in labels:
+        left = _LABEL_RIGHT - _label_width(text) - _LABEL_BORDER
+
+        def fits(top: float) -> bool:
+            if any(start < end_time and start_time < end and abs(other - top) < _LABEL_PITCH for start, end, other in placed):
+                return False
+            box_top, box_bottom = top - _LABEL_BORDER, top + DISCLOSURE_FONT_SIZE + _LABEL_BORDER
+            return not (start_time < keep_clear_until and any(
+                box_top < bottom and top_edge < box_bottom and left < right and left_edge < _LABEL_RIGHT + _LABEL_BORDER
+                for left_edge, top_edge, right, bottom in keep_clear))
+
+        top = next(candidate for candidate in candidates if fits(candidate))
+        placed.append((start_time, end_time, top))
+        tops.append(top)
+    return tops
+
+
 def _disclosure_events(
     intervals: Sequence[tuple[float, float]],
     text: str,
     total_duration: float = 0.0,
     *,
-    disclosure_v2: bool = True,
+    generation: int = DISCLOSURE_GENERATION,
+    keep_clear: Sequence[tuple[float, float, float, float]] = (),
+    keep_clear_until: float = 0.0,
 ) -> list[str]:
     label = _sanitize(text)
     if not label or not intervals:
@@ -170,7 +288,7 @@ def _disclosure_events(
     for start_time, end_time in intervals:
         if start_time < 0 or end_time <= start_time:
             raise GraphicsError("AI 生成画面披露时间范围无效。")
-    if not disclosure_v2:
+    if generation == 1:
         # First generation: a small label over each generated shot only.
         return [
             f"Dialogue: 10,{_ass_time(start_time)},{_ass_time(end_time)},"
@@ -178,17 +296,31 @@ def _disclosure_events(
             for start_time, end_time in intervals
         ]
     # Any generated shot labels the whole video from its first frame, wherever the shot is.
-    # No \pos: the style anchors the right edge under the title and the topic band, so libass stacks labels that overlap
-    # (the opening one is listed first and keeps the top slot) instead of printing one over the other.
     video_end = max(total_duration, *(end_time for _, end_time in intervals))
     opening_end = min(OPENING_DISCLOSURE_SECONDS, video_end)
-    events = [f"Dialogue: 10,{_ass_time(0)},{_ass_time(opening_end)},"
-              f"GfxDisclosure,,0,0,0,,{{\\an9\\bord1.5\\shad1}}{OPENING_DISCLOSURE_TEXT}"]
-    for start_time, end_time in intervals:
-        events.append(
-            f"Dialogue: 10,{_ass_time(start_time)},{_ass_time(end_time)},"
-            f"GfxDisclosure,,0,0,0,,{{\\an9\\bord1.5\\shad1}}{label}"
-        )
+    if generation == 2:
+        # No \pos: the style anchors the right edge under the title and the topic band, so libass stacks labels that
+        # overlap (the opening one is listed first and keeps the top slot) instead of printing one over the other.
+        events = [f"Dialogue: 10,{_ass_time(0)},{_ass_time(opening_end)},"
+                  f"GfxDisclosure,,0,0,0,,{{\\an9\\bord1.5\\shad1}}{OPENING_DISCLOSURE_TEXT}"]
+        for start_time, end_time in intervals:
+            events.append(
+                f"Dialogue: 10,{_ass_time(start_time)},{_ass_time(end_time)},"
+                f"GfxDisclosure,,0,0,0,,{{\\an9\\bord1.5\\shad1}}{label}"
+            )
+        return events
+    labels = [(0.0, opening_end, OPENING_DISCLOSURE_TEXT), *((start, end, label) for start, end in intervals)]
+    events = []
+    for (start_time, end_time, words), top in zip(labels, _label_tops(labels, keep_clear, keep_clear_until)):
+        a, b = _ass_time(start_time), _ass_time(end_time)
+        events += [
+            # The plain label for anyone reading the file; renderers skip Comment lines.
+            f"Comment: 10,{a},{b},GfxDisclosureText,,0,0,0,,{words}",
+            f"Dialogue: 9,{a},{b},GfxDisclosure,,0,0,0,,"
+            f"{{\\an9\\pos({_LABEL_RIGHT},{_number(top)})\\1a&HFF&\\3a&HFF&}}{_label_markup(words, tall=False)}",
+            f"Dialogue: 10,{a},{b},GfxDisclosureText,,0,0,0,,"
+            f"{{\\an9\\pos({_LABEL_RIGHT},{_number(top - _LATIN_LIFT)})}}{_label_markup(words, tall=True)}",
+        ]
     return events
 
 
@@ -202,18 +334,25 @@ def generate_news_graphics(
     output_path: Path | None = None,
     disclosure_intervals: Sequence[tuple[float, float]] = (),
     disclosure_text: str = "AI生成示意画面",
-    disclosure_v2: bool = True,
+    disclosure_generation: int = DISCLOSURE_GENERATION,
+    keep_clear: Sequence[tuple[float, float, float, float]] = (),
+    keep_clear_until: float = 0.0,
 ) -> Path | None:
-    """Write one ASS overlay for optional news graphics and mandatory disclosures."""
+    """Write one ASS overlay for optional news graphics and mandatory disclosures.
+
+    `keep_clear`: (left, top, right, bottom) boxes of the 1920x1080 canvas that labels shown before `keep_clear_until`
+    must not cover; the legacy pipeline passes its centred headline (subtitles.title_ink_boxes).
+    """
     events = (
         _topic_events(topic, total_duration, accent)
         + _end_card_events(headline, total_duration, accent)
-        + _disclosure_events(disclosure_intervals, disclosure_text, total_duration, disclosure_v2=disclosure_v2)
+        + _disclosure_events(disclosure_intervals, disclosure_text, total_duration, generation=disclosure_generation,
+                             keep_clear=keep_clear, keep_clear_until=keep_clear_until)
     )
     if not events:
         return None
     destination = output_path or task_dir / GRAPHICS_FILE_NAME
-    destination.write_text(_header(disclosure_v2) + "\n".join(events) + "\n", encoding="utf-8")
+    destination.write_text(_header(disclosure_generation) + "\n".join(events) + "\n", encoding="utf-8")
     write_text_log(
         task_dir,
         f"新闻图文包装已生成 accent={accent} topic={'有' if topic.strip() else '无'} "
@@ -389,7 +528,7 @@ def generate_mode_graphics(
     speakers: Sequence[Speaker], preferences: EditingPreferences, *, title: str = "",
     disclosure_intervals: Sequence[tuple[float, float]] = (),
     v2: bool = True,
-    disclosure_v2: bool = True,
+    disclosure_generation: int = DISCLOSURE_GENERATION,
 ) -> tuple[Path | None, list[dict[str, Any]]]:
     """Fixed brown/gold lower thirds, first 2.5s, then >=60s after last showing.
 
@@ -445,9 +584,9 @@ def generate_mode_graphics(
     if preferences.news_graphics:
         # V2 never covers the last spoken words with a retrospective end card.
         events = _topic_events(title[:12], total, preferences.tone) + ([] if v2 else _end_card_events(title, total, preferences.tone)) + events
-    events += _disclosure_events(disclosure_intervals, "AI生成示意画面", total, disclosure_v2=disclosure_v2)
+    events += _disclosure_events(disclosure_intervals, "AI生成示意画面", total, generation=disclosure_generation)
     if not events:
         return None, receipts
     destination = task_dir / GRAPHICS_FILE_NAME
-    destination.write_text(_header(disclosure_v2) + "\n".join(events) + "\n", encoding="utf-8", newline="\n")
+    destination.write_text(_header(disclosure_generation) + "\n".join(events) + "\n", encoding="utf-8", newline="\n")
     return destination, receipts

@@ -1964,7 +1964,7 @@ def prepare_mode_export(root: Path, work: Path, options: ExportOptions) -> ModeE
     Omitted narration can be enabled from real timing/word metadata; quotes
     remain governed by the confirmed independent quote_caption preference.
     """
-    from .graphics import (generate_mode_graphics, generate_mode_subtitles, uses_disclosure_v2,
+    from .graphics import (DISCLOSURE_GENERATION, generate_mode_graphics, generate_mode_subtitles, read_disclosure_generation,
                            validate_mode_subtitle_artifacts, MODE_CAPTION_TEMPLATE)
     from .models import EditingPreferences, MatchPlanItem, SentenceTiming
     from .production_modes import Speaker
@@ -1986,14 +1986,14 @@ def prepare_mode_export(root: Path, work: Path, options: ExportOptions) -> ModeE
         if (generated != original["events"] or preferences.caption_style != original["caption_style"]
             or quote_policy != original["quote_caption"]):
             raise ValueError("subtitle source metadata changed")
-        # A work finished before the opening AI label keeps the overlay it was made with: the stored bytes
-        # decide which label generation is regenerated, then must match exactly.
+        # A work keeps the AI label generation it was made with: the stored bytes decide which generation is
+        # regenerated, then must match exactly.
         stored_graphics = contained(root, root / "graphics.ass", exists=False)
-        disclosure_v2 = not stored_graphics.is_file() or uses_disclosure_v2(stored_graphics.read_bytes())
+        generation = read_disclosure_generation(stored_graphics.read_bytes()) if stored_graphics.is_file() else DISCLOSURE_GENERATION
         graphics, receipts = generate_mode_graphics(
             work, timings, plan, [Speaker.model_validate(p) for p in payload["speakers"]], preferences,
             title=title, disclosure_intervals=[tuple(p) for p in payload.get("generated_intervals", [])],
-            v2=v2, disclosure_v2=disclosure_v2,
+            v2=v2, disclosure_generation=generation,
         )
         if receipts != payload.get("lower_thirds", []) or receipts != local_json(root, "lower_thirds.json", []):
             raise ValueError("lower third binding changed")

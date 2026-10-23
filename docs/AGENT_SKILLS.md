@@ -212,6 +212,8 @@ $gh = "C:\Program Files\GitHub CLI\gh.exe"
 - 2026-10-23 按维护者的决定：
   - CI：`.github/workflows/linux-ci.yml` 先跑 `scripts/validate_agent_skills.py`，`deploy/docker/update.sh` 也纳入 `bash -n` 和 shellcheck（本机用 actionlint 和 shellcheck 0.9、0.11 核对过）。
   - 代码：B 模式的 AI 润色看得到手动标成原声的句子（请求带 `quotes`，改动、拆开、合并、调序或删掉任何一句都作废），采用或撤销后仍标为原声；gm-news-integrity 和 USER_GUIDE 已同步。
+  - gm-ai-labeling：`references/regulations.md` 对照官方原文复核（标识办法含第八条，深度合成规定、生成式 AI 暂行办法、互联网新闻信息服务管理规定）；GB 45438-2025 官方全文在线取不到（只有图片阅读器），第 5.4 条改标为"多源转载"；收录七款同类产品协议的标识与转载条款。新增 `references/terms-clause.md`：用户协议里"人工智能生成合成内容的标识与转载"条款的草案，按金话筒的实际功能写，未经法务审核。
+  - 代码：AI 标识第三代（`; template: GM-GFX-DISCLOSURE-V3-20261023`）："AI"放大到 115%，和汉字留约 1/8 em，量得 56 像素（之前 49，要求 54）；每条一个整齐的底框；旧流水线居中的长标题不再被标识盖住（标识让到标题下面，用 libass 渲染核对过，重叠像素从 2117、3386 降到 0）。第一、二代作品导出时按存档字节重新生成。
 - 自建 skill 里的数字和行号都标了核对日期。改了 `mode_rules.json`、检查码、阈值、接口或界面术语后，要同步更新对应的 skill。
 
 ## 8. 试用和验证

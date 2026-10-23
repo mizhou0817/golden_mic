@@ -27,18 +27,21 @@ argument-hint: "[调研|方案|任务拆解]"
 | 项目 | 现状 | 位置 |
 |---|---|---|
 | AI 画面开关 | 默认关闭（`GENERATIVE_FILL_ENABLED=False`），默认生成**视频**（Seedance）。需要全局开关、Key、本任务勾选三者同时满足，C 模式不可用。涉及事实的句子（实体、日期、机构）不会生成 | `backend/config.py`、`backend/providers/generative.py`、`backend/mode_pipeline.py` |
-| 显式标识 | 只要用了 AI 画面：片头 0 秒起靠右边缘（在标题和话题条下面，上边距 130）显示"本片含AI生成内容"3 秒（片子更短就到片尾），每个 AI 镜头期间显示"AI生成示意画面"。ASS 样式 GfxDisclosure，字号 96、上边距 130（1920×1080 画布；上边距 40 时片头标识在 1:1 导出里盖住 54% 的标题像素，9:16 里 94%，所以放在标题和话题条下面），带底框；不用 `\pos`，两条重叠时由 libass 上下排开。2026-10-22 之前完成的作品保留旧版（字号 30、`\pos(1870,40)`、没有片头标识），导出时按存档的 graphics.ass 字节重新生成；新版在文件头有一行 `; template: GM-GFX-DISCLOSURE-V2-20261022`（`graphics.uses_disclosure_v2` 靠它区分）。按内置 Noto Sans SC 的字形算，汉字字高 ≥ 54 像素（最短边的 5%）；用 FFmpeg 实际渲染量得汉字 57–63 像素，"AI"两个拉丁字母约 49 像素。Studio 导出路径另有一条整段时长的"AI生成示意画面（本片含AI生成内容）"（左上角 `\an7\pos(20,20)`，字号取画面高度的 3.5%，没改过：量过，竖屏下约占 70% 宽度、字高约 5% 最短边，16:9 和方形约 3%；放大到 5% 字高约 93 号会宽过竖屏和方形画面），它不是 5% 字高的那条；达标靠 graphics.ass 里的两种标识 | `backend/graphics.py`、`backend/studio_render.py` |
+| 显式标识 | 只要用了 AI 画面：片头 0 秒起在画面右侧边缘显示"本片含AI生成内容"3 秒（片子更短就到片尾），每个 AI 镜头期间显示"AI生成示意画面"。2026-10-23 起是第三代（文件头 `; template: GM-GFX-DISCLOSURE-V3-20261023`）：字号 96（1920×1080 画布）；拉丁字母"AI"放大到 115%，和汉字之间留约 1/8 em（前面 8 像素、后面 2 像素）；每条标识一个整齐的底框（BorderStyle 4，由去掉纵向放大的同一行文字画出，所以框高仍是一行 96），文字上移 11.54 像素，基线和框对齐；位置由代码算（`\pos`），第一槽上边距 130，在 V2 标题和话题条下面（上边距 40 时片头标识在 1:1 导出里盖住 54% 的标题像素，9:16 里 94%），同时出现的两条上下相隔 100。旧流水线的标题居中在 25% 高处，长标题在片头几秒会和标识重叠，这时标识让到标题下面（`subtitles.headline_ink_boxes` 传给 `keep_clear`）。用 FFmpeg 实际渲染量得：汉字 57–63 像素（和第二代相同），"AI" 56 像素（第二代约 49 像素），都不低于 54 像素（最短边的 5%）。之前的作品导出时按存档字节重新生成当时那一代（`graphics.read_disclosure_generation`）：第二代（2026-10-22，`…V2-20261022`，"AI"约 49 像素，libass 叠放）、第一代（字号 30、`\pos(1870,40)`、没有片头标识、没有标记行）。Studio 导出路径另有一条整段时长的"AI生成示意画面（本片含AI生成内容）"（左上角 `\an7\pos(20,20)`，字号取画面高度的 3.5%，没改过：量过，竖屏下约占 70% 宽度、字高约 5% 最短边，16:9 和方形约 3%；放大到 5% 字高约 93 号会宽过竖屏和方形画面），它不是 5% 字高的那条；达标靠 graphics.ass 里的两种标识 | `backend/graphics.py`、`backend/subtitles.py`、`backend/studio_render.py` |
 | 导出 | 先裁切填满画幅，再烧录 graphics，所以竖屏、方形导出不会裁掉披露（2026-10-22 用本机 FFmpeg 在 1280×720、720×1280、1080×1920、720×720、1920×1080 实测，两行标识都完整在画面内；720×1280 时较长一行约占画面宽度的 86%）。MP3/SRT 由服务端以 422 拒绝，界面上也不再给这两个选项 | `backend/studio_render.py`、`backend/v2_editing.py`、`frontend/src/components/ResultWorkbench.tsx` |
 | 发布检查 | `generated_media` 是级别 0 但**可确认**的唯一例外；AI 句子同时会触发不可确认的 MATCH_FALLBACK | `backend/publication.py`、`backend/quality.py` |
 | 隐式标识 | **没有**。`provenance.py` 只写流水线清单和散列，不写 AIGC 元数据或 C2PA | `backend/provenance.py` |
 | 合成人声 | Seed TTS 旁白目前**没有任何标识** | `backend/mode_pipeline.py` |
 
 ## 待评估的差距（需核实后再下结论）
-1. 显式标识的位置、字高、时长：2026-10-22 已按 GB 45438-2025 第 5.4 条的转载文本实现（起始画面靠右边缘 3 秒，汉字字高不低于最短边的 5%，见上表；测试 `tests/test_v2_code_doc_agreement.py` 从字体文件核对字高）。TODO(待确认)：对照官方全文核实，包括"文字高度"是否按汉字字高计，"AI"两个拉丁字母更矮是否可以接受。
+1. 显式标识的位置、字高、时长：按 GB 45438-2025 第 5.4 条实现（多源转载，见 [references/regulations.md](references/regulations.md) 第 3 节）：起始画面靠右边缘 3 秒。"文字高度"按最严格的理解执行，每个字符都不低于最短边的 5%，2026-10-23 起"AI"两个拉丁字母也达标（见上表；测试 `tests/test_v2_code_doc_agreement.py` 从字体文件核对字高，`tests/test_editing_enhancements.py` 在成片里量）。TODO(待确认)：拿到官方全文后核对 f) 的口径。
 2. 合成人声（TTS）是否需要显式标识（语音提示或节奏提示）。
 3. 隐式元数据：AIGC JSON 和 C2PA 清单分别怎么写入 MP4、MP3、PNG、GIF；每个文件只保留一份 AIGC 元数据；服务提供者编码从哪里来。
 4. "仍然导出（带未通过的检查）"路径下，标识是否完整保留：现有代码注释说披露门禁仍然生效，需要有测试证明。
 5. 如果成片在网上分发（deploy/README.md 记有线上实例），还要评估第六条规定的平台义务。
+6. 播放界面周边（办法第四条（四））：结果页播放器周边没有"含 AI 生成内容"的提示，只有逐句的"AI 生成示意画面"徽标。
+7. 封面和缩略图（办法第四条（三））：来自 AI 画面的封面（poster）和镜头缩略图没有标识。
+8. 用户协议（办法第八条）：要写明标识的方法和样式。条款草案见 [references/terms-clause.md](references/terms-clause.md)，未经法务审核，没有生效。
 
 ## 步骤
 1. 读 [references/regulations.md](references/regulations.md)。如有需要，联网核对官方原文（只读，不下载可执行文件）。
@@ -79,6 +82,7 @@ argument-hint: "[调研|方案|任务拆解]"
 一份 Markdown 设计稿：差距表、方案、参与清单字段、任务拆解、待批准事项、TODO(待确认) 列表。放在用户指定的位置；未指定时只在对话中给出，不写进仓库。
 
 ## 来源
-- [references/regulations.md](references/regulations.md)：法规、标准、C2PA 要点，每条带来源级别
+- [references/regulations.md](references/regulations.md)：法规、标准、同类产品协议、C2PA 要点，每条带来源级别
+- [references/terms-clause.md](references/terms-clause.md)：用户协议条款草案（标识的方法和样式、转载与传播），未经法务审核
 - [docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md)（AI 示意画面和导出说明）
 - [backend/graphics.py](../../../backend/graphics.py)、[backend/v2_editing.py](../../../backend/v2_editing.py)、[backend/publication.py](../../../backend/publication.py)、[backend/provenance.py](../../../backend/provenance.py)、[backend/providers/generative.py](../../../backend/providers/generative.py)

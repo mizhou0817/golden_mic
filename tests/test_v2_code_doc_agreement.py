@@ -76,6 +76,27 @@ def _glyph_ink_heights(font: Path, text: str) -> tuple[int, dict[str, int]]:
     return win_ascent + win_descent, heights
 
 
+def _font_metrics(font: Path, text: str) -> tuple[int, int, dict[str, int]]:
+    """(line box, win ascent, {character: advance width}) in font units, read straight from the TrueType tables."""
+    data = font.read_bytes()
+    tables = {data[12 + 16 * i: 16 + 16 * i].decode("latin-1"): struct.unpack(">I", data[20 + 16 * i: 24 + 16 * i])[0]
+              for i in range(struct.unpack(">H", data[4:6])[0])}
+    win_ascent, win_descent = struct.unpack(">HH", data[tables["OS/2"] + 74: tables["OS/2"] + 78])
+    metrics = struct.unpack(">H", data[tables["hhea"] + 34: tables["hhea"] + 36])[0]
+    cmap, groups = tables["cmap"], []
+    for index in range(struct.unpack(">H", data[cmap + 2: cmap + 4])[0]):
+        subtable = cmap + struct.unpack(">I", data[cmap + 8 + 8 * index: cmap + 12 + 8 * index])[0]
+        if struct.unpack(">H", data[subtable: subtable + 2])[0] == 12:
+            count = struct.unpack(">I", data[subtable + 12: subtable + 16])[0]
+            groups = [struct.unpack(">III", data[subtable + 16 + 12 * g: subtable + 28 + 12 * g]) for g in range(count)]
+    advances = {}
+    for char in set(text):
+        glyph = next(first + ord(char) - start for start, end, first in groups if start <= ord(char) <= end)
+        entry = tables["hmtx"] + 4 * min(glyph, metrics - 1)
+        advances[char] = struct.unpack(">H", data[entry: entry + 2])[0]
+    return win_ascent + win_descent, win_ascent, advances
+
+
 def _mode_fixture():
     """Two sentences (a quote, then narration) with a speaker, as the mode export tests use them."""
     from backend.models import EditingPreferences, MatchPlanItem, SentenceTiming, TTSWordTiming
@@ -246,14 +267,57 @@ class DisclosureTests(unittest.TestCase):
                                                    disclosure_intervals=intervals)
             return path.read_text(encoding="utf-8") if path else ""
 
+    @staticmethod
+    def tops(content: str, layer: int) -> list[str]:
+        return re.findall(rf"Dialogue: {layer},[^,]*,[^,]*,GfxDisclosure[A-Za-z]*,,0,0,0,,\{{\\an9\\pos\(1870,([\d.]+)\)", content)
+
     def test_any_generated_shot_labels_the_video_from_its_first_frame(self):
         content = self.render(8.0, [(5.0, 8.0)])
-        self.assertIn("Dialogue: 10,0:00:00.00,0:00:03.00,GfxDisclosure,,0,0,0,,{\\an9\\bord1.5\\shad1}本片含AI生成内容", content)
-        self.assertIn("Dialogue: 10,0:00:05.00,0:00:08.00,GfxDisclosure,,0,0,0,,{\\an9\\bord1.5\\shad1}AI生成示意画面", content)
-        # No fixed position: libass stacks a shot label under the opening one instead of printing over it.
-        self.assertNotIn("\\pos(", content.split("[Events]")[1])
-        self.assertIn("0:00:00.00,0:00:01.50,GfxDisclosure,,0,0,0,,{\\an9\\bord1.5\\shad1}本片含", self.render(1.5, [(0.0, 1.5)]))
+        self.assertIn("Comment: 10,0:00:00.00,0:00:03.00,GfxDisclosureText,,0,0,0,,本片含AI生成内容", content)
+        self.assertIn("Comment: 10,0:00:05.00,0:00:08.00,GfxDisclosureText,,0,0,0,,AI生成示意画面", content)
+        # The opening label is gone when the shot starts, so both use the top slot.
+        self.assertEqual(self.tops(content, 9), [str(graphics.DISCLOSURE_MARGIN_V)] * 2)
+        self.assertIn("0:00:00.00,0:00:01.50,GfxDisclosureText,,0,0,0,,本片含AI生成内容", self.render(1.5, [(0.0, 1.5)]))
         self.assertEqual(self.render(8.0, []), "")
+
+    def test_labels_on_screen_together_stack_one_slot_apart_and_the_text_rides_on_its_box(self):
+        content = self.render(8.0, [(1.0, 6.0)])
+        boxes, texts = self.tops(content, 9), self.tops(content, 10)
+        self.assertEqual(boxes, ["130", "230"])
+        # The box line has the "AI" only widened; the text line has it 115% tall too, which raises its line's ascent:
+        # the text is lifted by exactly that, so every baseline stays where the box expects it.
+        for box, text in zip(boxes, texts):
+            self.assertAlmostEqual(float(box) - float(text), 0.15 * 1160 / 1448 * 96, places=2)
+        self.assertIn("\\1a&HFF&\\3a&HFF&}本片{\\fsp8}含{\\fsp0\\fscx115}A{\\fsp1.74}I{\\fsp0\\fscx100}生成内容", content)
+        self.assertIn("}本片{\\fsp8}含{\\fsp0\\fscx115\\fscy115}A{\\fsp1.74}I{\\fsp0\\fscx100\\fscy100}生成内容", content)
+        self.assertIn("}{\\fsp0\\fscx115\\fscy115}A{\\fsp1.74}I{\\fsp0\\fscx100\\fscy100}生成示意画面", content)
+        header = content.split("[Events]")[0]
+        self.assertIn(",0,0,4,1.5,0,9,", header)  # GfxDisclosure: one box per label (BorderStyle 4)
+        self.assertIn("Style: GfxDisclosureText,", header)
+
+    def test_labels_shown_with_the_legacy_headline_go_around_it(self):
+        from backend import subtitles
+        from backend.models import SentenceTiming
+        labels = [(0.0, 3.0, graphics.OPENING_DISCLOSURE_TEXT), (1.0, 6.0, "AI生成示意画面")]
+        for title, moved in (("迎春市集热闹开市", False), ("南宁信息港广场迎春市集今天热闹开市啦", True),
+                             ("南宁信息港广场迎春市集今天热闹开市啦市民们纷纷前来挑选年货体验非遗手艺", True)):
+            boxes = subtitles.headline_ink_boxes(title, 1920, 1080)
+            tops = graphics._label_tops(labels, boxes, subtitles.TITLE_DURATION_SECONDS)
+            with self.subTest(title=title):
+                self.assertEqual(tops != [130, 230], moved, tops)
+                for (_, _, text), top in zip(labels, tops):
+                    left = graphics._LABEL_RIGHT - graphics._label_width(text) - graphics._LABEL_BORDER
+                    for box_left, box_top, box_right, box_bottom in boxes:
+                        self.assertFalse(left < box_right and top - 1.5 < box_bottom and box_top < top + 96 + 1.5, (text, top))
+            # The boxes describe what subs.ass prints: the same lines, at the title style's size and place.
+            with tempfile.TemporaryDirectory(prefix="v2-headline-") as directory:
+                timing = SentenceTiming(sentence_id=0, text="市民挑选年货", audio_path="a.wav", duration=5.0, start=0.0, end=5.0)
+                subtitles.generate_ass_subtitles(Path(directory), [timing], frame_width=1920, frame_height=1080, title=title)
+                document = (Path(directory) / "subs.ass").read_text(encoding="utf-8")
+            self.assertIn("\\an5\\q2\\pos(960,270)}" + "\\N".join(subtitles.headline_lines(title)), document)
+            self.assertIn("Style: NewsTitle2024,Noto Sans SC,81,", document)
+        # Once the headline has gone, a label takes the normal slot.
+        self.assertEqual(graphics._label_tops([(5.0, 8.0, "AI生成示意画面")], boxes, subtitles.TITLE_DURATION_SECONDS), [130])
 
     def test_mode_graphics_label_the_opening_too(self):
         from backend.models import EditingPreferences, SentenceTiming
@@ -262,11 +326,11 @@ class DisclosureTests(unittest.TestCase):
             path, _ = graphics.generate_mode_graphics(Path(directory), [timing], [], [], EditingPreferences(lower_third=False),
                                                       disclosure_intervals=[(4.0, 6.0)])
             content = path.read_text(encoding="utf-8")
-        self.assertIn("0:00:00.00,0:00:03.00,GfxDisclosure,,0,0,0,,{\\an9\\bord1.5\\shad1}本片含AI生成内容", content)
+        self.assertIn("Comment: 10,0:00:00.00,0:00:03.00,GfxDisclosureText,,0,0,0,,本片含AI生成内容", content)
         self.assertEqual(content.count("AI生成示意画面"), 1)
 
     def test_label_text_is_at_least_five_percent_of_the_short_side(self):
-        self.assertIn(f"Style: GfxDisclosure,Noto Sans SC,{graphics.DISCLOSURE_FONT_SIZE},", graphics._header())
+        self.assertIn(f"Style: GfxDisclosureText,Noto Sans SC,{graphics.DISCLOSURE_FONT_SIZE},", graphics._header())
         text = graphics.OPENING_DISCLOSURE_TEXT + "AI生成示意画面（本片含AI生成内容）"
         fonts = sorted((ROOT / "backend/assets/fonts").glob("NotoSansSC-*.ttf"))
         self.assertEqual(len(fonts), 2)
@@ -274,9 +338,21 @@ class DisclosureTests(unittest.TestCase):
             # libass scales the font's line box (win ascent + descent) to the ASS font size.
             line_box, heights = _glyph_ink_heights(font, text)
             for char, height in heights.items():
-                if "一" <= char <= "鿿":
+                # Every character counts, the Latin capitals too: they are drawn at _LATIN_SCALE.
+                scale = graphics._LATIN_SCALE / 100 if char in "AI" else 1
+                if "一" <= char <= "鿿" or char in "AI":
                     with self.subTest(font=font.name, char=char):
-                        self.assertGreaterEqual(graphics.DISCLOSURE_FONT_SIZE * height / line_box, 0.05 * 1080)
+                        self.assertGreaterEqual(graphics.DISCLOSURE_FONT_SIZE * height * scale / line_box, 0.05 * 1080)
+
+    def test_the_label_layout_uses_the_bundled_font_metrics(self):
+        bold = ROOT / "backend/assets/fonts/NotoSansSC-Bold.ttf"
+        line_box, ascent, advances = _font_metrics(bold, "AI本")
+        self.assertEqual((graphics._LINE_BOX_UNITS, graphics._ASCENT_UNITS), (line_box, ascent))
+        self.assertEqual(graphics._LATIN_ADVANCE_UNITS, {"A": advances["A"], "I": advances["I"]})
+        self.assertEqual(advances["本"], 1000)  # a Han character advances one em
+        unit = graphics.DISCLOSURE_FONT_SIZE / line_box
+        self.assertAlmostEqual(graphics._label_width("AI生成示意画面"),
+                               6 * 1000 * unit + (advances["A"] + advances["I"]) * 1.15 * unit + 2, places=6)
 
     def test_labels_sit_below_the_title_and_the_topic_band_so_no_export_shape_prints_over_them(self):
         # Vertical positions all scale with the frame height, so comparing ASS units covers 16:9, 1:1 and 9:16 at once.
@@ -319,12 +395,16 @@ class DisclosureTests(unittest.TestCase):
             self.assertLess(20 + len(text) * size * units_per_em / line_box, width, aspect)
 
 
-class FirstGenerationOverlayTests(unittest.TestCase):
-    """graphics.ass is hashed and regenerated on export, so works made before the opening label keep their bytes."""
+class OverlayGenerationTests(unittest.TestCase):
+    """graphics.ass is hashed and regenerated on export, so works made with an earlier label generation keep their bytes."""
 
-    # SHA-256 (newlines as LF) of what the code before the opening label wrote for the inputs below.
-    FIRST_GENERATION = {"mode": "4c97cf8581177c21967157e4d802d18bbebf903e3645653c0c0564a9c3297a96",
-                        "news": "95b61cf76d885e915979214f56b011cf74af36ef40a1a826ed5a27d046a47e51"}
+    # SHA-256 (newlines as LF) of what each earlier generation's code wrote for the inputs below.
+    EARLIER_GENERATIONS = {
+        1: {"mode": "4c97cf8581177c21967157e4d802d18bbebf903e3645653c0c0564a9c3297a96",
+            "news": "95b61cf76d885e915979214f56b011cf74af36ef40a1a826ed5a27d046a47e51"},
+        2: {"mode": "53ead1fb8147db93b8253f0164ad74150dd8dbe2afce1d613cc5940dfa5f1e37",
+            "news": "cfc00ec7e98f8f76af6135eb99efa24863a0cd7ad45c5a0d9f39ec0d8870275b"},
+    }
 
     @staticmethod
     def digest(path: Path) -> str:
@@ -338,32 +418,34 @@ class FirstGenerationOverlayTests(unittest.TestCase):
                                                disclosure_intervals=[(1.0, 2.5)], output_path=root / "news.ass", **flags)
         return {"mode": mode, "news": news}
 
-    def test_the_first_generation_is_reproduced_byte_for_byte(self):
-        with tempfile.TemporaryDirectory(prefix="v2-first-generation-") as directory:
-            paths = self.render(Path(directory), disclosure_v2=False)
-            self.assertEqual({name: self.digest(path) for name, path in paths.items()}, self.FIRST_GENERATION)
-            for path in paths.values():
-                self.assertFalse(graphics.uses_disclosure_v2(path.read_bytes()))
-                self.assertNotIn(graphics.OPENING_DISCLOSURE_TEXT, path.read_text(encoding="utf-8"))
+    def test_earlier_generations_are_reproduced_byte_for_byte(self):
+        for generation, expected in self.EARLIER_GENERATIONS.items():
+            with self.subTest(generation=generation), tempfile.TemporaryDirectory(prefix="v2-generation-") as directory:
+                paths = self.render(Path(directory), disclosure_generation=generation)
+                self.assertEqual({name: self.digest(path) for name, path in paths.items()}, expected)
+                for path in paths.values():
+                    self.assertEqual(graphics.read_disclosure_generation(path.read_bytes()), generation)
+                    self.assertEqual(graphics.OPENING_DISCLOSURE_TEXT in path.read_text(encoding="utf-8"), generation >= 2)
 
     def test_the_current_generation_names_itself_and_differs(self):
-        with tempfile.TemporaryDirectory(prefix="v2-first-generation-") as directory:
+        with tempfile.TemporaryDirectory(prefix="v2-generation-") as directory:
             paths = self.render(Path(directory))
             for name, path in paths.items():
                 with self.subTest(name):
-                    self.assertTrue(graphics.uses_disclosure_v2(path.read_bytes()))
-                    self.assertNotEqual(self.digest(path), self.FIRST_GENERATION[name])
+                    self.assertEqual(graphics.read_disclosure_generation(path.read_bytes()), graphics.DISCLOSURE_GENERATION)
+                    for earlier in self.EARLIER_GENERATIONS.values():
+                        self.assertNotEqual(self.digest(path), earlier[name])
                     self.assertIn(graphics.OPENING_DISCLOSURE_TEXT, path.read_text(encoding="utf-8"))
 
 
 class StoredOverlayExportTests(unittest.TestCase):
     """studio.prepare_mode_export regenerates graphics.ass and refuses anything but the stored bytes."""
 
-    def write_work(self, root: Path, *, disclosure_v2: bool, v2: bool = True) -> bytes:
+    def write_work(self, root: Path, *, generation: int, v2: bool = True) -> bytes:
         preferences, timings, plan, speakers = _mode_fixture()
         graphics.generate_mode_subtitles(root, timings, plan, preferences, title="Headline", v2=v2)
         _, lower = graphics.generate_mode_graphics(root, timings, plan, speakers, preferences, title="Headline",
-                                                   disclosure_intervals=[(3.5, 6.0)], v2=v2, disclosure_v2=disclosure_v2)
+                                                   disclosure_intervals=[(3.5, 6.0)], v2=v2, disclosure_generation=generation)
         documents = {
             "timings.json": [timing.model_dump(mode="json") for timing in timings],
             "match_plan.json": [item.model_dump(mode="json") for item in plan],
@@ -382,44 +464,38 @@ class StoredOverlayExportTests(unittest.TestCase):
         work.mkdir()
         return studio.prepare_mode_export(root, work, ExportOptions(format="mp4", resolution=360, video_bitrate_kbps=1500))
 
-    def test_a_work_finished_before_the_opening_label_exports_with_the_overlay_it_was_made_with(self):
-        with tempfile.TemporaryDirectory(prefix="v2-stored-overlay-") as directory:
-            root = Path(directory)
-            stored = self.write_work(root, disclosure_v2=False)
-            exported = self.export(root)
-        self.assertFalse(graphics.uses_disclosure_v2(stored))
-        self.assertEqual(exported.graphics, stored.decode("utf-8"))
-        self.assertNotIn(graphics.OPENING_DISCLOSURE_TEXT, exported.graphics)
-
-    def test_a_current_work_exports_with_the_opening_label(self):
-        with tempfile.TemporaryDirectory(prefix="v2-stored-overlay-") as directory:
-            root = Path(directory)
-            stored = self.write_work(root, disclosure_v2=True)
-            exported = self.export(root)
-        self.assertTrue(graphics.uses_disclosure_v2(stored))
-        self.assertEqual(exported.graphics, stored.decode("utf-8"))
-        self.assertIn(graphics.OPENING_DISCLOSURE_TEXT, exported.graphics)
+    def test_every_work_exports_with_the_label_generation_it_was_made_with(self):
+        for generation in (1, 2, graphics.DISCLOSURE_GENERATION):
+            with self.subTest(generation=generation), tempfile.TemporaryDirectory(prefix="v2-stored-overlay-") as directory:
+                root = Path(directory)
+                stored = self.write_work(root, generation=generation)
+                exported = self.export(root)
+                self.assertEqual(graphics.read_disclosure_generation(stored), generation)
+                self.assertEqual(exported.graphics, stored.decode("utf-8"))
+                self.assertEqual(graphics.OPENING_DISCLOSURE_TEXT in exported.graphics, generation >= 2)
 
     def test_a_work_made_before_v2_exports_with_its_end_card(self):
         # Before V2 the overlay ended with a headline card; the export has to regenerate it the same way.
         with tempfile.TemporaryDirectory(prefix="v2-stored-overlay-") as directory:
             root = Path(directory)
-            stored = self.write_work(root, disclosure_v2=False, v2=False)
+            stored = self.write_work(root, generation=1, v2=False)
             exported = self.export(root)
         self.assertIn(b"GfxEnd", stored)
         self.assertEqual(exported.graphics, stored.decode("utf-8"))
 
     def test_any_other_stored_overlay_is_still_refused(self):
         claim = "[Script Info]\n; template: " + graphics.DISCLOSURE_TEMPLATE + "\n"
-        for name, disclosure_v2, tamper in (
-            ("edited first generation", False, lambda data: data.replace("示意".encode(), "别的".encode())),
-            ("edited current generation", True, lambda data: data.replace("示意".encode(), "别的".encode())),
-            ("first generation claiming to be current", False, lambda data: data.replace(b"[Script Info]\n", claim.encode(), 1)),
-            ("missing", True, None),
+        for name, generation, tamper in (
+            ("edited first generation", 1, lambda data: data.replace("示意".encode(), "别的".encode())),
+            ("edited second generation", 2, lambda data: data.replace("示意".encode(), "别的".encode())),
+            ("edited current generation", 3, lambda data: data.replace("示意".encode(), "别的".encode())),
+            ("first generation claiming to be current", 1, lambda data: data.replace(b"[Script Info]\n", claim.encode(), 1)),
+            ("second generation claiming to be current", 2, lambda data: data.replace(b"[Script Info]\n", claim.encode(), 1)),
+            ("missing", 3, None),
         ):
             with self.subTest(name), tempfile.TemporaryDirectory(prefix="v2-stored-overlay-") as directory:
                 root = Path(directory)
-                stored = self.write_work(root, disclosure_v2=disclosure_v2)
+                stored = self.write_work(root, generation=generation)
                 if tamper is None:
                     (root / "graphics.ass").unlink()
                 else:

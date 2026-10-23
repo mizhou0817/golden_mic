@@ -92,7 +92,7 @@ from .shot_replacement import (
     write_shot_replacement_state,
 )
 from .storage import write_json_atomic, write_text_log
-from .subtitles import generate_ass_subtitles
+from .subtitles import TITLE_DURATION_SECONDS, generate_ass_subtitles, headline_ink_boxes
 from .tts_pipeline import rebuild_narration_from_existing, synthesize_narration
 from .vision_pipeline import annotate_shots
 
@@ -1290,6 +1290,10 @@ async def _build_finish_options(
             accent=preferences.tone,
             output_path=graphics_output_path,
             disclosure_intervals=disclosure_intervals,
+            # subs.ass centres the headline over the first seconds, on the same 1920x1080 canvas as graphics.ass:
+            # AI labels shown meanwhile go around it instead of covering it.
+            keep_clear=headline_ink_boxes(document.title, VIDEO_WIDTH, VIDEO_HEIGHT),
+            keep_clear_until=TITLE_DURATION_SECONDS,
         )
     elif graphics_output_path is None:
         (record.task_dir / "graphics.ass").unlink(missing_ok=True)
