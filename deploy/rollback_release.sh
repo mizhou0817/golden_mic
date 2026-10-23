@@ -45,8 +45,8 @@ fi
 DRAINED_CURRENT_SERVICE=0
 SYMLINK_SWITCHED=0
 ROLLBACK_COMMITTED=0
-# Registered by the EXIT trap below; ShellCheck 0.9 cannot follow this callback.
-# shellcheck disable=SC2317
+# Registered by the EXIT trap below; ShellCheck cannot follow this callback (SC2317 in 0.9, SC2329 in 0.11).
+# shellcheck disable=SC2317,SC2329
 restore_current_on_exit() {
   exit_code=$?
   trap - EXIT INT TERM

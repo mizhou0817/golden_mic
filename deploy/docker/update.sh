@@ -111,6 +111,8 @@ cancel_drain() {
     echo "  docker exec $CONTAINER curl -fsS -X DELETE -H 'Host: localhost' http://127.0.0.1:8000/api/admin/drain" >&2
   fi
 }
+# Registered by the EXIT trap below; ShellCheck cannot follow this callback (SC2317 in 0.9, SC2329 in 0.11).
+# shellcheck disable=SC2317,SC2329
 on_exit() {
   local status=$?
   set +e
@@ -145,7 +147,7 @@ else
 fi
 if [ "$(image_id "$TARGET")" = "$(current_image)" ] && running; then
   echo "$TARGET is already the running image; nothing to do."
-  PHASE=done
+  PHASE=finished
   exit 0
 fi
 
@@ -195,7 +197,7 @@ fi
 echo "Switching to $(image_id goldmic:latest) ..."
 if compose up -d ${STOP_TIMEOUT:+-t "$STOP_TIMEOUT"}; then
   if wait_ready; then
-    PHASE=done
+    PHASE=finished
     echo "Done: $CONTAINER is healthy and ready on $(image_id goldmic:latest)."
     exit 0
   fi

@@ -209,6 +209,8 @@ $gh = "C:\Program Files\GitHub CLI\gh.exe"
   - 代码（第二轮复核）：排空快照新增 `upload_jobs`（传完后还在做收费语音识别的素材），`update.sh`、`deploy_release.sh`、`rollback_release.sh` 都等它归零；片头 AI 标识的上边距从 40 改为 130，放在标题和话题条下面（量过：40 时在 1:1 里盖住 54% 的标题像素，9:16 里 94%）；带片尾标识的旧作品导出不再返回 422；AI 润色的原话校验按解析器的方式切行（U+2028、U+0085 也算换行，开头的 BOM 忽略），提示词按模式只列出会被保护的行；`mode_pipeline.py` 一行多余的回车；公开限额的测试不再受环境变量影响；`test_workspace_access` 里两条早就过时的旧测试（历史列表的字段、`POST /api/tasks` 带空 JSON）按现行行为更正，它们在原始提交上就失败，也不在受保护运行的范围内；`test_editing_enhancements` 和 `test_prototype_preferences` 里按旧位置（右上角）数 AI 标识像素的断言改成新位置，这两处是把其余旧测试模块逐个扫了一遍才发现的，同样不在受保护运行里。
   - 第三方 skill：playwright-cli 改为只能手动调用（见第 3 节）；校验脚本新增不可见字符、hooks 和 MCP 键（不分大小写和 `-`/`_`）、脚本白名单、只能手动调用的名单这几项检查，并拒绝符号链接、联接点、可执行文件和带 NUL 字节的文本。
   - 文档：skill 里的 `文件:行` 出处按当前代码重新对过；补齐了各 skill 缺的“示例”和“验证”；第 8 节给每个 skill 都配了测试提问。
+- 2026-10-23 按维护者的决定：
+  - CI：`.github/workflows/linux-ci.yml` 先跑 `scripts/validate_agent_skills.py`，`deploy/docker/update.sh` 也纳入 `bash -n` 和 shellcheck（本机用 actionlint 和 shellcheck 0.9、0.11 核对过）。
 - 自建 skill 里的数字和行号都标了核对日期。改了 `mode_rules.json`、检查码、阈值、接口或界面术语后，要同步更新对应的 skill。
 
 ## 8. 试用和验证
@@ -217,6 +219,7 @@ $gh = "C:\Program Files\GitHub CLI\gh.exe"
    - 在 VS Code 的 Copilot 对话里：会话目标为 Local 时，输入 `/skills` 打开 Configure Skills；其他目标从命令面板运行"Chat: Open Customizations"，进入 Skills。
    - 应该能看到第 2 节和第 7 节列出的全部 skill。golden-mic-backend-map 和 gm-news-integrity 不出现在 `/` 菜单里，这是设计如此。
    - 2026-10-22 用户在对话里给过一次“Chat: Open Customizations”的截图（截图没有入库）。是否全部出现，以用户的确认为准。
+   - 2026-10-23 用户确认：在 VS Code 里输入 `/skills` 后能看到 skill 列表（截图只截了列表的一部分，没有入库）。截图之外的 skill 是否都在，下次试用时对照第 2 节和第 7 节再核对一遍。
 2. **逐条试用。** 新开一个 Agent 模式的对话，逐条输入下面的提问。回复引用的文件里出现了对应的 SKILL.md，就算触发成功。具体显示方式以 VS Code 实际界面为准。
 
 | 提问 | 预期触发 |
@@ -267,6 +270,5 @@ $gh = "C:\Program Files\GitHub CLI\gh.exe"
 
 ## 10. 维护建议（未实施）
 
-- **CI**：可以在 `.github/workflows/linux-ci.yml` 里加一步 `python -I -B scripts/validate_agent_skills.py`（只用标准库）。本次按约束没有改 CI。
 - **新增 skill 前**：先查同类有没有已经装的，同一种能力只保留一个，并按第 5 节审查。
 - **`gh skill publish --dry-run` 不适用**（任务书 §6.1 的可选项，2026-10-22 用 `gh skill publish --help` 核对，没有运行）：它只发现 `skills/*/SKILL.md`、`skills/{scope}/*/SKILL.md`、根目录 `*/SKILL.md` 和 `plugins/{scope}/skills/*/SKILL.md`，而本仓库的 skill 在 `.github/skills/` 和 `.agents/skills/` 下，找不到。它的 `--fix` 还会剥掉 `metadata.github-*` 来源信息，会毁掉第三方 skill 的来源记录，不要运行。结构检查用 `scripts/validate_agent_skills.py`。

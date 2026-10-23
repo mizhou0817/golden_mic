@@ -54,16 +54,19 @@
 
 触发：push 到 `main`、pull request、手动运行。主要步骤：
 
-1. 安装 FFmpeg；对部署脚本跑 `bash -n` 和 shellcheck；用 `systemd-analyze verify` 检查服务单元。
-2. 渲染 nginx 配置并运行 `nginx -t`。
-3. 跑 `uv sync --frozen --no-dev`。
-4. 比较冻结依赖导出和 `requirements-production.lock`，比较 SBOM 和 `sbom.cdx.json`，两项都输出到 `/tmp` 再 `diff`。
-5. 确认只装了一个 headless OpenCV。
-6. 跑 `npm ci`，构建绑定源码的前端，并做 E2E 类型检查，再核对构建产物。
-7. 前端回归和发布检查：`npm --prefix frontend test`、`scripts/test-v2-result.mjs`、`scripts/test-publication.mjs`、`scripts/verify-publication.mjs`。
-8. 受保护的后端回归：`python -I -B tests/run_v2_validation.py --compile-ast --legacy`。
-9. 在阻断网络的情况下，用 `APP_ENV=production` 检查生产前提，不产生服务商流量。
-10. 构建最小发布包并运行 `verify_release_archive.py`，再用**临时生成的 CI 密钥**签名和验签。这只是测试流程，不是生产签名。
-11. 用 `git diff --exit-code` 确认 CI 没有改动已提交的文件。
+1. 用 `python -I -B scripts/validate_agent_skills.py` 校验项目和第三方 skill（只用标准库；有错误就失败，警告不影响）。
+2. 安装 FFmpeg；对部署脚本（含 `deploy/docker/update.sh`）跑 `bash -n` 和 shellcheck（Ubuntu 24.04 自带的 0.9 版）；用 `systemd-analyze verify` 检查服务单元。
+3. 渲染 nginx 配置并运行 `nginx -t`。
+4. 跑 `uv sync --frozen --no-dev`。
+5. 比较冻结依赖导出和 `requirements-production.lock`，比较 SBOM 和 `sbom.cdx.json`，两项都输出到 `/tmp` 再 `diff`。
+6. 确认只装了一个 headless OpenCV。
+7. 跑 `npm ci`，构建绑定源码的前端，并做 E2E 类型检查，再核对构建产物。
+8. 前端回归和发布检查：`npm --prefix frontend test`、`scripts/test-v2-result.mjs`、`scripts/test-publication.mjs`、`scripts/verify-publication.mjs`。
+9. 受保护的后端回归：`python -I -B tests/run_v2_validation.py --compile-ast --legacy`。
+10. 在阻断网络的情况下，用 `APP_ENV=production` 检查生产前提，不产生服务商流量。
+11. 构建最小发布包并运行 `verify_release_archive.py`，再用**临时生成的 CI 密钥**签名和验签。这只是测试流程，不是生产签名。
+12. 用 `git diff --exit-code` 确认 CI 没有改动已提交的文件。
+
+本机检查 workflow 的方法（2026-10-23 用过）：winget 装 `rhysd.actionlint` 和 `koalaman.shellcheck`，CI 用的 0.9 版可以用 `winget download koalaman.shellcheck --version 0.9.0` 单独下载，再跑 `actionlint -shellcheck <0.9 版 shellcheck.exe> .github/workflows/linux-ci.yml`。0.9 和 0.11 对只由 `trap` 调用的函数分别报 SC2317 和 SC2329，所以 `rollback_release.sh` 和 `update.sh` 的退出处理函数上两个都关掉了。
 
 仓库里没有发布用的 workflow，生产签名和部署都是手工完成的。

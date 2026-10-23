@@ -45,6 +45,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Validate project Agent Skills
+        run: python -I -B scripts/validate_agent_skills.py
+
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           version: "0.11.11"
@@ -61,8 +64,8 @@ jobs:
 
       - name: Validate Linux deployment assets
         run: |
-          bash -n deploy/install_host.sh deploy/deploy_release.sh deploy/rollback_release.sh deploy/validate_target_host.sh
-          shellcheck deploy/install_host.sh deploy/deploy_release.sh deploy/rollback_release.sh deploy/validate_target_host.sh
+          bash -n deploy/install_host.sh deploy/deploy_release.sh deploy/rollback_release.sh deploy/validate_target_host.sh deploy/docker/update.sh
+          shellcheck deploy/install_host.sh deploy/deploy_release.sh deploy/rollback_release.sh deploy/validate_target_host.sh deploy/docker/update.sh
           getent group goldenmic >/dev/null || sudo groupadd --system goldenmic
           id goldenmic >/dev/null 2>&1 || sudo useradd --system --gid goldenmic --home-dir /nonexistent --shell /usr/sbin/nologin goldenmic
           sudo mkdir -p /opt/golden-mic/current/.venv/bin /srv/golden-mic-data /etc/golden-mic
